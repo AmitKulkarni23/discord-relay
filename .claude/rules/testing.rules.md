@@ -9,8 +9,7 @@ paths:
 
 - Tests MUST use `bun:test`. Vitest and Jest MUST NOT be added.
 - Test files MUST sit next to the source: `hub.test.ts` beside `hub.ts`.
-- Unit and integration tests MUST NOT call Discord or any network service. Integration tests MUST replace the bot with a fake source that calls `hub.publish`.
-- End-to-end tests against staging MUST live in `e2e/` and MUST NOT run in `bun test` by default.
+- Tests MUST NOT call Discord or any network service. Integration tests MUST replace the bot with a fake source that calls `hub.publish`.
 
 ## Structure and naming
 

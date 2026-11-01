@@ -39,7 +39,6 @@ discord-relay/
 │   ├── index.html
 │   ├── theme.ts           # MUI theme
 │   └── app.tsx            # React + MUI
-├── e2e/                   # end-to-end tests against staging
 ├── docs/
 │   ├── system-specs/      # architecture, failure modes, decisions
 │   └── task-specs/        # one spec per task, TASK_INDEX.md lists them in order
@@ -97,15 +96,14 @@ railway config apply   # apply them
 ## Testing
 
 - **Unit + integration** (`bun test`): no Discord, no network. Integration tests run the real `Bun.serve` with a fake source publishing to the hub.
-- **End-to-end** (`e2e/`): posts to a test Discord channel through a webhook and checks the message arrives on the staging `/events`.
+- GitHub Actions runs typecheck and `bun test` on every push and PR.
 - Write the test first, see it fail, then implement.
 
 ## Environments
 
-- **staging**: Railway environment, autodeploys `main`, own Discord bot and test channel, "Wait for CI" on.
-- **production**: Railway environment, autodeploys the `production` branch, "Wait for CI" on. Promote by fast-forwarding `production` to a commit that passed E2E on staging.
+- **production** only: Railway autodeploys `main` with "Wait for CI" on, so a failing GitHub Actions run skips the deploy.
 - PR environments are off for this service (each would start another bot).
-- Each environment has its own Railway project token for CI.
+- No staging environment. The staging + end-to-end + promotion pipeline is described in the README as the at-scale design, not built.
 
 ## Infrastructure as Code
 

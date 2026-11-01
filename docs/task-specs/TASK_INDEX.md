@@ -6,7 +6,7 @@ System context lives in `docs/system-specs/` (`architecture.md`, `failure-modes.
 
 - ~~[TASK-001: Scaffold the project and add CI](001-scaffold-and-ci.md) · depends on: none~~
 - ~~[TASK-002: Message types and the hub](002-types-and-hub.md) · depends on: 001~~
-- [TASK-003: HTTP server and SSE stream](003-http-server.md) · depends on: 002
+- ~~[TASK-003: HTTP server and SSE stream](003-http-server.md) · depends on: 002~~
 - [TASK-004: Discord bot source](004-discord-source.md) · depends on: 002, 003
 - [TASK-005: Railway deployment as code](005-railway-deploy.md) · depends on: 004
 

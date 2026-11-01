@@ -124,14 +124,16 @@ sequenceDiagram
 
 | Route | Response |
 |---|---|
-| `GET /` | The React page. Bun bundles `frontend/` from the HTML import. |
+| `GET /` | The React page. Bun bundles `frontend/` from the HTML import. Until the frontend task, a plain-text placeholder. |
 | `GET /events` | `text/event-stream`. Sends the buffer, then live events, with `: ping` every 25 s. |
 | `GET /config` | `{ "attachments": bool, "editsDeletes": bool, "debugPanel": bool }` |
 | `GET /health` | `200` when the Gateway is connected, `503` otherwise. Body: `{ "discord": "connected" \| "disconnected", "clients": n, "buffered": n, "lastEventAt": iso \| null, "uptimeSec": n }` |
 
-SSE events:
+SSE events (the stream opens with a `: connected` comment so headers reach the browser even when the buffer is empty):
 
 ```
+: connected
+
 id: 1301234567890123456
 data: {"id":"1301234567890123456","channelId":"…","author":{…},"content":"hello",…}
 

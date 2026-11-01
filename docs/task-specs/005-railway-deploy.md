@@ -15,11 +15,11 @@ Read these before writing code:
 ## Requirements
 
 1. `.railway/railway.ts` MUST define one project with one service using `defineRailway`, `project` and `service` from `railway/iac`.
-2. The service source MUST be `github('<GITHUB_OWNER>/discord-relay', { branch: 'main', checkSuites: true })`. `checkSuites` is Railway's "Wait for CI".
+2. The service source MUST be `github('AmitKulkarni23/discord-relay', { branch: 'main', checkSuites: true })`. `checkSuites` is Railway's "Wait for CI".
 3. Deploy settings MUST be: start command `bun run backend/server.ts`, healthcheck path `/health`, 1 replica, restart policy `ON_FAILURE` with 10 retries, `sleepApplication: false`, `overlapSeconds: 30`, `drainingSeconds: 30`.
 4. `DISCORD_TOKEN` MUST use `preserve()`, so its value is set once as a sealed variable in Railway and never appears in the repo.
-5. `CHANNEL_ID` MUST be the placeholder `<CHANNEL_ID>`. The three feature flags MUST be `"false"`.
-6. The project name MUST be the placeholder `<RAILWAY_PROJECT_NAME>`.
+5. `CHANNEL_ID` MUST also use `preserve()`, so the channel ID stays out of the repo. The three feature flags MUST be `"false"`.
+6. The project name MUST be `DiscordRelay`.
 7. `railway` MUST be a dev dependency so the file typechecks, and `tsconfig.json` MUST include `.railway/**/*.ts`.
 8. `.railway/README.md` from `railway config init` MAY be kept.
 
@@ -30,8 +30,8 @@ Read these before writing code:
 - A whole-project apply can delete resources missing from the file. Generate the public domain in the dashboard, then run `railway config pull` and compare before the next apply.
 - The user fills in the placeholders and runs these steps (no code changes):
   1. Create the Discord application and bot, enable the MessageContent intent, invite the bot to the test server, and copy the channel ID.
-  2. Create the Railway project, link it with `railway link`, and set `DISCORD_TOKEN` as a sealed variable.
-  3. Replace `<GITHUB_OWNER>`, `<RAILWAY_PROJECT_NAME>` and `<CHANNEL_ID>`, then run `railway config plan` and `railway config apply`.
+  2. Create the Railway project, link it with `railway link`, set `DISCORD_TOKEN` as a sealed variable and set `CHANNEL_ID`.
+  3. Run `railway config plan` and `railway config apply`.
   4. Generate a Railway domain for the service.
   5. Turn off PR environments in project settings.
 

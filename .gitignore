@@ -3,3 +3,9 @@ dist/
 .env*
 .DS_Store
 *.log
+
+# Impeccable design-skill artifacts (local only)
+PRODUCT.md
+DESIGN.md
+.impeccable/
+.claude/settings.local.json

@@ -16,7 +16,7 @@ A bot connects to the Discord Gateway and listens to one channel. Every new mess
 
 ## Tech Stack
 
-- **Runtime**: Bun (install, scripts, server, frontend bundling)
+- **Runtime**: Bun (install, scripts, server, frontend bundling, tests)
 - **Backend**: `Bun.serve` HTTP server + discord.js bot, TypeScript
 - **Frontend**: React + Material UI, bundled by Bun's HTML imports (no Vite, no Next.js)
 - **Realtime to browser**: Server-Sent Events (`EventSource`)
@@ -27,6 +27,7 @@ A bot connects to the Discord Gateway and listens to one channel. Every new mess
 
 ```
 discord-relay/
+├── .claude/rules/         # coding rules, loaded by path (see Rules below)
 ├── .railway/
 │   └── railway.ts         # Railway IaC (service, healthcheck, start command, non-secret vars)
 ├── backend/
@@ -36,7 +37,9 @@ discord-relay/
 │   └── types.ts           # Msg type shared with the frontend
 ├── frontend/
 │   ├── index.html
+│   ├── theme.ts           # MUI theme
 │   └── app.tsx            # React + MUI
+├── e2e/                   # end-to-end tests against staging
 ├── docs/
 │   ├── system-specs/      # architecture, failure modes, decisions
 │   └── task-specs/        # one spec per task, TASK_INDEX.md lists them in order
@@ -46,15 +49,14 @@ discord-relay/
 └── README.md
 ```
 
-## Key Behaviors
+## Rules
 
-- One Discord gateway connection. Needs the `Guilds`, `GuildMessages` and `MessageContent` intents (MessageContent is privileged: enable it in the Discord developer portal).
-- On startup the server fetches the latest 100 messages from Discord to fill the ring buffer. The buffer holds 100; the oldest falls off.
-- `GET /events` sends the buffer, then each new message. Every event has `id:` set to the Discord message ID.
-- Heartbeat comment (`: ping`) every 25 seconds so Railway's proxy does not close idle streams. Railway caps HTTP requests at 15 minutes; `EventSource` reconnects on its own.
-- Dedupe by Discord message ID on the server and in the browser; rendering is idempotent.
-- Browser keeps at most 500 messages; oldest are removed.
-- Everything is keyed by `channelId` so more channels are a config change.
+Coding rules live in `.claude/rules/` and load only when a matching file is touched:
+
+- `typescript.rules.md`: all `.ts`/`.tsx`
+- `backend.rules.md`: `backend/` (boundaries, buffer, SSE, reliability, logging)
+- `react.rules.md`: `frontend/` (stream state, components, security, MUI)
+- `testing.rules.md`: `*.test.ts(x)`
 
 ## Feature Flags
 
@@ -70,13 +72,20 @@ Railway service variables, read once in `backend/server.ts` and exposed to the b
 - `CHANNEL_ID`: the Discord channel to relay.
 - `PORT`: injected by Railway.
 
+The MessageContent intent MUST be enabled for the bot in the Discord developer portal, or messages arrive empty.
+
+## Security Model
+
+- The bot token lives only on the server. The browser never talks to Discord.
+- The page is public: anyone with the URL can read the channel.
+
 ## Commands
 
 ```bash
 bun install
 bun run dev        # local server with hot reload
 bun run typecheck
-bun test
+bun test           # unit + integration, no network
 ```
 
 ```bash
@@ -85,20 +94,18 @@ railway config plan    # preview infra changes
 railway config apply   # apply them
 ```
 
-## Security Model
+## Testing
 
-- The bot token lives only on the server. The browser never talks to Discord.
-- Message content is rendered as text (React escaping). Never use `dangerouslySetInnerHTML`.
-- Attachment URLs are rendered only if their host is `cdn.discordapp.com` or `media.discordapp.net`.
-- The page is public: anyone with the URL can read the channel.
+- **Unit + integration** (`bun test`): no Discord, no network. Integration tests run the real `Bun.serve` with a fake source publishing to the hub.
+- **End-to-end** (`e2e/`): posts to a test Discord channel through a webhook and checks the message arrives on the staging `/events`.
+- Write the test first, see it fail, then implement.
 
-## Reliability
+## Environments
 
-- Start command is `bun run backend/server.ts` (not `bun run start`) so SIGTERM reaches the app.
-- SIGTERM handler closes SSE streams and destroys the Discord client.
-- Deployment overlap and draining seconds are set so deploys do not cut clients instantly.
-- `/health` returns 200 only when the Discord gateway is connected. Railway only checks it at deploy time, so the app exits with code 1 if the gateway stays disconnected for more than 5 minutes; the restart policy brings it back.
-- Validate env vars at startup and fail with a clear log line.
+- **staging**: Railway environment, autodeploys `main`, own Discord bot and test channel, "Wait for CI" on.
+- **production**: Railway environment, autodeploys the `production` branch, "Wait for CI" on. Promote by fast-forwarding `production` to a commit that passed E2E on staging.
+- PR environments are off for this service (each would start another bot).
+- Each environment has its own Railway project token for CI.
 
 ## Infrastructure as Code
 

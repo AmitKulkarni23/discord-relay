@@ -203,6 +203,7 @@ The server reads flags once at startup. Changing one in Railway redeploys the se
 | App sleeping | Off |
 | Deployment overlap / draining | 30 s / 30 s |
 | Autodeploy | `main`, with "Wait for CI" |
+| Watch paths | `backend/**`, `frontend/**`, `package.json`, `bun.lock`. Other changes do not deploy. |
 | PR environments | Off |
 | Config | `.railway/railway.ts` (Railway IaC) |
 

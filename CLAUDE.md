@@ -121,7 +121,7 @@ When the user does ask, use the `/playwright-cli` skill (screenshots, clicking, 
 
 ## Specs and Tasks
 
-- **System specs** (`docs/system-specs/`): `architecture.md` (diagrams, components, flows, API, `Msg`, config, limits, Railway settings, scope), `failure-modes.md` (what breaks, how it is handled, support runbook), `decisions.md` (choices, alternatives, when to revisit). Read before any backend or infra change and keep them current. Diagrams are Mermaid.
+- **System specs** (`docs/system-specs/`): `architecture.md` (diagrams, components, flows, API, `Msg`, config, limits, Railway settings, scope), `message-shape.md` (an example `/events` message and what each field means), `failure-modes.md` (what breaks, how it is handled, support runbook), `decisions.md` (choices, alternatives, when to revisit). Read before any backend or infra change and keep them current. Diagrams are Mermaid.
 - **Tasks**: `docs/task-specs/TASK_INDEX.md` lists every task in order. Work on the first task that is not struck through and whose dependencies are done; follow its spec exactly.
 - **When a task is done** (all acceptance criteria met), strike its line through in `docs/task-specs/TASK_INDEX.md` (`~~...~~`) and commit that with the task's last change.
 - Steps marked **asks the user** / **requires user approval** in a spec are hard stops: ask and wait.

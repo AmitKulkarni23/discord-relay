@@ -148,6 +148,8 @@ The `id:` is always the Discord message ID. On reconnect the server ignores `Las
 
 ## Message shape
 
+A real example and a field-by-field table are in `message-shape.md`.
+
 ```ts
 type Attachment = {
   url: string            // Discord CDN URL, signed, expires after ~24 h

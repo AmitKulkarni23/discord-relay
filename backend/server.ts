@@ -1,5 +1,6 @@
 import { createHub, type Hub } from './hub.ts'
 import { log } from './log.ts'
+import { startDiscord } from './sources/discord.ts'
 import type { Msg } from './types.ts'
 
 /** Feature flags, exposed to the browser through GET /config. */
@@ -147,34 +148,55 @@ export function startServer(deps: ServerDeps): { url: URL; stop: () => void } {
 }
 
 /**
- * Entry point: validates config, creates the hub, starts the HTTP server and
- * shuts down cleanly on SIGTERM. Exits with code 1 on invalid config.
+ * Entry point and the only place dependencies are wired: validates config,
+ * creates the hub, starts the HTTP server and the Discord source, and shuts
+ * down cleanly on SIGTERM. Exits with code 1 on invalid config, a failed
+ * login, or a Gateway that stays down past the watchdog limit.
  */
 export function main(): void {
   let config: Config
   try {
     config = loadConfig(process.env)
   } catch (err) {
-    log('config_invalid', { error: err instanceof Error ? err.message : String(err) })
+    log('config_invalid', { error: errorMessage(err) })
     process.exit(1)
   }
 
   const hub = createHub()
+  const discord = startDiscord({
+    token: config.token,
+    channelId: config.channelId,
+    publish: hub.publish,
+    onWatchdogExpired: () => {
+      log('watchdog_expired', { reason: 'Gateway disconnected for more than 5 minutes; exiting so Railway restarts us' })
+      process.exit(1)
+    },
+  })
   const server = startServer({
     port: config.port,
     hub,
     channelId: config.channelId,
     flags: config.flags,
-    // Replaced by the Discord source's connection state in task 004.
-    isDiscordConnected: () => false,
+    isDiscordConnected: discord.isConnected,
   })
   log('server_started', { url: server.url.href })
 
-  process.on('SIGTERM', () => {
+  discord.login.catch(err => {
+    log('discord_login_failed', { error: errorMessage(err) })
+    process.exit(1)
+  })
+
+  process.on('SIGTERM', async () => {
     log('shutdown', { signal: 'SIGTERM' })
     server.stop()
+    await discord.stop()
     process.exit(0)
   })
+}
+
+/** Returns an error's message, or the value as a string. */
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err)
 }
 
 if (import.meta.main) main()

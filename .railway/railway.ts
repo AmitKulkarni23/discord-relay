@@ -3,15 +3,15 @@
  * Railway does not read this file on deploy; apply changes with
  * `railway config plan` then `railway config apply`.
  *
- * Placeholders to fill in: <RAILWAY_PROJECT_NAME>, <GITHUB_OWNER>, <CHANNEL_ID>.
- * DISCORD_TOKEN is set once in Railway as a sealed variable; preserve() keeps it.
+ * DISCORD_TOKEN and CHANNEL_ID are set once in Railway, not in this file.
+ * preserve() keeps their existing values; DISCORD_TOKEN should be a sealed variable.
  */
 import { defineRailway, github, preserve, project, service } from 'railway/iac'
 
 export default defineRailway(() => {
   const relay = service('discord-relay', {
     // checkSuites is Railway's "Wait for CI": deploys wait for GitHub Actions to pass.
-    source: github('<GITHUB_OWNER>/discord-relay', { branch: 'main', checkSuites: true }),
+    source: github('AmitKulkarni23/discord-relay', { branch: 'main', checkSuites: true }),
     deploy: {
       // Run the file directly so SIGTERM reaches the app (a package script would swallow it).
       startCommand: 'bun run backend/server.ts',
@@ -29,12 +29,12 @@ export default defineRailway(() => {
     },
     env: {
       DISCORD_TOKEN: preserve(),
-      CHANNEL_ID: '<CHANNEL_ID>',
+      CHANNEL_ID: preserve(),
       FEATURE_ATTACHMENTS: 'false',
       FEATURE_EDITS_DELETES: 'false',
       DEBUG_PANEL: 'false',
     },
   })
 
-  return project('<RAILWAY_PROJECT_NAME>', { resources: [relay] })
+  return project('DiscordRelay', { resources: [relay] })
 })

@@ -31,10 +31,11 @@ discord-relay/
 ├── .railway/
 │   └── railway.ts         # Railway IaC (service, healthcheck, start command, non-secret vars)
 ├── backend/
-│   ├── server.ts          # Bun.serve: /, /events (SSE), /health, /config
-│   ├── discord.ts         # discord.js client → normalized messages
-│   ├── hub.ts             # ring buffer + publish/subscribe, keyed by channelId
-│   └── types.ts           # Msg type shared with the frontend
+│   ├── server.ts          # entry point: wiring + Bun.serve (/, /events, /health, /config)
+│   ├── hub.ts             # Observer: ring buffer + publish/subscribe, keyed by channelId
+│   ├── types.ts           # Msg type shared with the frontend
+│   └── sources/
+│       └── discord.ts     # discord.js client → normalized messages
 ├── frontend/
 │   ├── index.html
 │   ├── theme.ts           # MUI theme

@@ -8,8 +8,8 @@ DiscordRelay streams messages from one Discord channel to a web page in real tim
 flowchart LR
   D["Discord"] -- "Gateway WebSocket" --> B
   subgraph RW["Railway service (1 replica)"]
-    B["discord.ts<br/>bot + normalize"] -- "publish(msg)" --> H["hub.ts<br/>ring buffer (100) + subscribers"]
-    H -- "subscribe(channelId)" --> S["server.ts<br/>Bun.serve"]
+    B["Discord bot<br/>receive + normalize"] -- "publish(msg)" --> H["Hub<br/>ring buffer (100) + subscribers"]
+    H -- "subscribe(channelId)" --> S["HTTP server<br/>Bun.serve"]
   end
   S -- "page (React + MUI) and SSE /events" --> P["Railway proxy"]
   P --> W1["Browser"]
@@ -20,11 +20,17 @@ flowchart LR
 
 | Component | File | Responsibility |
 |---|---|---|
-| Bot | `backend/discord.ts` | Connects to the Gateway, fetches history at startup, converts discord.js messages to `Msg`, and calls `hub.publish`. It is the only file that imports discord.js. |
-| Hub | `backend/hub.ts` | Holds a ring buffer of 100 messages per channel, dedupes by message ID, and handles publish/subscribe. Everything is keyed by `channelId`. |
-| Server | `backend/server.ts` | Runs `Bun.serve` for the page, `/events`, `/health` and `/config`. Reads env vars and flags once at startup and handles SIGTERM. |
+| Discord bot | `backend/sources/discord.ts` | Connects to the Gateway, fetches history at startup, converts discord.js messages to `Msg`, and calls `publish`. It is the only file that imports discord.js. |
+| Hub | `backend/hub.ts` | Holds a ring buffer of 100 messages per channel, dedupes by message ID, and handles publish/subscribe. Everything is keyed by `channelId`. Created with `createHub()`, so each test gets a fresh instance. |
+| HTTP server | `backend/server.ts` | The entry point. Runs `Bun.serve` for the page, `/events`, `/health` and `/config`, reads env vars and flags once at startup, and handles SIGTERM. It is the only place dependencies are wired: it creates the hub and passes it, the config and the publish function to the bot and the routes. |
 | Types | `backend/types.ts` | `Msg` and `Attachment`, shared with the frontend. |
 | Frontend | `frontend/app.tsx` | React + MUI page. Opens one `EventSource`, keeps up to 500 messages keyed by ID, and shows connection status. |
+
+## Patterns
+
+The hub is the Observer pattern. Subscribers are plain callbacks of type `(m: Msg) => void` rather than classes with an `update()` method, because TypeScript functions are values. Each open `/events` stream subscribes one callback and removes it when the browser disconnects.
+
+Dependencies are passed in as function arguments, with no DI framework. The HTTP server creates the hub and hands each module what it needs, so tests can pass a fresh hub and a fake source instead of a real Discord bot.
 
 ## Flows
 
@@ -35,10 +41,10 @@ The HTTP server starts first so Railway's healthcheck can reach it. `/health` re
 ```mermaid
 sequenceDiagram
   participant R as Railway
-  participant S as server.ts
-  participant B as discord.ts
+  participant S as HTTP server
+  participant B as Discord bot
   participant D as Discord
-  R->>S: bun run backend/server.ts
+  R->>S: start the process
   S->>S: validate env vars (exit 1 if missing)
   S->>S: Bun.serve on PORT
   R->>S: GET /health
@@ -59,9 +65,9 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
   participant D as Discord
-  participant B as discord.ts
-  participant H as hub.ts
-  participant S as server.ts
+  participant B as Discord bot
+  participant H as Hub
+  participant S as HTTP server
   participant W as Browsers
   D->>B: messageCreate
   B->>B: ignore other channels, normalize to Msg
@@ -79,7 +85,7 @@ When `FEATURE_EDITS_DELETES` is on, an edit replaces the buffered message with t
 sequenceDiagram
   participant W as Browser
   participant P as Railway proxy
-  participant S as server.ts
+  participant S as HTTP server
   W->>P: GET /
   P->>S: GET /
   S-->>W: index.html + bundle
@@ -214,6 +220,6 @@ Not built, and described in the README instead:
 
 Supporting more channels means reading `CHANNEL_IDS` as a list and adding `/events?channel=ID`. The hub is already keyed by channel.
 
-Adding another source, such as Slack, means writing a module that calls `hub.publish`. Nothing else changes.
+Relaying another source, such as a Slack channel, means adding `backend/sources/slack.ts`, which calls `publish`. Forwarding messages to Slack instead is one more subscriber: `hub.subscribe(msg => postToSlack(msg))`. Neither change touches the hub or the HTTP server.
 
 Running more replicas means replacing the in-memory hub with a Redis-backed one that keeps the same `publish`/`subscribe` functions, and moving the bot into its own one-replica service (see D6 in `decisions.md`).

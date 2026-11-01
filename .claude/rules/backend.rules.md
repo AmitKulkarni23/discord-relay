@@ -7,8 +7,10 @@ paths:
 
 ## Boundaries
 
-- Only `backend/server.ts` MUST handle HTTP (`Bun.serve`). Only `backend/discord.ts` MUST import discord.js.
-- Messages MUST flow through `hub.publish` / `hub.subscribe`. `discord.ts` and `server.ts` MUST NOT call each other directly.
+- Only `backend/server.ts` MUST handle HTTP (`Bun.serve`). Only `backend/sources/discord.ts` MUST import discord.js.
+- Messages MUST flow through `hub.publish` / `hub.subscribe`. Sources and the HTTP server MUST NOT call each other directly.
+- Dependencies MUST be passed as function arguments and wired only in `server.ts`. Modules MUST NOT import another module's instance; the hub MUST be created with `createHub()`.
+- A new source MUST go in `backend/sources/` and only call `publish`.
 - Everything in the hub MUST be keyed by `channelId`, even with one channel.
 - Env vars MUST be read and validated once at startup. A missing or invalid value MUST exit with a log line naming the variable.
 

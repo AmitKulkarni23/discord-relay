@@ -90,6 +90,6 @@ Revisit if we need to relay a channel we don't moderate.
 
 ## D13. Extensibility through `channelId`
 
-The hub is keyed by `channelId` and exposes one `publish`/`subscribe` seam. More channels become a config change, and Redis can replace the hub behind the same two functions. We did not add source or plugin interfaces, because they would each have one implementation.
+The hub is the Observer pattern, keyed by `channelId`, with one `publish`/`subscribe` seam. More channels become a config change, and Redis can replace the hub behind the same two functions. We did not add source or plugin interfaces, because they would each have one implementation.
 
 Revisit when a second source exists.

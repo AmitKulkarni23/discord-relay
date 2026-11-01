@@ -12,6 +12,10 @@ export default defineRailway(() => {
   const relay = service('discord-relay', {
     // checkSuites is Railway's "Wait for CI": deploys wait for GitHub Actions to pass.
     source: github('AmitKulkarni23/discord-relay', { branch: 'main', checkSuites: true }),
+    build: {
+      // Deploy only when runtime files change; docs, specs, rules and CI edits skip the deploy.
+      watchPatterns: ['backend/**', 'frontend/**', 'package.json', 'bun.lock'],
+    },
     deploy: {
       // Run the file directly so SIGTERM reaches the app (a package script would swallow it).
       startCommand: 'bun run backend/server.ts',

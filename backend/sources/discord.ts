@@ -27,6 +27,8 @@ export type DiscordDeps = {
   token: string
   channelId: string
   publish: (m: Msg) => void
+  /** How many recent messages to load at startup; matches the hub's buffer size. */
+  historyLimit?: number
   /** Called when the Gateway stays disconnected longer than `watchdogMs`. */
   onWatchdogExpired?: () => void
   watchdogMs?: number
@@ -56,6 +58,32 @@ export function toMsg(m: MessageLike): Msg {
  */
 export function isMissingContent(msg: Msg): boolean {
   return msg.content === '' && msg.attachments.length === 0
+}
+
+/** Discord returns at most this many messages per history request. */
+const PAGE_SIZE = 100
+
+/**
+ * Loads the newest `limit` messages, oldest first. `fetchPage(before, n)`
+ * returns up to `n` messages older than `before` (all when undefined), newest
+ * first, as Discord does; this walks back page by page until it has `limit`
+ * or a page comes back short.
+ */
+export async function collectHistory<T extends { id: string }>(
+  fetchPage: (before: string | undefined, limit: number) => Promise<T[]>,
+  limit: number,
+): Promise<T[]> {
+  const out: T[] = []
+  let before: string | undefined
+  while (out.length < limit) {
+    const n = Math.min(PAGE_SIZE, limit - out.length)
+    const page = await fetchPage(before, n)
+    out.push(...page)
+    const oldest = page.at(-1)
+    if (page.length < n || !oldest) break
+    before = oldest.id
+  }
+  return out.reverse()
 }
 
 /**
@@ -92,13 +120,13 @@ export function createWatchdog(opts: {
 }
 
 /**
- * Logs in to the Discord Gateway, publishes the latest 100 messages once ready,
+ * Logs in to the Discord Gateway, publishes the latest `historyLimit` messages once ready,
  * then publishes each new message from `channelId`. Returns the login promise
  * (rejects on a bad token), the connection state for /health, the channel
  * name for /config, and `stop`.
  */
 export function startDiscord(deps: DiscordDeps) {
-  const { token, channelId, publish, onWatchdogExpired = () => {}, watchdogMs = 5 * 60_000 } = deps
+  const { token, channelId, publish, historyLimit = 100, onWatchdogExpired = () => {}, watchdogMs = 5 * 60_000 } = deps
   const client = new Client({
     intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
   })
@@ -130,7 +158,7 @@ export function startDiscord(deps: DiscordDeps) {
     publish(msg)
   }
 
-  /** Publishes the channel's latest 100 messages, oldest first. Logs and continues on failure. */
+  /** Publishes the channel's latest `historyLimit` messages, oldest first. Logs and continues on failure. */
   async function publishHistory(): Promise<void> {
     try {
       const channel = await client.channels.fetch(channelId)
@@ -139,9 +167,12 @@ export function startDiscord(deps: DiscordDeps) {
         return
       }
       if ('name' in channel && typeof channel.name === 'string') channelName = channel.name
-      const messages = await channel.messages.fetch({ limit: 100 })
-      for (const m of [...messages.values()].reverse()) handle(m)
-      log.info('history_loaded', { channelId, count: messages.size })
+      const messages = await collectHistory(
+        async (before, limit) => [...(await channel.messages.fetch({ limit, before })).values()],
+        historyLimit,
+      )
+      for (const m of messages) handle(m)
+      log.info('history_loaded', { channelId, count: messages.length })
     } catch (err) {
       log.error('history_failed', { channelId, error: err instanceof Error ? err.message : String(err) })
     }

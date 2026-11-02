@@ -8,7 +8,7 @@ DiscordRelay streams messages from one Discord channel to a web page in real tim
 flowchart LR
   D["Discord"] -- "Gateway WebSocket" --> B
   subgraph RW["Railway service (1 replica)"]
-    B["Discord bot<br/>receive + normalize"] -- "publish(msg)" --> H["Hub<br/>ring buffer (100) + subscribers"]
+    B["Discord bot<br/>receive + normalize"] -- "publish(msg)" --> H["Hub<br/>ring buffer (BUFFER_SIZE) + subscribers"]
     H -- "subscribe(channelId)" --> S["HTTP server<br/>Bun.serve"]
   end
   S -- "page (React + MUI) and SSE /events" --> P["Railway proxy"]
@@ -52,7 +52,7 @@ sequenceDiagram
   S->>B: start bot
   B->>D: login (Gateway WebSocket)
   D-->>B: ready
-  B->>D: fetch latest 100 messages (REST)
+  B->>D: fetch latest BUFFER_SIZE messages (REST, pages of 100)
   D-->>B: messages, newest first
   B->>B: publish oldest to newest into hub
   R->>S: GET /health
@@ -92,7 +92,7 @@ sequenceDiagram
   W->>S: GET /config
   S-->>W: feature flags + channel name
   W->>S: GET /events
-  S-->>W: full buffer (up to 100 messages)
+  S-->>W: full buffer (up to BUFFER_SIZE messages)
   loop while connected
     S-->>W: new messages as they arrive
     S-->>W: ": ping" every 25 s
@@ -185,8 +185,8 @@ The server reads flags once at startup. Changing one in Railway redeploys the se
 
 | Limit | Value | Why |
 |---|---|---|
-| Server buffer per channel | 100 messages | Keeps memory bounded. It is also the most Discord returns in one history fetch. |
-| History fetched at startup | 100 messages | Matches the buffer. |
+| Server buffer per channel | `BUFFER_SIZE`, default 100, 1 to 500 | Keeps memory bounded. Every reconnect resends the whole buffer, and 500 matches the browser cap. |
+| History fetched at startup | Same as the buffer | Fetched in pages of 100, the most Discord returns per request. |
 | Browser message cap | 500 | Keeps a tab that stays open for days fast. |
 | SSE heartbeat | 25 s | Railway closes requests that send no data for 5 min. |
 | Gateway watchdog | Exit 1 after 5 min disconnected | Railway runs healthchecks only at deploy time. |

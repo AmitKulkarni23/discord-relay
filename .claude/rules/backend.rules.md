@@ -17,8 +17,8 @@ paths:
 ## Messages
 
 - Discord messages MUST be normalized to `Msg` in `discord.ts`. Raw discord.js objects MUST NOT leave that file.
-- The hub ring buffer MUST be fixed-size (100). Unbounded arrays, maps or queues MUST NOT be added.
-- On startup the bot MUST fetch the latest 100 messages to fill the buffer.
+- The hub ring buffer MUST be fixed-size: `BUFFER_SIZE` (1 to 500, default 100). Unbounded arrays, maps or queues MUST NOT be added.
+- On startup the bot MUST fetch the latest `BUFFER_SIZE` messages to fill the buffer, in pages of at most 100 (Discord's limit).
 - The hub MUST drop a message whose ID is already in the buffer (dedupe by Discord message ID).
 - The Discord client MUST request `Guilds`, `GuildMessages` and `MessageContent`. A message with empty content and no attachments MUST log a warning naming the MessageContent intent.
 

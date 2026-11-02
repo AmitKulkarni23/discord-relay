@@ -8,7 +8,7 @@ import type { Msg } from './types.ts'
 export type Flags = { attachments: boolean; editsDeletes: boolean; debugPanel: boolean }
 
 /** Everything the process needs from its environment. */
-export type Config = { token: string; channelId: string; port: number; flags: Flags }
+export type Config = { token: string; channelId: string; port: number; bufferSize: number; flags: Flags }
 
 /** What `startServer` needs; passed in so tests can supply their own. */
 export type ServerDeps = {
@@ -38,10 +38,16 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     throw new Error(`PORT must be a port number, got "${env.PORT}"`)
   }
 
+  const bufferSize = env.BUFFER_SIZE ? Number(env.BUFFER_SIZE) : 100
+  if (!Number.isInteger(bufferSize) || bufferSize < 1 || bufferSize > 500) {
+    throw new Error(`BUFFER_SIZE must be an integer from 1 to 500, got "${env.BUFFER_SIZE}"`)
+  }
+
   return {
     token,
     channelId,
     port,
+    bufferSize,
     flags: {
       attachments: env.FEATURE_ATTACHMENTS === 'true',
       editsDeletes: env.FEATURE_EDITS_DELETES === 'true',
@@ -172,10 +178,11 @@ export function main(): void {
     process.exit(1)
   }
 
-  const hub = createHub()
+  const hub = createHub(config.bufferSize)
   const discord = startDiscord({
     token: config.token,
     channelId: config.channelId,
+    historyLimit: config.bufferSize,
     publish: hub.publish,
     onWatchdogExpired: () => {
       log.error('watchdog_expired', { reason: 'Gateway disconnected for more than 5 minutes; exiting so Railway restarts us' })

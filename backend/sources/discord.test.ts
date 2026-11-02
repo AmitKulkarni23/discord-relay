@@ -1,5 +1,5 @@
 import { describe, expect, it, mock } from 'bun:test'
-import { createWatchdog, isMissingContent, toMsg, type MessageLike } from './discord.ts'
+import { collectHistory, createWatchdog, isMissingContent, toMsg, type MessageLike } from './discord.ts'
 
 /** Builds a realistic discord.js-shaped message; override any field per test. */
 function makeDiscordMessage(overrides: Partial<MessageLike> = {}): MessageLike {
@@ -161,6 +161,57 @@ describe('createWatchdog', () => {
       watchdog.disconnected()
 
       expect(timers.setTimer).toHaveBeenCalledTimes(1)
+    })
+  })
+})
+
+/**
+ * A fake Discord history of `count` messages with increasing snowflake IDs.
+ * Like discord.js, each page comes back newest first and `before` is exclusive.
+ */
+function fakeChannel(count: number) {
+  const ids = Array.from({ length: count }, (_, i) => String(1302000000000000000n + BigInt(i)))
+  const calls: Array<{ before: string | undefined; limit: number }> = []
+  const fetchPage = async (before: string | undefined, limit: number) => {
+    calls.push({ before, limit })
+    const older = before === undefined ? ids : ids.filter(id => BigInt(id) < BigInt(before))
+    return older.slice(-limit).reverse().map(id => ({ id }))
+  }
+  return { ids, calls, fetchPage }
+}
+
+describe('collectHistory', () => {
+  describe('when the limit fits in one page', () => {
+    it('should make one request and return messages oldest first when the limit is 100 or less', async () => {
+      const ch = fakeChannel(150)
+
+      const got = await collectHistory(ch.fetchPage, 40)
+
+      expect(ch.calls).toEqual([{ before: undefined, limit: 40 }])
+      expect(got.map(m => m.id)).toEqual(ch.ids.slice(-40))
+    })
+  })
+
+  describe('when the limit spans several pages', () => {
+    it('should page back with before and return the newest messages oldest first when the limit is 250', async () => {
+      const ch = fakeChannel(400)
+
+      const got = await collectHistory(ch.fetchPage, 250)
+
+      expect(ch.calls.map(c => c.limit)).toEqual([100, 100, 50])
+      expect(ch.calls[1]?.before).toBe(ch.ids[300])
+      expect(got.map(m => m.id)).toEqual(ch.ids.slice(-250))
+    })
+  })
+
+  describe('when the channel has fewer messages than the limit', () => {
+    it('should stop after a short page when the channel runs out', async () => {
+      const ch = fakeChannel(130)
+
+      const got = await collectHistory(ch.fetchPage, 500)
+
+      expect(ch.calls).toHaveLength(2)
+      expect(got.map(m => m.id)).toEqual(ch.ids)
     })
   })
 })

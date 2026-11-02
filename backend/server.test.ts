@@ -95,6 +95,22 @@ describe('loadConfig', () => {
     })
   })
 
+  describe('when BUFFER_SIZE is set or unset', () => {
+    it('should default to 100 when BUFFER_SIZE is unset', () => {
+      expect(loadConfig(VALID_ENV).bufferSize).toBe(100)
+    })
+
+    it('should use the value when BUFFER_SIZE is an integer from 1 to 500', () => {
+      expect(loadConfig({ ...VALID_ENV, BUFFER_SIZE: '250' }).bufferSize).toBe(250)
+    })
+
+    it('should throw naming BUFFER_SIZE when it is out of range or not an integer', () => {
+      for (const bad of ['0', '501', 'abc', '1.5']) {
+        expect(() => loadConfig({ ...VALID_ENV, BUFFER_SIZE: bad })).toThrow('BUFFER_SIZE')
+      }
+    })
+  })
+
   describe('when feature flags are set', () => {
     it('should enable only the flags whose value is "true" when some are set', () => {
       const { flags } = loadConfig({ ...VALID_ENV, FEATURE_ATTACHMENTS: 'true', DEBUG_PANEL: 'yes' })

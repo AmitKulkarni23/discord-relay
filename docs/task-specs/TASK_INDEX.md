@@ -8,10 +8,10 @@ System context lives in `docs/system-specs/` (`architecture.md`, `failure-modes.
 - ~~[TASK-002: Message types and the hub](002-types-and-hub.md) · depends on: 001~~
 - ~~[TASK-003: HTTP server and SSE stream](003-http-server.md) · depends on: 002~~
 - ~~[TASK-004: Discord bot source](004-discord-source.md) · depends on: 002, 003~~
-- [TASK-005: Railway deployment as code](005-railway-deploy.md) · depends on: 004
-- [TASK-006: React + MUI live feed page](006-frontend.md) · depends on: 003
+- ~~[TASK-005: Railway deployment as code](005-railway-deploy.md) · depends on: 004~~
+- ~~[TASK-006: React + MUI live feed page](006-frontend.md) · depends on: 003~~
 - ~~[TASK-007: Buffer size as a Railway variable](007-buffer-size.md) · depends on: 004~~
 - [TASK-008: Multiple channels](008-multiple-channels.md) · depends on: 006, 007
-- [TASK-009: Attachments](009-attachments.md) · depends on: 006
+- ~~[TASK-009: Attachments](009-attachments.md) · depends on: 006~~
 
 Not planned yet: the `FEATURE_EDITS_DELETES` and `DEBUG_PANEL` flags, and the rest of `docs/todo.md`.

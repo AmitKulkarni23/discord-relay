@@ -14,4 +14,4 @@ System context lives in `docs/system-specs/` (`architecture.md`, `failure-modes.
 - [TASK-008: Multiple channels](008-multiple-channels.md) · depends on: 006, 007
 - ~~[TASK-009: Attachments](009-attachments.md) · depends on: 006~~
 
-Not planned yet: the `FEATURE_EDITS_DELETES` and `DEBUG_PANEL` flags, and the rest of `docs/todo.md`.
+Not planned yet: everything in `docs/todo.md` (attachment follow-ups, the `edits-deletes` and `debug-panel` flags, load testing, dashboards and alarms).

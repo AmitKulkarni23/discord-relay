@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it } from 'bun:test'
+import net from 'node:net'
 import { createHub, type Hub } from './hub.ts'
 import type { Flags } from './flags.ts'
-import { formatEvent, startServer } from './server.ts'
+import { formatEvent, MAX_CONNECTIONS_PER_IP, startServer } from './server.ts'
 import type { Msg } from './types.ts'
 
 const CHANNEL = '1301000000000000001'
@@ -30,9 +31,9 @@ async function waitFor(cond: () => boolean, ms = 1000): Promise<void> {
 }
 
 /** Opens /events and returns helpers to read the stream as text. */
-async function openEvents(base: URL, path = '/events') {
+async function openEvents(base: URL, path = '/events', headers: Record<string, string> = {}) {
   const abort = new AbortController()
-  const res = await fetch(new URL(path, base), { signal: abort.signal })
+  const res = await fetch(new URL(path, base), { signal: abort.signal, headers })
   if (!res.body) throw new Error('no response body')
   const reader = res.body.getReader()
   const decoder = new TextDecoder()
@@ -172,6 +173,107 @@ describe('server', () => {
 
       await waitFor(() => hub.subscriberCount() === 0)
       expect(hub.subscriberCount()).toBe(0)
+    })
+  })
+
+  describe('when one IP opens many streams', () => {
+    /** Opens /events as `ip`, the way Railway's edge forwards it. */
+    const openAs = (url: URL, ip: string) => openEvents(url, '/events', { 'X-Forwarded-For': ip })
+    const fillCap = async (url: URL, ip: string) => {
+      const opened = []
+      for (let i = 0; i < MAX_CONNECTIONS_PER_IP; i++) opened.push(await openAs(url, ip))
+      return opened
+    }
+
+    it('should return 429 when the IP is past the cap, and leave other IPs alone', async () => {
+      const hub = createHub()
+      const { url } = start(hub)
+      await fillCap(url, '203.0.113.7')
+
+      const rejected = await openAs(url, '203.0.113.7')
+      const other = await openAs(url, '203.0.113.8')
+
+      expect(rejected.res.status).toBe(429)
+      expect(other.res.status).toBe(200)
+      expect(hub.subscriberCount()).toBe(MAX_CONNECTIONS_PER_IP + 1)
+    })
+
+    it('should count by the last X-Forwarded-For entry when a client prepends its own', async () => {
+      const { url } = start(createHub())
+      await fillCap(url, '203.0.113.7')
+
+      const spoofed = await openAs(url, '198.51.100.1, 203.0.113.7')
+
+      expect(spoofed.res.status).toBe(429)
+    })
+
+    it('should count by the socket address when there is no X-Forwarded-For header', async () => {
+      const { url } = start(createHub())
+      for (let i = 0; i < MAX_CONNECTIONS_PER_IP; i++) await openEvents(url)
+
+      const rejected = await openEvents(url)
+
+      expect(rejected.res.status).toBe(429)
+    })
+
+    it('should free the slot when a stream disconnects', async () => {
+      const hub = createHub()
+      const { url } = start(hub)
+      const opened = await fillCap(url, '203.0.113.7')
+
+      opened[0]?.abort()
+      await waitFor(() => hub.subscriberCount() === MAX_CONNECTIONS_PER_IP - 1)
+      const reopened = await openAs(url, '203.0.113.7')
+
+      expect(reopened.res.status).toBe(200)
+    })
+  })
+
+  describe('when a client stops reading', () => {
+    /** Opens /events over a raw socket that never reads, like a stalled browser. */
+    async function openStalled(url: URL, ip: string): Promise<net.Socket> {
+      const sock = net.connect(Number(url.port), url.hostname)
+      await new Promise<void>(resolve => sock.once('connect', () => resolve()))
+      sock.on('error', () => {})
+      sock.write(`GET /events HTTP/1.1\r\nHost: x\r\nX-Forwarded-For: ${ip}\r\n\r\n`)
+      sock.pause()
+      stops.push(() => sock.destroy())
+      return sock
+    }
+
+    it('should drop it, free its slot and keep other readers when it falls too far behind', async () => {
+      const hub = createHub()
+      const { url } = start(hub)
+      await openStalled(url, '203.0.113.7')
+      const reader = await openEvents(url)
+      await waitFor(() => hub.subscriberCount() === 2)
+
+      // Socket buffers absorb the first few MB, so publish until the stalled stream is over its limit.
+      const body = 'x'.repeat(64 * 1024)
+      let last = ''
+      for (let i = 0; i < 1000 && hub.subscriberCount() === 2; i++) {
+        last = `13020000000${String(1000000 + i)}0`
+        hub.publish(makeMsg(last, body))
+        await reader.readUntil(t => t.includes(`id: ${last}`))
+      }
+
+      expect(hub.subscriberCount()).toBe(1)
+      const again = await openEvents(url, '/events', { 'X-Forwarded-For': '203.0.113.7' })
+      expect(again.res.status).toBe(200)
+    }, 20_000)
+
+    it('should keep the client when its replay is larger than the limit', async () => {
+      const hub = createHub()
+      const body = 'x'.repeat(300 * 1024)
+      for (let i = 1; i <= 5; i++) hub.publish(makeMsg(`130200000000000000${i}`, body))
+      const { url } = start(hub)
+
+      const events = await openEvents(url)
+      await events.readUntil(t => t.includes('id: 1302000000000000005'))
+      hub.publish(makeMsg('1302000000000000006', 'after the replay'))
+
+      await events.readUntil(t => t.includes('after the replay'))
+      expect(hub.subscriberCount()).toBe(1)
     })
   })
 

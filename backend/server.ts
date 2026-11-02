@@ -21,9 +21,26 @@ export type ServerDeps = {
   pingMs?: number
 }
 
+/** Open /events streams allowed per client IP; past this, /events returns 429. */
+export const MAX_CONNECTIONS_PER_IP = 20
+
+/** Bytes a stream may have queued before its client counts as stalled and is dropped. */
+const MAX_QUEUED_BYTES = 1024 * 1024
+
 /** Formats a message as one SSE event whose `id:` is the Discord message ID. */
 export function formatEvent(msg: Msg): string {
   return `id: ${msg.id}\ndata: ${JSON.stringify(msg)}\n\n`
+}
+
+/**
+ * Returns the IP to count a connection against. On Railway the socket address is the proxy's,
+ * so the client comes from X-Forwarded-For. That is trustworthy because Railway's proxy is the
+ * only ingress (this service has no TCP proxy). The last entry is the one the proxy wrote, so a
+ * client cannot spoof it by sending the header itself. Without it (local runs) the socket address is used.
+ */
+function clientIp(req: Request, server: Bun.Server<undefined>): string {
+  const forwarded = req.headers.get('x-forwarded-for')?.split(',').at(-1)?.trim()
+  return forwarded || (server.requestIP(req)?.address ?? 'unknown')
 }
 
 /**
@@ -40,16 +57,26 @@ export function startServer(deps: ServerDeps): { url: URL; stop: () => void } {
   const encoder = new TextEncoder()
   /** One close function per open /events stream, used by `stop`. */
   const openStreams = new Set<() => void>()
+  /** Open /events streams per client IP. An entry is removed at zero, so this stays bounded by open streams. */
+  const connectionsByIp = new Map<string, number>()
 
   /**
    * Streams one channel's buffered messages, then each new one, with a ping
    * every `pingMs`. The channel comes from `?channel=` (untrusted, so only a
    * configured ID is accepted) or defaults to the first configured channel.
-   * Unsubscribes when the browser disconnects or the server stops.
+   * Unsubscribes when the browser disconnects or the server stops. Returns 429
+   * past the per-IP cap, and drops a client that stops reading.
    */
   function events(req: Request, server: Bun.Server<undefined>): Response {
     const channelId = new URL(req.url).searchParams.get('channel') ?? defaultChannel
     if (!channelIds.includes(channelId)) return new Response('Unknown channel', { status: 404 })
+    const ip = clientIp(req, server)
+    const connections = connectionsByIp.get(ip) ?? 0
+    if (connections >= MAX_CONNECTIONS_PER_IP) {
+      log.debug('client_rejected', { reason: 'too many connections from one IP' })
+      return new Response('Too many connections', { status: 429, headers: { 'Retry-After': '30' } })
+    }
+    connectionsByIp.set(ip, connections + 1)
     // Bun closes connections idle for 10 s by default; this stream must stay open.
     server.timeout(req, 0)
     let cleanup = () => {}
@@ -57,16 +84,26 @@ export function startServer(deps: ServerDeps): { url: URL; stop: () => void } {
     const stream = new ReadableStream<Uint8Array>({
       start(controller) {
         // A write can throw if the browser went away before abort fired; treat that as a disconnect.
-        const write = (text: string) => {
+        const send = (text: string) => {
           try {
             controller.enqueue(encoder.encode(text))
           } catch {
             cleanup()
           }
         }
+        // Live writes only: the replay is already bounded by the buffer and can exceed the limit on its own.
+        const write = (text: string) => {
+          if ((controller.desiredSize ?? 0) >= 0) return send(text)
+          log.warn('client_dropped', { reason: 'stopped reading', limitBytes: MAX_QUEUED_BYTES })
+          cleanup()
+          // error() frees the queue, where close() would keep it until the client read it all.
+          controller.error(new Error('client stopped reading'))
+          // Bun keeps the socket open for a client that is not reading until it times out.
+          server.timeout(req, 1)
+        }
         // Send something at once so headers flush even when the buffer is empty.
-        write(': connected\n\n')
-        for (const m of hub.recent(channelId)) write(formatEvent(m))
+        send(': connected\n\n')
+        for (const m of hub.recent(channelId)) send(formatEvent(m))
         const unsubscribe = hub.subscribe(channelId, m => write(formatEvent(m)))
         const ping = setInterval(() => write(': ping\n\n'), pingMs)
 
@@ -77,6 +114,9 @@ export function startServer(deps: ServerDeps): { url: URL; stop: () => void } {
           unsubscribe()
           clearInterval(ping)
           openStreams.delete(close)
+          const left = (connectionsByIp.get(ip) ?? 1) - 1
+          if (left > 0) connectionsByIp.set(ip, left)
+          else connectionsByIp.delete(ip)
           log.debug('client_disconnected', { clients: hub.subscriberCount() })
         }
         const close = () => {
@@ -91,7 +131,7 @@ export function startServer(deps: ServerDeps): { url: URL; stop: () => void } {
       cancel() {
         cleanup()
       },
-    })
+    }, new ByteLengthQueuingStrategy({ highWaterMark: MAX_QUEUED_BYTES }))
 
     return new Response(stream, {
       headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' },

@@ -7,12 +7,14 @@ import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
 import CssBaseline from '@mui/material/CssBaseline'
 import Divider from '@mui/material/Divider'
+import Tab from '@mui/material/Tab'
+import Tabs from '@mui/material/Tabs'
 import SvgIcon from '@mui/material/SvgIcon'
 import Toolbar from '@mui/material/Toolbar'
 import Typography from '@mui/material/Typography'
 import { alpha, keyframes, ThemeProvider } from '@mui/material/styles'
-import type { Msg } from '../backend/types.ts'
-import { addMsg, buildRows, compareIds, isDiscordCdn, parseMsg, sortMsgs } from './feed.ts'
+import type { ChannelInfo, Msg } from '../backend/types.ts'
+import { addMsg, buildRows, compareIds, isDiscordCdn, parseConfig, parseMsg, sortMsgs } from './feed.ts'
 import { theme } from './theme.ts'
 
 /** The browser's view of the /events stream. */
@@ -49,9 +51,9 @@ function isAtBottom(): boolean {
   return el.scrollHeight - (window.scrollY + window.innerHeight) <= BOTTOM_SLACK
 }
 
-/** Reads the channel name from GET /config, which is untrusted JSON. */
-function readChannelName(v: unknown): string | null {
-  return typeof v === 'object' && v !== null && 'channelName' in v && typeof v.channelName === 'string' ? v.channelName : null
+/** `# name`, or the bare ID while the bot has not loaded the channel yet. */
+function channelLabel(c: ChannelInfo): string {
+  return `# ${c.name ?? c.id}`
 }
 
 const STATUS_LABEL: Record<Status, string> = { connecting: 'Connecting', live: 'Live', reconnecting: 'Reconnecting' }
@@ -72,21 +74,41 @@ function StatusChip({ status }: { status: Status }): ReactElement {
   )
 }
 
-/** Sticky top bar: product name, channel, connection state. */
-function TopBar({ channelName, status }: { channelName: string | null; status: Status }): ReactElement {
+type TopBarProps = { channels: ChannelInfo[]; activeId: string | null; onSelect: (id: string) => void; status: Status }
+
+/** Sticky top bar: product name, the channel (tabs when there are several), connection state. */
+function TopBar({ channels, activeId, onSelect, status }: TopBarProps): ReactElement {
+  const active = channels.find(c => c.id === activeId)
   return (
     <AppBar position="sticky" elevation={0} sx={{ bgcolor: 'background.default', borderBottom: 1, borderColor: 'divider', backgroundImage: 'none' }}>
       <Toolbar sx={{ minHeight: { xs: 56 }, px: { xs: 2, sm: 3 }, gap: 1.5 }}>
-        <Typography component="h1" variant="subtitle2" sx={{ fontSize: 15, color: 'text.primary' }}>
+        <Typography component="h1" variant="subtitle2" sx={{ fontSize: 15, color: 'text.primary', flexShrink: 0 }}>
           DiscordRelay
         </Typography>
-        {channelName ? (
-          <>
-            <Divider orientation="vertical" flexItem sx={{ my: 2, display: { xs: 'none', sm: 'block' } }} />
-            <Typography variant="body2" noWrap sx={{ color: 'text.secondary', display: { xs: 'none', sm: 'block' } }}>
-              # {channelName}
-            </Typography>
-          </>
+        <Divider orientation="vertical" flexItem sx={{ my: 2, display: channels.length > 1 || active ? { xs: 'none', sm: 'block' } : 'none' }} />
+        {channels.length > 1 ? (
+          <Tabs
+            value={activeId ?? false}
+            onChange={(_, id: string) => onSelect(id)}
+            variant="scrollable"
+            scrollButtons={false}
+            aria-label="Channels"
+            sx={{ minHeight: 56, flex: 1, minWidth: 0, '& .MuiTabs-indicator': { height: 2 } }}
+          >
+            {channels.map(c => (
+              <Tab
+                key={c.id}
+                value={c.id}
+                label={channelLabel(c)}
+                disableRipple
+                sx={{ minHeight: 56, minWidth: 0, px: 1.5, textTransform: 'none', fontSize: 14, fontWeight: 500, color: 'text.secondary', '&.Mui-selected': { color: 'text.primary' } }}
+              />
+            ))}
+          </Tabs>
+        ) : active ? (
+          <Typography variant="body2" noWrap sx={{ color: 'text.secondary', display: { xs: 'none', sm: 'block' } }}>
+            {channelLabel(active)}
+          </Typography>
         ) : null}
         <Box sx={{ ml: 'auto' }}>
           <StatusChip status={status} />
@@ -248,7 +270,9 @@ function NewMessagesPill({ count, onClick }: { count: number; onClick: () => voi
 function App(): ReactElement {
   const [msgs, setMsgs] = useState<Map<string, Msg>>(() => new Map())
   const [status, setStatus] = useState<Status>('connecting')
-  const [channelName, setChannelName] = useState<string | null>(null)
+  const [channels, setChannels] = useState<ChannelInfo[]>([])
+  /** The channel picked in the URL or the tabs; null means the server's default. */
+  const [selected, setSelected] = useState<string | null>(() => new URLSearchParams(window.location.search).get('channel'))
   /** Newest message ID the reader has seen at the bottom of the page. */
   const [seenId, setSeenId] = useState<string | null>(null)
   const atBottom = useRef(true)
@@ -260,7 +284,19 @@ function App(): ReactElement {
   newestRef.current = newestId
   const unseen = seenId === null ? 0 : sorted.filter(m => compareIds(m.id, seenId) > 0).length
 
+  // Until /config answers, trust the URL; after, an unknown ID falls back to the default channel.
+  const streamChannel = channels.length === 0 || channels.some(c => c.id === selected) ? selected : null
+  const activeId = streamChannel ?? channels[0]?.id ?? null
+  const active = channels.find(c => c.id === activeId)
+  const channelName = active ? (active.name ?? active.id) : null
+
+  // One stream per selected channel: switching closes the old stream and starts a fresh list.
   useEffect(() => {
+    setMsgs(new Map())
+    setStatus('connecting')
+    setSeenId(null)
+    atBottom.current = true
+    const src = streamChannel ? `/events?channel=${encodeURIComponent(streamChannel)}` : '/events'
     let es: EventSource | undefined
     let retry: ReturnType<typeof setTimeout> | undefined
     let delay = 1000
@@ -269,7 +305,7 @@ function App(): ReactElement {
     // EventSource retries on its own after a dropped stream, but gives up for
     // good on an HTTP error (e.g. a 502 mid-deploy); then we reconnect ourselves.
     const connect = (): void => {
-      es = new EventSource('/events')
+      es = new EventSource(src)
       es.onopen = () => {
         delay = 1000
         setStatus('live')
@@ -293,14 +329,22 @@ function App(): ReactElement {
       clearTimeout(retry)
       es?.close()
     }
-  }, [])
+  }, [streamChannel])
 
   useEffect(() => {
     fetch('/config')
       .then(res => res.json())
-      .then((v: unknown) => setChannelName(readChannelName(v)))
-      .catch(() => setChannelName(null))
+      .then((v: unknown) => setChannels(parseConfig(v).channels))
+      .catch(() => setChannels([]))
   }, [])
+
+  const selectChannel = (id: string): void => {
+    if (id === activeId) return
+    setSelected(id)
+    const url = new URL(window.location.href)
+    url.searchParams.set('channel', id)
+    window.history.replaceState(null, '', url)
+  }
 
   useEffect(() => {
     document.title = channelName ? `#${channelName} · DiscordRelay` : 'DiscordRelay'
@@ -330,7 +374,7 @@ function App(): ReactElement {
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
-      <TopBar channelName={channelName} status={status} />
+      <TopBar channels={channels} activeId={activeId} onSelect={selectChannel} status={status} />
       <Box
         component="main"
         sx={{ maxWidth: 792, mx: 'auto', px: { xs: 1, sm: 2 }, pt: 1, pb: 10, minHeight: 'calc(100dvh - 57px)', display: 'flex', flexDirection: 'column' }}

@@ -17,7 +17,7 @@ Relay several Discord channels from the one bot and service, with a channel swit
 
 ## Acceptance criteria
 
-- [ ] Tests: config parsing (one, several, duplicates, invalid), `/events` default channel, explicit channel, unknown channel 404, `/config` shape, `/health` totals.
-- [ ] `architecture.md`, `message-shape.md` (if touched), `CLAUDE.md` env vars updated.
-- [ ] Typecheck and `bun test` pass.
+- [x] Tests: config parsing (one, several, duplicates, invalid), `/events` default channel, explicit channel, unknown channel 404, `/config` shape, `/health` totals.
+- [x] `architecture.md`, `message-shape.md` (if touched), `CLAUDE.md` env vars updated.
+- [x] Typecheck and `bun test` pass.
 - [ ] User adds the second channel ID in Railway and checks the switcher (**asks the user**).

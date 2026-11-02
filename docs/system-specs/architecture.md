@@ -90,7 +90,7 @@ sequenceDiagram
   P->>S: GET /
   S-->>W: index.html + bundle
   W->>S: GET /config
-  S-->>W: feature flags + channel name
+  S-->>W: feature flags + channels
   W->>S: GET /events
   S-->>W: full buffer (up to BUFFER_SIZE messages)
   loop while connected
@@ -125,8 +125,8 @@ sequenceDiagram
 | Route | Response |
 |---|---|
 | `GET /` | The React page. Bun bundles `frontend/` from the HTML import; `NODE_ENV=production` makes it a minified build with no hot reload. |
-| `GET /events` | `text/event-stream`. Sends the buffer, then live events, with `: ping` every 25 s. |
-| `GET /config` | `{ "attachments": bool, "editsDeletes": bool, "debugPanel": bool, "channelName": string \| null }`. `channelName` is null until the bot has loaded the channel at startup. |
+| `GET /events?channel=<id>` | `text/event-stream` for one channel. Sends its buffer, then live events, with `: ping` every 25 s. No `channel` means the first configured channel; an ID that is not configured returns 404. |
+| `GET /config` | `{ "attachments": bool, "editsDeletes": bool, "debugPanel": bool, "channels": [{ "id": string, "name": string \| null }] }`. A `name` is null until the bot has loaded that channel at startup. |
 | `GET /health` | `200` when the Gateway is connected, `503` otherwise. Body: `{ "discord": "connected" \| "disconnected", "clients": n, "buffered": n, "lastEventAt": iso \| null, "uptimeSec": n }` |
 
 SSE events (the stream opens with a `: connected` comment so headers reach the browser even when the buffer is empty):
@@ -173,7 +173,8 @@ type Msg = {
 | Variable | Required | Purpose |
 |---|---|---|
 | `DISCORD_TOKEN` | yes | Bot token, stored as a sealed Railway variable. |
-| `CHANNEL_ID` | yes | Channel to relay. |
+| `CHANNEL_ID` | yes | Channel(s) to relay: one ID, or several comma-separated. |
+| `BUFFER_SIZE` | no (`100`) | Messages kept per channel and loaded at startup, 1 to 500. |
 | `PORT` | injected | Set by Railway. |
 | `FEATURE_ATTACHMENTS` | no (`false`) | Render images, video and file links. |
 | `FEATURE_EDITS_DELETES` | no (`false`) | Update edited and deleted messages live. |
@@ -211,19 +212,20 @@ The server reads flags once at startup. Changing one in Railway redeploys the se
 
 Built:
 
-- Live relay of one channel, with history at startup, reconnect and dedupe
-- `FEATURE_ATTACHMENTS`, `FEATURE_EDITS_DELETES` and `DEBUG_PANEL`
+- Live relay of one or more channels, with history at startup, reconnect and dedupe, and a tab per channel on the page
+- `FEATURE_ATTACHMENTS`
+
+Planned (flags exist, nothing reads them yet): `FEATURE_EDITS_DELETES` and `DEBUG_PANEL`.
 
 Not built, and described in the README instead:
 
 - A moderation filter. Discord AutoMod comes first; if that is not enough, a `filter()` runs before `hub.publish`.
 - Loading older history
-- Multiple channels in the UI, although the hub already keys by `channelId`
 - Replicas, Redis, Postgres and a staging environment
 
 ## Extending
 
-Supporting more channels means reading `CHANNEL_IDS` as a list and adding `/events?channel=ID`. The hub is already keyed by channel.
+Adding a channel is a config change: append its ID to `CHANNEL_ID` in Railway. The bot needs View Channel and Read Message History on it.
 
 Relaying another source, such as a Slack channel, means adding `backend/sources/slack.ts`, which calls `publish`. Forwarding messages to Slack instead is one more subscriber: `hub.subscribe(msg => postToSlack(msg))`. Neither change touches the hub or the HTTP server.
 

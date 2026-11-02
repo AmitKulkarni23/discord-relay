@@ -1,6 +1,6 @@
 import { Client, Events, GatewayIntentBits } from 'discord.js'
 import { log } from '../log.ts'
-import type { Msg } from '../types.ts'
+import type { ChannelInfo, Msg } from '../types.ts'
 
 /**
  * The fields of a discord.js `Message` that `toMsg` reads. A real `Message`
@@ -25,7 +25,8 @@ export type MessageLike = {
 /** What `startDiscord` needs; passed in so the wiring stays in server.ts. */
 export type DiscordDeps = {
   token: string
-  channelId: string
+  /** Every channel to relay. */
+  channelIds: string[]
   publish: (m: Msg) => void
   /** How many recent messages to load at startup; matches the hub's buffer size. */
   historyLimit?: number
@@ -121,18 +122,20 @@ export function createWatchdog(opts: {
 
 /**
  * Logs in to the Discord Gateway, publishes the latest `historyLimit` messages once ready,
- * then publishes each new message from `channelId`. Returns the login promise
+ * then publishes each new message from any of `channelIds`. Returns the login promise
  * (rejects on a bad token), the connection state for /health, the channel
- * name for /config, and `stop`.
+ * names for /config, and `stop`.
  */
 export function startDiscord(deps: DiscordDeps) {
-  const { token, channelId, publish, historyLimit = 100, onWatchdogExpired = () => {}, watchdogMs = 5 * 60_000 } = deps
+  const { token, channelIds, publish, historyLimit = 100, onWatchdogExpired = () => {}, watchdogMs = 5 * 60_000 } = deps
   const client = new Client({
     intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
   })
   const watchdog = createWatchdog({ limitMs: watchdogMs, onExpire: onWatchdogExpired })
   let connected = false
-  let channelName: string | null = null
+  const wanted = new Set(channelIds)
+  /** Channel names, filled in as each channel's history loads. */
+  const names = new Map<string, string>()
 
   /** Records a Gateway state change for /health and the watchdog. */
   function setConnected(next: boolean, event: string): void {
@@ -158,15 +161,15 @@ export function startDiscord(deps: DiscordDeps) {
     publish(msg)
   }
 
-  /** Publishes the channel's latest `historyLimit` messages, oldest first. Logs and continues on failure. */
-  async function publishHistory(): Promise<void> {
+  /** Publishes one channel's latest `historyLimit` messages, oldest first. Logs and continues on failure. */
+  async function publishHistory(channelId: string): Promise<void> {
     try {
       const channel = await client.channels.fetch(channelId)
       if (!channel || !channel.isTextBased()) {
         log.error('history_failed', { channelId, reason: 'channel not found or not a text channel' })
         return
       }
-      if ('name' in channel && typeof channel.name === 'string') channelName = channel.name
+      if ('name' in channel && typeof channel.name === 'string') names.set(channelId, channel.name)
       const messages = await collectHistory(
         async (before, limit) => [...(await channel.messages.fetch({ limit, before })).values()],
         historyLimit,
@@ -185,9 +188,11 @@ export function startDiscord(deps: DiscordDeps) {
   // Without an 'error' listener, an emitted client error would throw and crash the process.
   client.on(Events.Error, err => log.error('discord_client_error', { error: err.message }))
   client.on(Events.Warn, info => log.warn('discord_client_warning', { info }))
-  client.once(Events.ClientReady, () => void publishHistory())
+  client.once(Events.ClientReady, async () => {
+    for (const id of channelIds) await publishHistory(id)
+  })
   client.on(Events.MessageCreate, m => {
-    if (m.channelId === channelId) handle(m)
+    if (wanted.has(m.channelId)) handle(m)
   })
 
   // Start the countdown now so a login that never becomes ready also restarts the process.
@@ -198,8 +203,8 @@ export function startDiscord(deps: DiscordDeps) {
     login: client.login(token),
     /** True while the Gateway connection is up. */
     isConnected: (): boolean => connected,
-    /** The channel's name once history has loaded, otherwise null. */
-    channelName: (): string | null => channelName,
+    /** Every relayed channel, with its name once its history has loaded. */
+    channels: (): ChannelInfo[] => channelIds.map(id => ({ id, name: names.get(id) ?? null })),
     /** Cancels the watchdog and closes the Gateway connection. */
     async stop(): Promise<void> {
       watchdog.connected()

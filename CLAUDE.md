@@ -70,7 +70,7 @@ Railway service variables, read once in `backend/server.ts` and exposed to the b
 ## Environment Variables
 
 - `DISCORD_TOKEN`: bot token. Secret: set as a sealed Railway variable, never in Git, `.railway/railway.ts` or chat.
-- `CHANNEL_ID`: the Discord channel to relay.
+- `CHANNEL_ID`: the Discord channel(s) to relay, comma-separated for more than one (`123,456`). One bot and one service relay them all; the page shows a tab per channel.
 - `BUFFER_SIZE`: messages kept per channel and loaded at startup (1 to 500, default 100).
 - `PORT`: injected by Railway.
 

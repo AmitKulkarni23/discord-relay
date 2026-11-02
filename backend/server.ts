@@ -2,23 +2,27 @@ import index from '../frontend/index.html'
 import { createHub, type Hub } from './hub.ts'
 import { log } from './log.ts'
 import { startDiscord } from './sources/discord.ts'
-import type { Msg } from './types.ts'
+import type { ChannelInfo, Msg } from './types.ts'
 
 /** Feature flags, exposed to the browser through GET /config. */
 export type Flags = { attachments: boolean; editsDeletes: boolean; debugPanel: boolean }
 
 /** Everything the process needs from its environment. */
-export type Config = { token: string; channelId: string; port: number; bufferSize: number; flags: Flags }
+export type Config = { token: string; channelIds: string[]; port: number; bufferSize: number; flags: Flags }
+
+/** Discord IDs (snowflakes) are 17 to 20 digits. */
+const SNOWFLAKE = /^\d{17,20}$/
 
 /** What `startServer` needs; passed in so tests can supply their own. */
 export type ServerDeps = {
   port: number
   hub: Hub
-  channelId: string
+  /** The channels this server relays; the first is the default for /events. */
+  channelIds: string[]
   flags: Flags
   isDiscordConnected: () => boolean
-  /** The channel's display name, or null until the bot has loaded the channel. */
-  channelName: () => string | null
+  /** Every relayed channel with its display name once loaded. */
+  channels: () => ChannelInfo[]
   /** Heartbeat interval for /events. Railway closes streams idle for 5 minutes. */
   pingMs?: number
 }
@@ -30,8 +34,13 @@ export type ServerDeps = {
 export function loadConfig(env: Record<string, string | undefined>): Config {
   const token = env.DISCORD_TOKEN
   if (!token) throw new Error('DISCORD_TOKEN is required')
-  const channelId = env.CHANNEL_ID
-  if (!channelId) throw new Error('CHANNEL_ID is required')
+  if (!env.CHANNEL_ID) throw new Error('CHANNEL_ID is required')
+  const entries = env.CHANNEL_ID.split(',').map(s => s.trim())
+  const invalid = entries.find(id => !SNOWFLAKE.test(id))
+  if (invalid !== undefined) {
+    throw new Error(`CHANNEL_ID must be one or more comma-separated Discord channel IDs, got "${invalid}"`)
+  }
+  const channelIds = [...new Set(entries)]
 
   const port = env.PORT ? Number(env.PORT) : 3000
   if (!Number.isInteger(port) || port <= 0 || port > 65535) {
@@ -45,7 +54,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
 
   return {
     token,
-    channelId,
+    channelIds,
     port,
     bufferSize,
     flags: {
@@ -67,17 +76,24 @@ export function formatEvent(msg: Msg): string {
  * closes every open stream and stops listening.
  */
 export function startServer(deps: ServerDeps): { url: URL; stop: () => void } {
-  const { hub, channelId, flags, isDiscordConnected, channelName, pingMs = 25_000 } = deps
+  const { hub, channelIds, flags, isDiscordConnected, channels, pingMs = 25_000 } = deps
+  const first = channelIds[0]
+  if (first === undefined) throw new Error('startServer needs at least one channel')
+  const defaultChannel: string = first
   const startedAt = Date.now()
   const encoder = new TextEncoder()
   /** One close function per open /events stream, used by `stop`. */
   const openStreams = new Set<() => void>()
 
   /**
-   * Streams the channel's buffered messages, then each new one, with a ping
-   * every `pingMs`. Unsubscribes when the browser disconnects or the server stops.
+   * Streams one channel's buffered messages, then each new one, with a ping
+   * every `pingMs`. The channel comes from `?channel=` (untrusted, so only a
+   * configured ID is accepted) or defaults to the first configured channel.
+   * Unsubscribes when the browser disconnects or the server stops.
    */
   function events(req: Request, server: Bun.Server<undefined>): Response {
+    const channelId = new URL(req.url).searchParams.get('channel') ?? defaultChannel
+    if (!channelIds.includes(channelId)) return new Response('Unknown channel', { status: 404 })
     // Bun closes connections idle for 10 s by default; this stream must stay open.
     server.timeout(req, 0)
     let cleanup = () => {}
@@ -126,16 +142,17 @@ export function startServer(deps: ServerDeps): { url: URL; stop: () => void } {
     })
   }
 
-  /** Reports Discord status and stream stats; 503 when Discord is disconnected. */
+  /** Reports Discord status and stream stats across channels; 503 when Discord is disconnected. */
   function health(): Response {
     const connected = isDiscordConnected()
-    const buffered = hub.recent(channelId)
+    const buffered = channelIds.flatMap(id => hub.recent(id))
+    const lastEventAt = buffered.reduce<string | null>((max, m) => (max === null || m.createdAt > max ? m.createdAt : max), null)
     return Response.json(
       {
         discord: connected ? 'connected' : 'disconnected',
         clients: hub.subscriberCount(),
         buffered: buffered.length,
-        lastEventAt: buffered.at(-1)?.createdAt ?? null,
+        lastEventAt,
         uptimeSec: Math.round((Date.now() - startedAt) / 1000),
       },
       { status: connected ? 200 : 503 },
@@ -149,7 +166,7 @@ export function startServer(deps: ServerDeps): { url: URL; stop: () => void } {
       '/': index,
       '/events': (req, srv) => events(req, srv),
       '/health': () => health(),
-      '/config': () => Response.json({ ...flags, channelName: channelName() }),
+      '/config': () => Response.json({ ...flags, channels: channels() }),
     },
     fetch: () => new Response('Not found', { status: 404 }),
   })
@@ -181,7 +198,7 @@ export function main(): void {
   const hub = createHub(config.bufferSize)
   const discord = startDiscord({
     token: config.token,
-    channelId: config.channelId,
+    channelIds: config.channelIds,
     historyLimit: config.bufferSize,
     publish: hub.publish,
     onWatchdogExpired: () => {
@@ -192,10 +209,10 @@ export function main(): void {
   const server = startServer({
     port: config.port,
     hub,
-    channelId: config.channelId,
+    channelIds: config.channelIds,
     flags: config.flags,
     isDiscordConnected: discord.isConnected,
-    channelName: discord.channelName,
+    channels: discord.channels,
   })
   log.info('server_started', { url: server.url.href })
 

@@ -19,3 +19,6 @@ export type Msg = {
   editedAt: string | null
   attachments: Attachment[]
 }
+
+/** A relayed channel as GET /config reports it; `name` is null until the bot has loaded it. */
+export type ChannelInfo = { id: string; name: string | null }

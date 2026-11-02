@@ -1,4 +1,4 @@
-import type { Attachment, Msg } from '../backend/types.ts'
+import type { Attachment, ChannelInfo, Msg } from '../backend/types.ts'
 
 /** The most messages the browser holds; the oldest are dropped past this. */
 export const MAX_MSGS = 500
@@ -61,6 +61,21 @@ export function parseMsg(data: string): Msg | null {
     return null
   }
   return isMsg(v) ? v : null
+}
+
+/** What the page needs from GET /config. */
+export type PageConfig = { attachments: boolean; channels: ChannelInfo[] }
+
+/**
+ * Narrows the untrusted GET /config body. Anything unexpected falls back to
+ * attachments off and no channels, and malformed channel entries are dropped.
+ */
+export function parseConfig(v: unknown): PageConfig {
+  if (!isRecord(v)) return { attachments: false, channels: [] }
+  const channels = Array.isArray(v.channels)
+    ? v.channels.filter((c): c is ChannelInfo => isRecord(c) && typeof c.id === 'string' && (c.name === null || typeof c.name === 'string'))
+    : []
+  return { attachments: v.attachments === true, channels: channels.map(c => ({ id: c.id, name: c.name })) }
 }
 
 /** Narrows an unknown value to a plain object. */

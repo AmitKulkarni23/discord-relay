@@ -4,16 +4,17 @@ import { formatEvent, loadConfig, startServer } from './server.ts'
 import type { Msg } from './types.ts'
 
 const CHANNEL = '1301000000000000001'
+const CHANNEL_2 = '1301000000000000002'
 const VALID_ENV = { DISCORD_TOKEN: 'MTI5MDAwMDAwMDAwMDAwMDQy.fake.token', CHANNEL_ID: CHANNEL }
 
 /** Builds a realistic message for the test channel. */
-function makeMsg(id: string, content = `deploy finished for build ${id}`): Msg {
+function makeMsg(id: string, content = `deploy finished for build ${id}`, channelId = CHANNEL, createdAt = '2026-11-01T17:00:00.000Z'): Msg {
   return {
     id,
-    channelId: CHANNEL,
+    channelId,
     author: { id: '1290000000000000042', name: 'amit', avatarUrl: null, bot: false },
     content,
-    createdAt: '2026-11-01T17:00:00.000Z',
+    createdAt,
     editedAt: null,
     attachments: [],
   }
@@ -29,9 +30,9 @@ async function waitFor(cond: () => boolean, ms = 1000): Promise<void> {
 }
 
 /** Opens /events and returns helpers to read the stream as text. */
-async function openEvents(base: URL) {
+async function openEvents(base: URL, path = '/events') {
   const abort = new AbortController()
-  const res = await fetch(new URL('/events', base), { signal: abort.signal })
+  const res = await fetch(new URL(path, base), { signal: abort.signal })
   if (!res.body) throw new Error('no response body')
   const reader = res.body.getReader()
   const decoder = new TextDecoder()
@@ -60,10 +61,13 @@ function start(hub: Hub, overrides: { connected?: boolean; pingMs?: number; chan
   const server = startServer({
     port: 0,
     hub,
-    channelId: CHANNEL,
+    channelIds: [CHANNEL, CHANNEL_2],
     flags: { attachments: true, editsDeletes: false, debugPanel: false },
     isDiscordConnected: () => overrides.connected ?? true,
-    channelName: () => (overrides.channelName === undefined ? 'relay-test' : overrides.channelName),
+    channels: () => [
+      { id: CHANNEL, name: overrides.channelName === undefined ? 'relay-test' : overrides.channelName },
+      { id: CHANNEL_2, name: 'announcements' },
+    ],
     pingMs: overrides.pingMs ?? 60_000,
   })
   stops.push(server.stop)
@@ -78,6 +82,23 @@ describe('loadConfig', () => {
 
     it('should throw naming CHANNEL_ID when it is empty', () => {
       expect(() => loadConfig({ ...VALID_ENV, CHANNEL_ID: '' })).toThrow('CHANNEL_ID')
+    })
+  })
+
+  describe('when CHANNEL_ID lists one or more channels', () => {
+    it('should return one channel when CHANNEL_ID holds a single ID', () => {
+      expect(loadConfig(VALID_ENV).channelIds).toEqual([CHANNEL])
+    })
+
+    it('should split, trim and dedupe when CHANNEL_ID is comma-separated', () => {
+      const env = { ...VALID_ENV, CHANNEL_ID: `${CHANNEL}, ${CHANNEL_2},${CHANNEL}` }
+      expect(loadConfig(env).channelIds).toEqual([CHANNEL, CHANNEL_2])
+    })
+
+    it('should throw naming CHANNEL_ID when an entry is empty or not a snowflake', () => {
+      for (const bad of [`${CHANNEL},,${CHANNEL_2}`, 'general', '12345', `${CHANNEL},#announcements`]) {
+        expect(() => loadConfig({ ...VALID_ENV, CHANNEL_ID: bad })).toThrow('CHANNEL_ID')
+      }
     })
   })
 
@@ -157,6 +178,44 @@ describe('server', () => {
     })
   })
 
+  describe('when a browser picks a channel', () => {
+    it('should stream the first configured channel when no channel is given', async () => {
+      const hub = createHub()
+      hub.publish(makeMsg('1302000000000000001', 'first channel message'))
+      hub.publish(makeMsg('1302000000000000002', 'second channel message', CHANNEL_2))
+      const server = start(hub)
+
+      const events = await openEvents(server.url)
+      const text = await events.readUntil(t => t.includes('first channel message'))
+      events.abort()
+
+      expect(text).not.toContain('second channel message')
+    })
+
+    it('should stream only that channel when ?channel= names a configured channel', async () => {
+      const hub = createHub()
+      hub.publish(makeMsg('1302000000000000001', 'first channel message'))
+      hub.publish(makeMsg('1302000000000000002', 'second channel message', CHANNEL_2))
+      const server = start(hub)
+
+      const events = await openEvents(server.url, `/events?channel=${CHANNEL_2}`)
+      const text = await events.readUntil(t => t.includes('second channel message'))
+      events.abort()
+
+      expect(text).not.toContain('first channel message')
+    })
+
+    it('should return 404 when ?channel= is not a configured channel', async () => {
+      const hub = createHub()
+      const { url } = start(hub)
+
+      const res = await fetch(new URL('/events?channel=1301000000000000999', url))
+
+      expect(res.status).toBe(404)
+      expect(hub.subscriberCount()).toBe(0)
+    })
+  })
+
   describe('when the stream is idle', () => {
     it('should send a ping when no messages arrive for pingMs', async () => {
       const hub = createHub()
@@ -200,6 +259,17 @@ describe('server', () => {
       })
     })
 
+    it('should total the buffers and take the newest event across channels when several are relayed', async () => {
+      const hub = createHub()
+      hub.publish(makeMsg('1302000000000000001', 'older', CHANNEL, '2026-11-01T17:00:00.000Z'))
+      hub.publish(makeMsg('1302000000000000002', 'newer', CHANNEL_2, '2026-11-01T18:30:00.000Z'))
+      const { url } = start(hub)
+
+      const body = await (await fetch(new URL('/health', url))).json()
+
+      expect(body).toMatchObject({ buffered: 2, lastEventAt: '2026-11-01T18:30:00.000Z' })
+    })
+
     it('should report unhealthy with 503 when Discord is disconnected', async () => {
       const { url } = start(createHub(), { connected: false })
 
@@ -211,20 +281,28 @@ describe('server', () => {
   })
 
   describe('when /config is requested', () => {
-    it('should return the feature flags and channel name when the channel is loaded', async () => {
+    it('should return the feature flags and every channel with its name when the channels are loaded', async () => {
       const { url } = start(createHub())
 
       const res = await fetch(new URL('/config', url))
 
-      expect(await res.json()).toEqual({ attachments: true, editsDeletes: false, debugPanel: false, channelName: 'relay-test' })
+      expect(await res.json()).toEqual({
+        attachments: true,
+        editsDeletes: false,
+        debugPanel: false,
+        channels: [
+          { id: CHANNEL, name: 'relay-test' },
+          { id: CHANNEL_2, name: 'announcements' },
+        ],
+      })
     })
 
-    it('should return a null channel name when the channel has not loaded yet', async () => {
+    it('should return a null name when a channel has not loaded yet', async () => {
       const { url } = start(createHub(), { channelName: null })
 
       const res = await fetch(new URL('/config', url))
 
-      expect(await res.json()).toMatchObject({ channelName: null })
+      expect(await res.json()).toMatchObject({ channels: [{ id: CHANNEL, name: null }, { id: CHANNEL_2, name: 'announcements' }] })
     })
   })
 

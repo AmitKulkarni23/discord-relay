@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test'
 import type { Msg } from '../backend/types.ts'
-import { addMsg, buildRows, compareIds, isDiscordCdn, MAX_MSGS, parseMsg, sortMsgs } from './feed.ts'
+import { addMsg, buildRows, compareIds, isDiscordCdn, MAX_MSGS, parseConfig, parseMsg, sortMsgs } from './feed.ts'
 
 const CHANNEL = '1566584977829900002'
 
@@ -162,6 +162,42 @@ describe('isDiscordCdn', () => {
       expect(isDiscordCdn('http://cdn.discordapp.com/a.png')).toBe(false)
       expect(isDiscordCdn('javascript:alert(1)')).toBe(false)
       expect(isDiscordCdn(null)).toBe(false)
+    })
+  })
+})
+
+describe('parseConfig', () => {
+  describe('when /config returns the expected shape', () => {
+    it('should return the channels and the attachments flag when every field is valid', () => {
+      const config = parseConfig({
+        attachments: true,
+        editsDeletes: false,
+        debugPanel: false,
+        channels: [
+          { id: '1566584977829900002', name: 'relay' },
+          { id: '1566584977829900003', name: null },
+        ],
+      })
+
+      expect(config).toEqual({
+        attachments: true,
+        channels: [
+          { id: '1566584977829900002', name: 'relay' },
+          { id: '1566584977829900003', name: null },
+        ],
+      })
+    })
+  })
+
+  describe('when /config returns something unexpected', () => {
+    it('should fall back to no channels and attachments off when the value is not an object', () => {
+      expect(parseConfig('<html>502 Bad Gateway</html>')).toEqual({ attachments: false, channels: [] })
+    })
+
+    it('should drop channel entries that are malformed when some are valid', () => {
+      const config = parseConfig({ attachments: 'yes', channels: [{ id: 42 }, { id: '1566584977829900002', name: 'relay' }, null] })
+
+      expect(config).toEqual({ attachments: false, channels: [{ id: '1566584977829900002', name: 'relay' }] })
     })
   })
 })

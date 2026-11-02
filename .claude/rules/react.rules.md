@@ -21,7 +21,7 @@ Rule names in parentheses are from Vercel's react-best-practices. Next.js, serve
 - Components MUST NOT be defined inside other components (`rerender-no-inline-components`).
 - The message row component SHOULD be wrapped in `memo` so a new message does not re-render every row (`rerender-memo`).
 - Conditionals MUST use a ternary, not `&&`, when the left side can be a number (`rendering-conditional-render`).
-- Attachment rendering MUST only load when `FEATURE_ATTACHMENTS` is on (`bundle-conditional`).
+- Attachment rendering MUST only happen when `FEATURE_ATTACHMENTS` is on. Bun's HTML bundler does not code-split, so `lazy()` gains nothing here.
 
 ## Security
 

@@ -46,6 +46,9 @@ The `data:` line is one JSON object, shown formatted:
 | `attachments[].url` | string | Discord CDN URL for the file. Signed, and expires after about 24 hours. | `attachment.url` |
 | `attachments[].name` | string | File name, e.g. `build-log.png`. | `attachment.name` |
 | `attachments[].contentType` | string \| null | MIME type, e.g. `image/png`. `null` when Discord does not know it. | `attachment.contentType` |
+| `attachments[].size` | number | File size in bytes. | `attachment.size` |
+| `attachments[].width` | number \| null | Pixel width for images and videos, `null` for other files. The page uses it with `height` to reserve space before the media loads. | `attachment.width` |
+| `attachments[].height` | number \| null | Pixel height, same rules as `width`. | `attachment.height` |
 
 The conversion lives in `toMsg` in the Discord source. The TypeScript type is `Msg` in `backend/types.ts`.
 

@@ -14,6 +14,9 @@ import Toolbar from '@mui/material/Toolbar'
 import Typography from '@mui/material/Typography'
 import { alpha, keyframes, ThemeProvider } from '@mui/material/styles'
 import type { ChannelInfo, Msg } from '../backend/types.ts'
+// ponytail: Bun's HTML bundler does not code-split, so this ships in the main bundle even with
+// FEATURE_ATTACHMENTS off (a few KB). It only renders when the flag is on; split with Bun.build if it grows.
+import Attachments from './attachments.tsx'
 import { addMsg, buildRows, compareIds, isDiscordCdn, parseConfig, parseMsg, sortMsgs } from './feed.ts'
 import { theme } from './theme.ts'
 
@@ -130,8 +133,10 @@ function DayDivider({ date }: { date: Date }): ReactElement {
 }
 
 /** The text of a message, or an honest note when there is none to show. */
-function MessageBody({ msg }: { msg: Msg }): ReactElement {
+function MessageBody({ msg, attachmentsOn }: { msg: Msg; attachmentsOn: boolean }): ReactElement | null {
   const empty = msg.content === ''
+  // With attachments rendered below, an attachment-only message needs no text line.
+  if (empty && attachmentsOn && msg.attachments.length > 0 && !msg.editedAt) return null
   return (
     <Typography
       variant="body1"
@@ -151,7 +156,7 @@ function MessageBody({ msg }: { msg: Msg }): ReactElement {
  * One message. A `head` row starts an author group with avatar, name and
  * time; a continuation shows its time in the gutter on hover.
  */
-const MessageRow = memo(function MessageRow({ msg, head }: { msg: Msg; head: boolean }): ReactElement {
+const MessageRow = memo(function MessageRow({ msg, head, attachmentsOn }: { msg: Msg; head: boolean; attachmentsOn: boolean }): ReactElement {
   const [fresh] = useState(() => Date.now() - Date.parse(msg.createdAt) < FRESH_MS)
   const at = new Date(msg.createdAt)
   const time = (
@@ -212,7 +217,10 @@ const MessageRow = memo(function MessageRow({ msg, head }: { msg: Msg; head: boo
             </Typography>
           </Box>
         ) : null}
-        <MessageBody msg={msg} />
+        <MessageBody msg={msg} attachmentsOn={attachmentsOn} />
+        {attachmentsOn && msg.attachments.length > 0 ? (
+          <Attachments items={msg.attachments} />
+        ) : null}
       </Box>
     </Box>
   )
@@ -271,6 +279,7 @@ function App(): ReactElement {
   const [msgs, setMsgs] = useState<Map<string, Msg>>(() => new Map())
   const [status, setStatus] = useState<Status>('connecting')
   const [channels, setChannels] = useState<ChannelInfo[]>([])
+  const [attachmentsOn, setAttachmentsOn] = useState(false)
   /** The channel picked in the URL or the tabs; null means the server's default. */
   const [selected, setSelected] = useState<string | null>(() => new URLSearchParams(window.location.search).get('channel'))
   /** Newest message ID the reader has seen at the bottom of the page. */
@@ -334,7 +343,11 @@ function App(): ReactElement {
   useEffect(() => {
     fetch('/config')
       .then(res => res.json())
-      .then((v: unknown) => setChannels(parseConfig(v).channels))
+      .then((v: unknown) => {
+        const config = parseConfig(v)
+        setChannels(config.channels)
+        setAttachmentsOn(config.attachments)
+      })
       .catch(() => setChannels([]))
   }, [])
 
@@ -383,7 +396,7 @@ function App(): ReactElement {
           <EmptyState status={status} channelName={channelName} />
         ) : (
           <Box role="log" aria-label={channelName ? `Messages in #${channelName}` : 'Messages'} sx={{ mt: 'auto' }}>
-            {rows.map(r => (r.kind === 'day' ? <DayDivider key={r.key} date={r.date} /> : <MessageRow key={r.key} msg={r.msg} head={r.head} />))}
+            {rows.map(r => (r.kind === 'day' ? <DayDivider key={r.key} date={r.date} /> : <MessageRow key={r.key} msg={r.msg} head={r.head} attachmentsOn={attachmentsOn} />))}
           </Box>
         )}
       </Box>

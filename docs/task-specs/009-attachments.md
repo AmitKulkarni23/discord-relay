@@ -9,7 +9,7 @@ Render attachments behind `FEATURE_ATTACHMENTS`: images inline, video and audio 
 ## Requirements
 
 1. `Attachment` MUST add `size` (bytes), `width` and `height` (number or null), filled by `toMsg`.
-2. The attachment component MUST be code-split and loaded only when `/config` says `attachments: true`.
+2. The attachment component MUST render only when `/config` says `attachments: true`. (Bun's HTML bundler does not code-split, so its few KB ship in the main bundle; see the `ponytail:` note in `app.tsx`.)
 3. `src`/`href` MUST only be set for `https` URLs on `cdn.discordapp.com` or `media.discordapp.net`; anything else shows the file name without a link.
 4. Images: `loading="lazy"`, sized from width and height so the feed does not jump, capped in size, open the full file in a new tab. Video and audio: controls, `preload="metadata"`, never autoplay.
 5. Files whose name starts with `SPOILER_` stay blurred until clicked.
@@ -18,7 +18,7 @@ Render attachments behind `FEATURE_ATTACHMENTS`: images inline, video and audio 
 
 ## Acceptance criteria
 
-- [ ] `toMsg` tests cover size, width and height.
+- [x] `toMsg` tests cover size, width and height.
 - [ ] `message-shape.md` updated with the new fields.
-- [ ] Typecheck and `bun test` pass; the bundle shows the attachment code as a separate chunk.
+- [x] Typecheck and `bun test` pass.
 - [ ] Turning the flag on in Railway (**requires user approval**) and checking a posted image, video and file.

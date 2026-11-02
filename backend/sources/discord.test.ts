@@ -81,15 +81,32 @@ describe('toMsg', () => {
   })
 
   describe('when a message has attachments', () => {
-    it('should keep url, name and content type when attachments exist', () => {
+    it('should keep url, name, content type, size and dimensions when attachments exist', () => {
       const attachment = {
         url: 'https://cdn.discordapp.com/attachments/1301000000000000001/1/build-log.png',
         name: 'build-log.png',
         contentType: 'image/png',
+        size: 48213,
+        width: 1280,
+        height: 720,
       }
       const msg = makeDiscordMessage({ attachments: new Map([['1', attachment]]) })
 
       expect(toMsg(msg).attachments).toEqual([attachment])
+    })
+
+    it('should set width and height to null when the file is not an image or video', () => {
+      const attachment = {
+        url: 'https://cdn.discordapp.com/attachments/1301000000000000001/2/release-notes.pdf',
+        name: 'release-notes.pdf',
+        contentType: 'application/pdf',
+        size: 90211,
+        width: null,
+        height: null,
+      }
+      const msg = makeDiscordMessage({ attachments: new Map([['2', attachment]]) })
+
+      expect(toMsg(msg).attachments[0]).toMatchObject({ size: 90211, width: null, height: null })
     })
   })
 
@@ -112,7 +129,7 @@ describe('isMissingContent', () => {
     it('should return false when there is an attachment but no text', () => {
       const msg = makeDiscordMessage({
         content: '',
-        attachments: new Map([['1', { url: 'https://cdn.discordapp.com/a.png', name: 'a.png', contentType: 'image/png' }]]),
+        attachments: new Map([['1', { url: 'https://cdn.discordapp.com/attachments/1301000000000000001/3/screenshot.png', name: 'screenshot.png', contentType: 'image/png', size: 20480, width: 800, height: 600 }]]),
       })
       expect(isMissingContent(toMsg(msg))).toBe(false)
     })

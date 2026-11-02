@@ -4,6 +4,11 @@ export type Attachment = {
   url: string
   name: string
   contentType: string | null
+  /** File size in bytes. */
+  size: number
+  /** Pixel size for images and videos; null for other files. */
+  width: number | null
+  height: number | null
 }
 
 /** A Discord message in the shape the hub, the server and the browser share. */

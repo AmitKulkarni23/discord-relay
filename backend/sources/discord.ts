@@ -19,7 +19,9 @@ export type MessageLike = {
     bot: boolean
     displayAvatarURL: () => string
   }
-  attachments: { values(): Iterable<{ url: string; name: string; contentType: string | null }> }
+  attachments: {
+    values(): Iterable<{ url: string; name: string; contentType: string | null; size: number; width: number | null; height: number | null }>
+  }
 }
 
 /** What `startDiscord` needs; passed in so the wiring stays in server.ts. */
@@ -49,7 +51,14 @@ export function toMsg(m: MessageLike): Msg {
     content: m.content,
     createdAt: m.createdAt.toISOString(),
     editedAt: m.editedAt ? m.editedAt.toISOString() : null,
-    attachments: [...m.attachments.values()].map(a => ({ url: a.url, name: a.name, contentType: a.contentType })),
+    attachments: [...m.attachments.values()].map(a => ({
+      url: a.url,
+      name: a.name,
+      contentType: a.contentType,
+      size: a.size,
+      width: a.width,
+      height: a.height,
+    })),
   }
 }
 

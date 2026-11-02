@@ -10,4 +10,6 @@ System context lives in `docs/system-specs/` (`architecture.md`, `failure-modes.
 - ~~[TASK-004: Discord bot source](004-discord-source.md) · depends on: 002, 003~~
 - [TASK-005: Railway deployment as code](005-railway-deploy.md) · depends on: 004
 
-Not planned yet: the React + MUI frontend (designed separately with the impeccable skill), and the `FEATURE_ATTACHMENTS`, `FEATURE_EDITS_DELETES` and `DEBUG_PANEL` flags. Until the frontend exists, `GET /` returns a short plain-text page.
+- [TASK-006: React + MUI live feed page](006-frontend.md) · depends on: 003
+
+Not planned yet: the `FEATURE_ATTACHMENTS`, `FEATURE_EDITS_DELETES` and `DEBUG_PANEL` flags.

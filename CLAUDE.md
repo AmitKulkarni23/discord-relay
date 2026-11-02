@@ -61,17 +61,20 @@ Coding rules live in `.claude/rules/` and load only when a matching file is touc
 
 ## Feature Flags
 
-Railway service variables, read once in `backend/server.ts` and exposed to the browser via `GET /config`. Changing one redeploys the service.
+Railway Feature Flags (Project Settings → Feature Flags), read at runtime by the `railway` SDK in `backend/flags.ts` and exposed to the browser via `GET /config`. Changing one applies within seconds, on the next page load, with no redeploy. Without `RAILWAY_TOKEN`, or before the first sync, every flag is off.
 
-- `FEATURE_ATTACHMENTS`: render images, video and file links (Discord CDN URLs only).
-- `FEATURE_EDITS_DELETES`: live-update edited and deleted messages.
-- `DEBUG_PANEL`: show connection status, client count and last event time.
+- `attachments` (bool): render images, video and file links (Discord CDN URLs only).
+- `edits-deletes` (bool): live-update edited and deleted messages.
+- `debug-panel` (bool): show connection status, client count and last event time.
+
+Manage them in the dashboard or with `railway flag set <name> <value>`. They are not in `.railway/railway.ts`: Railway IaC does not support flags yet.
 
 ## Environment Variables
 
 - `DISCORD_TOKEN`: bot token. Secret: set as a sealed Railway variable, never in Git, `.railway/railway.ts` or chat.
 - `CHANNEL_ID`: the Discord channel(s) to relay, comma-separated for more than one (`123,456`). One bot and one service relay them all; the page shows a tab per channel.
 - `BUFFER_SIZE`: messages kept per channel and loaded at startup (1 to 500, default 100).
+- `RAILWAY_TOKEN`: a Railway project token so the server can read feature flags. Secret: sealed Railway variable.
 - `PORT`: injected by Railway.
 
 The MessageContent intent MUST be enabled for the bot in the Discord developer portal, or messages arrive empty.

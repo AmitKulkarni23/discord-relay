@@ -13,7 +13,7 @@ const MAX_H = 320
 
 /**
  * Attachments under a message: images inline, video and audio with controls,
- * anything else as a file link. Rendered only when FEATURE_ATTACHMENTS is on.
+ * anything else as a file link. Rendered only when the `attachments` flag is on.
  */
 export default function Attachments({ items }: { items: Attachment[] }): ReactElement {
   return (

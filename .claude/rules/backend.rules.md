@@ -7,7 +7,8 @@ paths:
 
 ## Boundaries
 
-- Only `backend/server.ts` MUST handle HTTP (`Bun.serve`). Only `backend/sources/discord.ts` MUST import discord.js.
+- Only `backend/server.ts` MUST handle HTTP (`Bun.serve`). Only `backend/sources/discord.ts` MUST import discord.js. Only `backend/flags.ts` MUST import the `railway` runtime SDK (`.railway/railway.ts` uses `railway/iac`).
+- Feature flags MUST be read through the reader from `startFlags`, at request time, never cached at startup. A flag read MUST never throw or block startup; missing flags fall back to off.
 - Messages MUST flow through `hub.publish` / `hub.subscribe`. Sources and the HTTP server MUST NOT call each other directly.
 - Dependencies MUST be passed as function arguments and wired only in `server.ts`. Modules MUST NOT import another module's instance; the hub MUST be created with `createHub()`.
 - A new source MUST go in `backend/sources/` and only call `publish`.

@@ -1,14 +1,12 @@
 import index from '../frontend/index.html'
+import { DEFAULT_FLAGS, startFlags, type Flags } from './flags.ts'
 import { createHub, type Hub } from './hub.ts'
 import { log } from './log.ts'
 import { startDiscord } from './sources/discord.ts'
 import type { ChannelInfo, Msg } from './types.ts'
 
-/** Feature flags, exposed to the browser through GET /config. */
-export type Flags = { attachments: boolean; editsDeletes: boolean; debugPanel: boolean }
-
 /** Everything the process needs from its environment. */
-export type Config = { token: string; channelIds: string[]; port: number; bufferSize: number; flags: Flags }
+export type Config = { token: string; channelIds: string[]; port: number; bufferSize: number }
 
 /** Discord IDs (snowflakes) are 17 to 20 digits. */
 const SNOWFLAKE = /^\d{17,20}$/
@@ -19,7 +17,8 @@ export type ServerDeps = {
   hub: Hub
   /** The channels this server relays; the first is the default for /events. */
   channelIds: string[]
-  flags: Flags
+  /** Current feature flags; read on every /config request so a change in Railway applies without a redeploy. */
+  flags: () => Flags
   isDiscordConnected: () => boolean
   /** Every relayed channel with its display name once loaded. */
   channels: () => ChannelInfo[]
@@ -57,11 +56,6 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     channelIds,
     port,
     bufferSize,
-    flags: {
-      attachments: env.FEATURE_ATTACHMENTS === 'true',
-      editsDeletes: env.FEATURE_EDITS_DELETES === 'true',
-      debugPanel: env.DEBUG_PANEL === 'true',
-    },
   }
 }
 
@@ -166,7 +160,7 @@ export function startServer(deps: ServerDeps): { url: URL; stop: () => void } {
       '/': index,
       '/events': (req, srv) => events(req, srv),
       '/health': () => health(),
-      '/config': () => Response.json({ ...flags, channels: channels() }),
+      '/config': () => Response.json({ ...flags(), channels: channels() }),
     },
     fetch: () => new Response('Not found', { status: 404 }),
   })
@@ -195,6 +189,11 @@ export function main(): void {
     process.exit(1)
   }
 
+  let readFlags = (): Flags => DEFAULT_FLAGS
+  void startFlags(process.env).then(read => {
+    readFlags = read
+  })
+
   const hub = createHub(config.bufferSize)
   const discord = startDiscord({
     token: config.token,
@@ -210,7 +209,8 @@ export function main(): void {
     port: config.port,
     hub,
     channelIds: config.channelIds,
-    flags: config.flags,
+    // Flags start at their defaults and switch to Railway's values once the SDK syncs, so startup never waits on it.
+    flags: () => readFlags(),
     isDiscordConnected: discord.isConnected,
     channels: discord.channels,
   })

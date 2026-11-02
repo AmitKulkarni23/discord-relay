@@ -54,11 +54,13 @@ The alternative is `Last-Event-ID` replay of only the missed messages. Every eve
 
 Revisit if the buffer grows large.
 
-## D8. Feature flags as Railway variables
+## D8. Feature flags in Railway Feature Flags
 
-Flags are env vars read at startup and exposed through `/config`. They need no extra service and live with the rest of the config. A flag service or DB-backed flags would allow changes without a redeploy.
+Flags live in Railway's Feature Flags (project settings) and the server reads them with the `railway` SDK, which keeps them in memory and polls Railway. `/config` reads them on every request, so a change reaches the next page load in seconds with no redeploy.
 
-Revisit if flags need to change without a redeploy.
+The first version used Railway service variables read at startup. Those are versioned in `railway.ts` and need no token, but every change redeploys. Railway's flags cost a project token (`RAILWAY_TOKEN`) and a runtime dependency, and they are not in IaC yet. If Railway is unreachable or the token is missing, every flag reads as off and the app keeps running.
+
+Revisit if Railway IaC adds flags (move them into `railway.ts`), or if flag reads must not depend on Railway's API.
 
 ## D9. Railway Infrastructure as Code
 

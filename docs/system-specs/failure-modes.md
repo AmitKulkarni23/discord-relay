@@ -55,7 +55,7 @@ Each row lists what can break, what a user would report, how we notice, and what
 
 1. Check the Railway deployment status. If it says `Crashed`, read the last logs for a bad token or a missing env var.
 2. Open `/health`. A 503 means the Gateway is down; look in the logs for `gateway_disconnected` and whether the watchdog fired.
-3. Turn on `DEBUG_PANEL` and look at Gateway status, client count and the last event time.
+3. Turn on the `debug-panel` flag and look at Gateway status, client count and the last event time.
 4. If messages arrive with no text, the MessageContent intent is off in the Discord developer portal.
 5. Compare `CHANNEL_ID` with the channel's ID (Discord developer mode, then Copy Channel ID).
 6. Confirm the bot has View Channel and Read Message History in that channel.

@@ -15,7 +15,7 @@ import Typography from '@mui/material/Typography'
 import { alpha, keyframes, ThemeProvider } from '@mui/material/styles'
 import type { ChannelInfo, Msg } from '../backend/types.ts'
 // ponytail: Bun's HTML bundler does not code-split, so this ships in the main bundle even with
-// FEATURE_ATTACHMENTS off (a few KB). It only renders when the flag is on; split with Bun.build if it grows.
+// the `attachments` flag off (a few KB). It only renders when the flag is on; split with Bun.build if it grows.
 import Attachments from './attachments.tsx'
 import { addMsg, buildRows, compareIds, isDiscordCdn, parseConfig, parseMsg, sortMsgs } from './feed.ts'
 import { theme } from './theme.ts'

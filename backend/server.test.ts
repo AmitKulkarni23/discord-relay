@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'bun:test'
 import { createHub, type Hub } from './hub.ts'
+import type { Flags } from './flags.ts'
 import { formatEvent, loadConfig, startServer } from './server.ts'
 import type { Msg } from './types.ts'
 
@@ -57,12 +58,12 @@ afterEach(() => {
 })
 
 /** Starts a server on a random port with test defaults. */
-function start(hub: Hub, overrides: { connected?: boolean; pingMs?: number; channelName?: string | null } = {}) {
+function start(hub: Hub, overrides: { connected?: boolean; pingMs?: number; channelName?: string | null; flags?: () => Flags } = {}) {
   const server = startServer({
     port: 0,
     hub,
     channelIds: [CHANNEL, CHANNEL_2],
-    flags: { attachments: true, editsDeletes: false, debugPanel: false },
+    flags: overrides.flags ?? (() => ({ attachments: true, editsDeletes: false, debugPanel: false })),
     isDiscordConnected: () => overrides.connected ?? true,
     channels: () => [
       { id: CHANNEL, name: overrides.channelName === undefined ? 'relay-test' : overrides.channelName },
@@ -132,12 +133,6 @@ describe('loadConfig', () => {
     })
   })
 
-  describe('when feature flags are set', () => {
-    it('should enable only the flags whose value is "true" when some are set', () => {
-      const { flags } = loadConfig({ ...VALID_ENV, FEATURE_ATTACHMENTS: 'true', DEBUG_PANEL: 'yes' })
-      expect(flags).toEqual({ attachments: true, editsDeletes: false, debugPanel: false })
-    })
-  })
 })
 
 describe('formatEvent', () => {
@@ -295,6 +290,18 @@ describe('server', () => {
           { id: CHANNEL_2, name: 'announcements' },
         ],
       })
+    })
+
+    it('should read the flags on every request when a flag changes at runtime', async () => {
+      let current: Flags = { attachments: false, editsDeletes: false, debugPanel: false }
+      const { url } = start(createHub(), { flags: () => current })
+
+      const before = await (await fetch(new URL('/config', url))).json()
+      current = { ...current, attachments: true }
+      const after = await (await fetch(new URL('/config', url))).json()
+
+      expect(before).toMatchObject({ attachments: false })
+      expect(after).toMatchObject({ attachments: true })
     })
 
     it('should return a null name when a channel has not loaded yet', async () => {

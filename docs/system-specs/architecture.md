@@ -77,7 +77,7 @@ sequenceDiagram
   S-->>W: "id: msgId / data: {Msg JSON}" on every open stream
 ```
 
-When `FEATURE_EDITS_DELETES` is on, an edit replaces the buffered message with the same ID and is sent again under that ID. A delete removes the message and sends a `delete` event.
+When the `edits-deletes` flag is on, an edit replaces the buffered message with the same ID and is sent again under that ID. A delete removes the message and sends a `delete` event.
 
 ### A browser connecting and reconnecting
 
@@ -176,11 +176,11 @@ type Msg = {
 | `CHANNEL_ID` | yes | Channel(s) to relay: one ID, or several comma-separated. |
 | `BUFFER_SIZE` | no (`100`) | Messages kept per channel and loaded at startup, 1 to 500. |
 | `PORT` | injected | Set by Railway. |
-| `FEATURE_ATTACHMENTS` | no (`false`) | Render images, video and file links. |
-| `FEATURE_EDITS_DELETES` | no (`false`) | Update edited and deleted messages live. |
-| `DEBUG_PANEL` | no (`false`) | Show Gateway status, client count and last event time on the page. |
+| `RAILWAY_TOKEN` | no | Project token for reading feature flags. Without it every flag is off. |
 
-The server reads flags once at startup. Changing one in Railway redeploys the service.
+The server reads these once at startup; changing one in Railway redeploys the service.
+
+Feature flags are Railway Feature Flags, not variables: `attachments`, `edits-deletes` and `debug-panel` (all bool, default off). `backend/flags.ts` reads them through the `railway` SDK, which polls Railway, and `/config` reads them on every request, so a change applies on the next page load without a redeploy.
 
 ## Limits
 
@@ -213,9 +213,9 @@ The server reads flags once at startup. Changing one in Railway redeploys the se
 Built:
 
 - Live relay of one or more channels, with history at startup, reconnect and dedupe, and a tab per channel on the page
-- `FEATURE_ATTACHMENTS`
+- the `attachments` flag
 
-Planned (flags exist, nothing reads them yet): `FEATURE_EDITS_DELETES` and `DEBUG_PANEL`.
+Planned (flags exist, nothing reads them yet): `edits-deletes` and `debug-panel`.
 
 Not built, and described in the README instead:
 

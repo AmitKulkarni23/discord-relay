@@ -32,13 +32,18 @@ discord-relay/
 │   └── railway.ts         # Railway IaC (service, healthcheck, start command, non-secret vars)
 ├── backend/
 │   ├── server.ts          # entry point: wiring + Bun.serve (/, /events, /health, /config)
+│   ├── config.ts          # env vars: read and validated once at startup
+│   ├── flags.ts           # Railway Feature Flags reader (railway SDK)
+│   ├── log.ts             # structured JSON logs: log.debug/info/warn/error
 │   ├── hub.ts             # Observer: ring buffer + publish/subscribe, keyed by channelId
 │   ├── types.ts           # Msg type shared with the frontend
 │   └── sources/
 │       └── discord.ts     # discord.js client → normalized messages
 ├── frontend/
 │   ├── index.html
-│   ├── feed.ts            # pure message logic: dedupe, cap, grouping (tested)
+│   ├── feed.ts            # pure message logic: dedupe, cap, grouping, /config parsing (tested)
+│   ├── media.ts           # pure attachment helpers: type, size, fit, CDN check (tested)
+│   ├── attachments.tsx    # images, video, audio, file cards
 │   ├── theme.ts           # MUI theme
 │   └── app.tsx            # React + MUI
 ├── docs/

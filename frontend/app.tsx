@@ -17,7 +17,8 @@ import type { ChannelInfo, Msg } from '../backend/types.ts'
 // ponytail: Bun's HTML bundler does not code-split, so this ships in the main bundle even with
 // the `attachments` flag off (a few KB). It only renders when the flag is on; split with Bun.build if it grows.
 import Attachments from './attachments.tsx'
-import { addMsg, buildRows, compareIds, isDiscordCdn, parseConfig, parseMsg, sortMsgs } from './feed.ts'
+import { addMsg, buildRows, compareIds, parseConfig, parseMsg, sortMsgs } from './feed.ts'
+import { isDiscordCdn } from './media.ts'
 import { theme } from './theme.ts'
 
 /** The browser's view of the /events stream. */

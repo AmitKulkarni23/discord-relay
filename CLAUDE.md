@@ -67,7 +67,7 @@ Railway Feature Flags (Project Settings → Feature Flags), read at runtime by t
 - `edits-deletes` (bool): live-update edited and deleted messages.
 - `debug-panel` (bool): show connection status, client count and last event time.
 
-Manage them in the dashboard or with `railway flag set <name> <value>`. They are not in `.railway/railway.ts`: Railway IaC does not support flags yet.
+They are not in `.railway/railway.ts`, because Railway IaC does not support flags yet. `.railway/flags.sh` holds the exact `railway flag set` commands and is their source of truth: change a default there, then run `sh .railway/flags.sh`. Never change a flag in the dashboard without updating that script.
 
 ## Environment Variables
 

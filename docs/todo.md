@@ -115,7 +115,8 @@ Not added: discord-relay is a private repo, and GitHub runs CodeQL on private re
 
 ## UI changes
 - When you land on the page, where should be navigated to? Should you be sent to the place where the last message was sent? Imagine messages flowing in and this 
-- Add a little bit of wow to the Ui. It is plain and Bland for now
+- Add a little bit of wow to the UI. It is plain and bland for now
+  - Add light mode and dark mode
 - Should we add a debug panel to show the number of messages flowing in and the number of connections to the application?
 
 

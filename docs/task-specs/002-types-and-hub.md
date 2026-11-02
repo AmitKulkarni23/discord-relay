@@ -35,7 +35,7 @@ Read these before writing code:
 
 ## Technical notes
 
-- `Array.shift()` is fine at 100 messages. Mark it with a `ponytail:` comment naming the ceiling.
+- `Array.shift()` is fine at 100 messages. Mark it with a comment naming the ceiling.
 - Dedupe only checks the buffer, so a message evicted long ago could be published again. That cannot happen with live Discord events, and a restart starts with an empty hub.
 - Edits and deletes are out of scope until `FEATURE_EDITS_DELETES` is planned.
 

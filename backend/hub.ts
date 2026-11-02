@@ -38,7 +38,7 @@ export function createHub(capacity = 100) {
       if (c.buffer.some(m => m.id === msg.id)) return
 
       c.buffer.push(msg)
-      // ponytail: shift() is O(n), fine at 100; use a circular array if capacity grows to thousands
+      // shift() is O(n), fine at the 500 maximum; use a circular array if capacity grows to thousands
       if (c.buffer.length > capacity) c.buffer.shift()
 
       for (const fn of c.subscribers) {

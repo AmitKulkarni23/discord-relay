@@ -112,3 +112,13 @@ So: create the dashboard and monitors in the UI once, and record every widget qu
 ## 5. CodeQL code scanning
 
 Not added: discord-relay is a private repo, and GitHub runs CodeQL on private repos only with a paid GitHub Code Security license (CodeQL's license allows free use on open-source code). Add `.github/workflows/codeql.yml` (language `javascript-typescript`, on push and pull request) when the repo goes public or gets Code Security. Until then, Biome lint and the report-only `bun audit` in CI cover part of it.
+
+## UI changes
+- When you land on the page, where should be navigated to? Should you be sent to the place where the last message was sent? Imagine messages flowing in and this 
+- Add a little bit of wow to the Ui. It is plain and Bland for now
+- Should we add a debug panel to show the number of messages flowing in and the number of connections to the application?
+
+
+## Demo changes
+- Have a script ready for the interview where you can submit multiple messages to Discord and see that in action. This would mean that you invoke Discord's webhook and post messages to it
+

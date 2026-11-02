@@ -92,7 +92,7 @@ export function startServer(deps: ServerDeps): { url: URL; stop: () => void } {
           unsubscribe()
           clearInterval(ping)
           openStreams.delete(close)
-          log('client_disconnected', { clients: hub.subscriberCount() })
+          log.debug('client_disconnected', { clients: hub.subscriberCount() })
         }
         const close = () => {
           cleanup()
@@ -101,7 +101,7 @@ export function startServer(deps: ServerDeps): { url: URL; stop: () => void } {
 
         openStreams.add(close)
         req.signal.addEventListener('abort', cleanup)
-        log('client_connected', { clients: hub.subscriberCount() })
+        log.debug('client_connected', { clients: hub.subscriberCount() })
       },
       cancel() {
         cleanup()
@@ -161,7 +161,7 @@ export function main(): void {
   try {
     config = loadConfig(process.env)
   } catch (err) {
-    log('config_invalid', { error: errorMessage(err) })
+    log.error('config_invalid', { error: errorMessage(err) })
     process.exit(1)
   }
 
@@ -171,7 +171,7 @@ export function main(): void {
     channelId: config.channelId,
     publish: hub.publish,
     onWatchdogExpired: () => {
-      log('watchdog_expired', { reason: 'Gateway disconnected for more than 5 minutes; exiting so Railway restarts us' })
+      log.error('watchdog_expired', { reason: 'Gateway disconnected for more than 5 minutes; exiting so Railway restarts us' })
       process.exit(1)
     },
   })
@@ -183,15 +183,15 @@ export function main(): void {
     isDiscordConnected: discord.isConnected,
     channelName: discord.channelName,
   })
-  log('server_started', { url: server.url.href })
+  log.info('server_started', { url: server.url.href })
 
   discord.login.catch(err => {
-    log('discord_login_failed', { error: errorMessage(err) })
+    log.error('discord_login_failed', { error: errorMessage(err) })
     process.exit(1)
   })
 
   process.on('SIGTERM', async () => {
-    log('shutdown', { signal: 'SIGTERM' })
+    log.info('shutdown', { signal: 'SIGTERM' })
     server.stop()
     await discord.stop()
     process.exit(0)

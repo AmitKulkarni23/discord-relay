@@ -1,8 +1,22 @@
+/** Railway reads this field to colour and filter log lines (`@level:error`). */
+type Level = 'debug' | 'info' | 'warn' | 'error'
+
 /**
  * Writes one JSON log line to stdout, e.g.
- * `{"time":"…","event":"client_connected","clients":3}`.
+ * `{"time":"…","level":"info","event":"client_connected","clients":3}`.
+ * `level` and `event` are written last so a field can never override them.
+ */
+function write(level: Level, event: string, fields: Record<string, unknown>): void {
+  console.log(JSON.stringify({ time: new Date().toISOString(), ...fields, level, event }))
+}
+
+/**
+ * Structured logger: `log.info('server_started', { url })`.
  * Never pass the bot token or message content in `fields`.
  */
-export function log(event: string, fields: Record<string, unknown> = {}): void {
-  console.log(JSON.stringify({ time: new Date().toISOString(), event, ...fields }))
+export const log = {
+  debug: (event: string, fields: Record<string, unknown> = {}): void => write('debug', event, fields),
+  info: (event: string, fields: Record<string, unknown> = {}): void => write('info', event, fields),
+  warn: (event: string, fields: Record<string, unknown> = {}): void => write('warn', event, fields),
+  error: (event: string, fields: Record<string, unknown> = {}): void => write('error', event, fields),
 }

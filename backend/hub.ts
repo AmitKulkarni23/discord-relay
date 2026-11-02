@@ -45,7 +45,7 @@ export function createHub(capacity = 100) {
         try {
           fn(msg)
         } catch (err) {
-          log('subscriber_failed', { channelId: msg.channelId, error: String(err) })
+          log.warn('subscriber_failed', { channelId: msg.channelId, error: String(err) })
         }
       }
     },

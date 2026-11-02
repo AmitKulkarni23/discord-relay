@@ -109,16 +109,20 @@ export function startDiscord(deps: DiscordDeps) {
   /** Records a Gateway state change for /health and the watchdog. */
   function setConnected(next: boolean, event: string): void {
     connected = next
-    if (next) watchdog.connected()
-    else watchdog.disconnected()
-    log(event)
+    if (next) {
+      watchdog.connected()
+      log.info(event)
+    } else {
+      watchdog.disconnected()
+      log.warn(event)
+    }
   }
 
   /** Converts and publishes one message, warning when its content is missing. */
   function handle(m: MessageLike): void {
     const msg = toMsg(m)
     if (isMissingContent(msg)) {
-      log('message_content_missing', {
+      log.warn('message_content_missing', {
         messageId: msg.id,
         hint: 'Enable the MessageContent intent for the bot in the Discord developer portal',
       })
@@ -131,15 +135,15 @@ export function startDiscord(deps: DiscordDeps) {
     try {
       const channel = await client.channels.fetch(channelId)
       if (!channel || !channel.isTextBased()) {
-        log('history_failed', { channelId, reason: 'channel not found or not a text channel' })
+        log.error('history_failed', { channelId, reason: 'channel not found or not a text channel' })
         return
       }
       if ('name' in channel && typeof channel.name === 'string') channelName = channel.name
       const messages = await channel.messages.fetch({ limit: 100 })
       for (const m of [...messages.values()].reverse()) handle(m)
-      log('history_loaded', { channelId, count: messages.size })
+      log.info('history_loaded', { channelId, count: messages.size })
     } catch (err) {
-      log('history_failed', { channelId, error: err instanceof Error ? err.message : String(err) })
+      log.error('history_failed', { channelId, error: err instanceof Error ? err.message : String(err) })
     }
   }
 

@@ -38,5 +38,6 @@ paths:
 
 ## Logging
 
-- Logs MUST be one JSON object per line with an `event` field (e.g. `gateway_connected`, `client_connected`, `client_count`).
+- Logs MUST go through `log.debug|info|warn|error(event, fields)` in `backend/log.ts`: one JSON object per line with `level` and `event` fields (e.g. `gateway_connected`, `client_connected`). Railway filters on `@level:` and `@event:`.
+- Levels: `error` for failures that need action (bad config, login failed, watchdog), `warn` for degraded but self-healing (Gateway down, missing content), `info` for lifecycle, `debug` for per-browser connects and disconnects.
 - The bot token and message content MUST NOT be logged.

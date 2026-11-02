@@ -78,7 +78,14 @@ export function startServer(deps: ServerDeps): { url: URL; stop: () => void } {
 
     const stream = new ReadableStream<Uint8Array>({
       start(controller) {
-        const write = (text: string) => controller.enqueue(encoder.encode(text))
+        // A write can throw if the browser went away before abort fired; treat that as a disconnect.
+        const write = (text: string) => {
+          try {
+            controller.enqueue(encoder.encode(text))
+          } catch {
+            cleanup()
+          }
+        }
         // Send something at once so headers flush even when the buffer is empty.
         write(': connected\n\n')
         for (const m of hub.recent(channelId)) write(formatEvent(m))
@@ -193,9 +200,21 @@ export function main(): void {
   process.on('SIGTERM', async () => {
     log.info('shutdown', { signal: 'SIGTERM' })
     server.stop()
-    await discord.stop()
+    try {
+      await discord.stop()
+    } catch (err) {
+      log.warn('shutdown_discord_stop_failed', { error: errorMessage(err) })
+    }
     process.exit(0)
   })
+
+  // Last resort: log anything nobody caught as one structured line, then exit so Railway restarts us.
+  const crash = (kind: string) => (err: unknown) => {
+    log.error('unhandled_error', { kind, error: errorMessage(err), stack: err instanceof Error ? err.stack : undefined })
+    process.exit(1)
+  }
+  process.on('uncaughtException', crash('uncaughtException'))
+  process.on('unhandledRejection', crash('unhandledRejection'))
 }
 
 /** Returns an error's message, or the value as a string. */

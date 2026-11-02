@@ -9,6 +9,7 @@ Each row lists what can break, what a user would report, how we notice, and what
 | 1 | Railway proxy ends the request at 15 min | A brief "Reconnecting…" | `EventSource` `error` event | `EventSource` reconnects on its own, the server resends the buffer, and the browser dedupes by ID | Mitigated |
 | 2 | Proxy closes a stream with no data for 5 min | Same as 1 | Same as 1 | `: ping` every 25 s | Mitigated |
 | 3 | Browser loses its network | "Reconnecting…" until it is back | `EventSource` `error` event | Reconnect and full buffer. Messages older than the buffer are skipped | Mitigated |
+| 4a | A write to a stream that already closed | Nothing | Write throws before `abort` fires | The write is caught and treated as a disconnect, so a dead tab cannot crash the server | Mitigated |
 | 4 | A slow client cannot keep up | That client lags | Server memory grows | Nothing yet | Accepted. At scale, drop clients whose write queue grows too large |
 | 5 | A tab stays open for days | The page slows down | None | The browser keeps at most 500 messages | Mitigated |
 | 6 | More than 10,000 open connections | New visitors cannot connect | Railway limit | Nothing yet | Accepted. Confirm with Railway whether the limit is per domain or per replica, then add replicas or a push service |
@@ -28,7 +29,7 @@ Each row lists what can break, what a user would report, how we notice, and what
 
 | # | Failure | User sees | Detection | Handling | Status |
 |---|---|---|---|---|---|
-| 13 | Process crashes | "Reconnecting…" for a few seconds | Railway deployment logs | Restart policy (on failure), and history is fetched again at startup | Mitigated |
+| 13 | Process crashes | "Reconnecting…" for a few seconds | An `unhandled_error` log line (`@level:error`) for any uncaught exception or rejection | Restart policy (on failure), and history is fetched again at startup | Mitigated |
 | 14 | An env var is missing | The deploy never goes live | Startup validation | Exit 1 with a log naming the variable | Mitigated |
 | 15 | A deploy kills the old process at once (Railway's default drain is 0 s) | Every client drops at the same moment | None | SIGTERM handler, 30 s of overlap and draining, and a start command of `bun run` instead of a package script | Mitigated |
 | 16 | Two bots run during the deploy overlap | Nothing | None | Harmless because the bot only reads. It would post duplicate replies if it ever wrote | Accepted |

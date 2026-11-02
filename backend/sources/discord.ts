@@ -151,6 +151,9 @@ export function startDiscord(deps: DiscordDeps) {
   client.on(Events.ShardResume, () => setConnected(true, 'gateway_resumed'))
   client.on(Events.ShardDisconnect, () => setConnected(false, 'gateway_disconnected'))
   client.on(Events.ShardReconnecting, () => setConnected(false, 'gateway_reconnecting'))
+  // Without an 'error' listener, an emitted client error would throw and crash the process.
+  client.on(Events.Error, err => log.error('discord_client_error', { error: err.message }))
+  client.on(Events.Warn, info => log.warn('discord_client_warning', { info }))
   client.once(Events.ClientReady, () => void publishHistory())
   client.on(Events.MessageCreate, m => {
     if (m.channelId === channelId) handle(m)

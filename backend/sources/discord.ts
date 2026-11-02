@@ -174,7 +174,7 @@ export function startDiscord(deps: DiscordDeps) {
   async function publishHistory(channelId: string): Promise<void> {
     try {
       const channel = await client.channels.fetch(channelId)
-      if (!channel || !channel.isTextBased()) {
+      if (!channel?.isTextBased()) {
         log.error('history_failed', { channelId, reason: 'channel not found or not a text channel' })
         return
       }

@@ -1,4 +1,4 @@
-# Typechecks and tests every push and pull request.
+# Lints, typechecks and tests every push and pull request.
 # Railway's "Wait for CI" holds each deploy until this workflow passes.
 name: CI
 
@@ -15,5 +15,11 @@ jobs:
         with:
           bun-version: 1.4.2
       - run: bun install --frozen-lockfile
+      - run: bun run lint
       - run: bun run typecheck
-      - run: bun run test
+      # Fails if any file drops below the per-file floor in bunfig.toml.
+      - run: bun run test --coverage
+      # Reports known vulnerabilities but never fails the build; Dependabot opens the fix PRs.
+      - name: Audit dependencies (report only)
+        run: bun audit
+        continue-on-error: true

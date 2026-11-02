@@ -1,0 +1,5 @@
+[test]
+# Bun checks these per file, not overall. flags.ts and sources/discord.ts sit near 40% of lines
+# because their untested parts are the live Railway and Discord connections (tests never hit the network).
+# ponytail: a floor that stops coverage dropping; raise it as those files gain tests.
+coverageThreshold = { lines = 0.4, functions = 0.6 }

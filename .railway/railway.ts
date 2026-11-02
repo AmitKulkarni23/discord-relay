@@ -36,7 +36,7 @@ export default defineRailway(() => {
       CHANNEL_ID: preserve(),
       // Messages kept per channel and loaded at startup, 1 to 500 (TASK-007).
       BUFFER_SIZE: '100',
-      FEATURE_ATTACHMENTS: 'false',
+      FEATURE_ATTACHMENTS: 'true',
       FEATURE_EDITS_DELETES: 'false',
       DEBUG_PANEL: 'false',
       // Bun.serve bundles the page in development mode (no minify, hot reload) unless this is set.

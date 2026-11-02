@@ -32,11 +32,11 @@ Revisit if bundle size matters.
 
 ## D5. No database
 
-Each channel has an in-memory ring buffer of 100 messages, refilled from Discord at startup. Discord already stores every message, and a second copy would add a service and sync problems without helping users.
+Each channel has an in-memory ring buffer of `BUFFER_SIZE` messages (default 100, at most 500), refilled from Discord at startup. Discord already stores every message, and a second copy would add a service and sync problems without helping users.
 
 Postgres would give durable history and search. SQLite on a Railway volume was ruled out because volumes can't be used with replicas.
 
-Revisit for search, history beyond 100 messages, many channels, or many replicas all fetching from Discord at startup.
+Revisit for search, history beyond 500 messages, many channels, or many replicas all fetching from Discord at startup.
 
 ## D6. One replica
 
@@ -48,7 +48,7 @@ Revisit if a few seconds of downtime on a crash is unacceptable, or if connectio
 
 ## D7. Reconnects resend the full buffer
 
-Every `/events` connection receives the full buffer, and the browser dedupes by message ID. This avoids tracking each client's position, and resending 100 messages every 15 minutes costs almost nothing.
+Every `/events` connection receives the full buffer, and the browser dedupes by message ID. This avoids tracking each client's position, and resending the buffer (100 messages by default, at most 500) every 15 minutes costs almost nothing.
 
 The alternative is `Last-Event-ID` replay of only the missed messages. Every event already carries the message ID, so switching is a small change.
 

@@ -21,7 +21,7 @@ flowchart LR
 | Component | File | Responsibility |
 |---|---|---|
 | Discord bot | `backend/sources/discord.ts` | Connects to the Gateway, fetches history at startup, converts discord.js messages to `Msg`, and calls `publish`. It is the only file that imports discord.js. |
-| Hub | `backend/hub.ts` | Holds a ring buffer of 100 messages per channel, dedupes by message ID, and handles publish/subscribe. Everything is keyed by `channelId`. Created with `createHub()`, so each test gets a fresh instance. |
+| Hub | `backend/hub.ts` | Holds a ring buffer of `BUFFER_SIZE` messages per channel, dedupes by message ID, and handles publish/subscribe. Everything is keyed by `channelId`. Created with `createHub()`, so each test gets a fresh instance. |
 | Config | `backend/config.ts` | Reads and validates env vars once at startup (`loadConfig`); exits naming the variable when one is missing or invalid. |
 | Flags | `backend/flags.ts` | Reads Railway Feature Flags through the `railway` SDK; every flag falls back to off. |
 | HTTP server | `backend/server.ts` | The entry point. Runs `Bun.serve` for the page, `/events`, `/health` and `/config`, and handles SIGTERM. It is the only place dependencies are wired: it creates the hub and passes it, the config and the publish function to the bot and the routes. |
@@ -74,7 +74,7 @@ sequenceDiagram
   D->>B: messageCreate
   B->>B: ignore other channels, normalize to Msg
   B->>H: publish(msg)
-  H->>H: drop if ID already buffered, else push (evict oldest past 100)
+  H->>H: drop if ID already buffered, else push (evict oldest past BUFFER_SIZE)
   H->>S: notify subscribers of channelId
   S-->>W: "id: msgId / data: {Msg JSON}" on every open stream
 ```

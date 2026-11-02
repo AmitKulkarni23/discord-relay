@@ -33,8 +33,8 @@ Each row lists what can break, what a user would report, how we notice, and what
 | 14 | An env var is missing | The deploy never goes live | Startup validation | Exit 1 with a log naming the variable | Mitigated |
 | 15 | A deploy kills the old process at once (Railway's default drain is 0 s) | Every client drops at the same moment | None | SIGTERM handler, 30 s of overlap and draining, and a start command of `bun run` instead of a package script | Mitigated |
 | 16 | Two bots run during the deploy overlap | Nothing | None | Harmless because the bot only reads. It would post duplicate replies if it ever wrote | Accepted |
-| 17 | A restart empties the in-memory buffer | An empty page for a moment | None | Fetch the latest 100 messages at startup | Mitigated |
-| 18 | The buffer grows without limit | A crash from running out of memory | None | Fixed-size ring buffer of 100 | Mitigated |
+| 17 | A restart empties the in-memory buffer | An empty page for a moment | None | Fetch the latest `BUFFER_SIZE` messages at startup | Mitigated |
+| 18 | The buffer grows without limit | A crash from running out of memory | None | Fixed-size ring buffer of `BUFFER_SIZE` messages, at most 500 | Mitigated |
 | 19 | App sleeping is turned on | An empty page after idle time | None | Sleeping is off | Mitigated in config |
 | 20 | Healthchecks only run at deploy time | A broken but running app keeps serving | None | The watchdog from row 8 | Mitigated |
 | 21 | More than one replica | Duplicate bots, each replica with its own buffer | None | Run 1 replica. Option A is a bot per replica; option B is a bot service with Redis and web replicas | Accepted |

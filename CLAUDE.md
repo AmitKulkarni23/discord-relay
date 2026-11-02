@@ -4,7 +4,7 @@ A Discord bot that streams messages from a Discord channel into a web front-end,
 
 ## What It Does
 
-A bot connects to the Discord Gateway and listens to one channel. Every new message is normalized, kept in a small in-memory buffer and pushed to every open browser over Server-Sent Events (SSE). Opening the page shows the latest messages immediately, then new ones as they are posted. Discord is the source of truth; the app is a live relay, not an archive.
+A bot connects to the Discord Gateway and listens to one or more channels. Every new message is normalized, kept in a small in-memory buffer and pushed to every open browser over Server-Sent Events (SSE). Opening the page shows the latest messages immediately, then new ones as they are posted. Discord is the source of truth; the app is a live relay, not an archive.
 
 ## Design Principles
 

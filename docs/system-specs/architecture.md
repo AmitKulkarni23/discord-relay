@@ -90,7 +90,7 @@ sequenceDiagram
   P->>S: GET /
   S-->>W: index.html + bundle
   W->>S: GET /config
-  S-->>W: feature flags
+  S-->>W: feature flags + channel name
   W->>S: GET /events
   S-->>W: full buffer (up to 100 messages)
   loop while connected
@@ -126,7 +126,7 @@ sequenceDiagram
 |---|---|
 | `GET /` | The React page. Bun bundles `frontend/` from the HTML import. Until the frontend task, a plain-text placeholder. |
 | `GET /events` | `text/event-stream`. Sends the buffer, then live events, with `: ping` every 25 s. |
-| `GET /config` | `{ "attachments": bool, "editsDeletes": bool, "debugPanel": bool }` |
+| `GET /config` | `{ "attachments": bool, "editsDeletes": bool, "debugPanel": bool, "channelName": string \| null }`. `channelName` is null until the bot has loaded the channel at startup. |
 | `GET /health` | `200` when the Gateway is connected, `503` otherwise. Body: `{ "discord": "connected" \| "disconnected", "clients": n, "buffered": n, "lastEventAt": iso \| null, "uptimeSec": n }` |
 
 SSE events (the stream opens with a `: connected` comment so headers reach the browser even when the buffer is empty):

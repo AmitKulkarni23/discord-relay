@@ -56,13 +56,14 @@ afterEach(() => {
 })
 
 /** Starts a server on a random port with test defaults. */
-function start(hub: Hub, overrides: { connected?: boolean; pingMs?: number } = {}) {
+function start(hub: Hub, overrides: { connected?: boolean; pingMs?: number; channelName?: string | null } = {}) {
   const server = startServer({
     port: 0,
     hub,
     channelId: CHANNEL,
     flags: { attachments: true, editsDeletes: false, debugPanel: false },
     isDiscordConnected: () => overrides.connected ?? true,
+    channelName: () => (overrides.channelName === undefined ? 'relay-test' : overrides.channelName),
     pingMs: overrides.pingMs ?? 60_000,
   })
   stops.push(server.stop)
@@ -194,12 +195,20 @@ describe('server', () => {
   })
 
   describe('when /config is requested', () => {
-    it('should return the feature flags when asked', async () => {
+    it('should return the feature flags and channel name when the channel is loaded', async () => {
       const { url } = start(createHub())
 
       const res = await fetch(new URL('/config', url))
 
-      expect(await res.json()).toEqual({ attachments: true, editsDeletes: false, debugPanel: false })
+      expect(await res.json()).toEqual({ attachments: true, editsDeletes: false, debugPanel: false, channelName: 'relay-test' })
+    })
+
+    it('should return a null channel name when the channel has not loaded yet', async () => {
+      const { url } = start(createHub(), { channelName: null })
+
+      const res = await fetch(new URL('/config', url))
+
+      expect(await res.json()).toMatchObject({ channelName: null })
     })
   })
 

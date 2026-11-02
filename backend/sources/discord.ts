@@ -94,7 +94,8 @@ export function createWatchdog(opts: {
 /**
  * Logs in to the Discord Gateway, publishes the latest 100 messages once ready,
  * then publishes each new message from `channelId`. Returns the login promise
- * (rejects on a bad token), the connection state for /health, and `stop`.
+ * (rejects on a bad token), the connection state for /health, the channel
+ * name for /config, and `stop`.
  */
 export function startDiscord(deps: DiscordDeps) {
   const { token, channelId, publish, onWatchdogExpired = () => {}, watchdogMs = 5 * 60_000 } = deps
@@ -103,6 +104,7 @@ export function startDiscord(deps: DiscordDeps) {
   })
   const watchdog = createWatchdog({ limitMs: watchdogMs, onExpire: onWatchdogExpired })
   let connected = false
+  let channelName: string | null = null
 
   /** Records a Gateway state change for /health and the watchdog. */
   function setConnected(next: boolean, event: string): void {
@@ -132,6 +134,7 @@ export function startDiscord(deps: DiscordDeps) {
         log('history_failed', { channelId, reason: 'channel not found or not a text channel' })
         return
       }
+      if ('name' in channel && typeof channel.name === 'string') channelName = channel.name
       const messages = await channel.messages.fetch({ limit: 100 })
       for (const m of [...messages.values()].reverse()) handle(m)
       log('history_loaded', { channelId, count: messages.size })
@@ -157,6 +160,8 @@ export function startDiscord(deps: DiscordDeps) {
     login: client.login(token),
     /** True while the Gateway connection is up. */
     isConnected: (): boolean => connected,
+    /** The channel's name once history has loaded, otherwise null. */
+    channelName: (): string | null => channelName,
     /** Cancels the watchdog and closes the Gateway connection. */
     async stop(): Promise<void> {
       watchdog.connected()

@@ -16,6 +16,8 @@ export type ServerDeps = {
   channelId: string
   flags: Flags
   isDiscordConnected: () => boolean
+  /** The channel's display name, or null until the bot has loaded the channel. */
+  channelName: () => string | null
   /** Heartbeat interval for /events. Railway closes streams idle for 5 minutes. */
   pingMs?: number
 }
@@ -58,7 +60,7 @@ export function formatEvent(msg: Msg): string {
  * closes every open stream and stops listening.
  */
 export function startServer(deps: ServerDeps): { url: URL; stop: () => void } {
-  const { hub, channelId, flags, isDiscordConnected, pingMs = 25_000 } = deps
+  const { hub, channelId, flags, isDiscordConnected, channelName, pingMs = 25_000 } = deps
   const startedAt = Date.now()
   const encoder = new TextEncoder()
   /** One close function per open /events stream, used by `stop`. */
@@ -133,7 +135,7 @@ export function startServer(deps: ServerDeps): { url: URL; stop: () => void } {
       '/': new Response('DiscordRelay is running. The live page is coming soon; GET /events streams messages.\n'),
       '/events': (req, srv) => events(req, srv),
       '/health': () => health(),
-      '/config': () => Response.json(flags),
+      '/config': () => Response.json({ ...flags, channelName: channelName() }),
     },
     fetch: () => new Response('Not found', { status: 404 }),
   })
@@ -178,6 +180,7 @@ export function main(): void {
     channelId: config.channelId,
     flags: config.flags,
     isDiscordConnected: discord.isConnected,
+    channelName: discord.channelName,
   })
   log('server_started', { url: server.url.href })
 

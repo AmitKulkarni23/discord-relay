@@ -3,7 +3,8 @@
     "target": "ESNext",
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "lib": ["ESNext"],
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
     "types": ["bun"],
     "strict": true,
     "noUncheckedIndexedAccess": true,
@@ -12,5 +13,5 @@
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true
   },
-  "include": ["backend/**/*.ts", ".railway/**/*.ts"]
+  "include": ["backend/**/*.ts", "frontend/**/*.ts", "frontend/**/*.tsx", ".railway/**/*.ts"]
 }

@@ -213,13 +213,14 @@ describe('server', () => {
   })
 
   describe('when / is requested', () => {
-    it('should return a plain-text page when the frontend does not exist yet', async () => {
+    it('should serve the HTML page with the React mount point when the browser opens the site', async () => {
       const { url } = start(createHub())
 
       const res = await fetch(url)
 
       expect(res.status).toBe(200)
-      expect(await res.text()).toContain('DiscordRelay')
+      expect(res.headers.get('content-type')).toContain('text/html')
+      expect(await res.text()).toContain('<div id="root">')
     })
   })
 

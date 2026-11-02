@@ -38,6 +38,7 @@ discord-relay/
 │       └── discord.ts     # discord.js client → normalized messages
 ├── frontend/
 │   ├── index.html
+│   ├── feed.ts            # pure message logic: dedupe, cap, grouping (tested)
 │   ├── theme.ts           # MUI theme
 │   └── app.tsx            # React + MUI
 ├── docs/

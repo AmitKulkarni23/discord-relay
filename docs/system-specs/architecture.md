@@ -124,7 +124,7 @@ sequenceDiagram
 
 | Route | Response |
 |---|---|
-| `GET /` | The React page. Bun bundles `frontend/` from the HTML import. Until the frontend task, a plain-text placeholder. |
+| `GET /` | The React page. Bun bundles `frontend/` from the HTML import; `NODE_ENV=production` makes it a minified build with no hot reload. |
 | `GET /events` | `text/event-stream`. Sends the buffer, then live events, with `: ping` every 25 s. |
 | `GET /config` | `{ "attachments": bool, "editsDeletes": bool, "debugPanel": bool, "channelName": string \| null }`. `channelName` is null until the bot has loaded the channel at startup. |
 | `GET /health` | `200` when the Gateway is connected, `503` otherwise. Body: `{ "discord": "connected" \| "disconnected", "clients": n, "buffered": n, "lastEventAt": iso \| null, "uptimeSec": n }` |

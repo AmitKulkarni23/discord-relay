@@ -1,3 +1,4 @@
+import index from '../frontend/index.html'
 import { createHub, type Hub } from './hub.ts'
 import { log } from './log.ts'
 import { startDiscord } from './sources/discord.ts'
@@ -55,7 +56,7 @@ export function formatEvent(msg: Msg): string {
 }
 
 /**
- * Starts the HTTP server: `/` (placeholder page), `/events` (SSE stream),
+ * Starts the HTTP server: `/` (the React page), `/events` (SSE stream),
  * `/health` and `/config`. Returns the server URL and a `stop` function that
  * closes every open stream and stops listening.
  */
@@ -131,8 +132,8 @@ export function startServer(deps: ServerDeps): { url: URL; stop: () => void } {
   const server = Bun.serve({
     port: deps.port,
     routes: {
-      // Placeholder until the frontend task replaces it with the React page.
-      '/': new Response('DiscordRelay is running. The live page is coming soon; GET /events streams messages.\n'),
+      // Bun bundles frontend/ from the HTML import (React + MUI, no separate build step).
+      '/': index,
       '/events': (req, srv) => events(req, srv),
       '/health': () => health(),
       '/config': () => Response.json({ ...flags, channelName: channelName() }),

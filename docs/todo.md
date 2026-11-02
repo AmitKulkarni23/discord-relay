@@ -108,3 +108,7 @@ Mostly no. Checked against Railway's docs:
 - Webhooks are the exception: the docs name the public API's `notificationRuleCreate` / `notificationRuleUpdate` and the Railway MCP server's `create-webhook` / `update-webhook` / `test-webhook` tools. The input schema is not documented.
 
 So: create the dashboard and monitors in the UI once, and record every widget query and monitor threshold in `docs/system-specs/` (this section is the draft) so they can be rebuilt. This is the one ClickOps exception, forced by Railway. Revisit when the IaC SDK adds observability resources.
+
+## 5. CodeQL code scanning
+
+Not added: discord-relay is a private repo, and GitHub runs CodeQL on private repos only with a paid GitHub Code Security license (CodeQL's license allows free use on open-source code). Add `.github/workflows/codeql.yml` (language `javascript-typescript`, on push and pull request) when the repo goes public or gets Code Security. Until then, Biome lint and the report-only `bun audit` in CI cover part of it.

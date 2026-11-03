@@ -178,7 +178,7 @@ describe('server', () => {
 
   describe('when one IP opens many streams', () => {
     /** Opens /events as `ip`, the way Railway's edge forwards it. */
-    const openAs = (url: URL, ip: string) => openEvents(url, '/events', { 'X-Forwarded-For': ip })
+    const openAs = (url: URL, ip: string) => openEvents(url, '/events', { 'X-Real-IP': ip })
     const fillCap = async (url: URL, ip: string) => {
       const opened = []
       for (let i = 0; i < MAX_CONNECTIONS_PER_IP; i++) opened.push(await openAs(url, ip))
@@ -198,20 +198,20 @@ describe('server', () => {
       expect(hub.subscriberCount()).toBe(MAX_CONNECTIONS_PER_IP + 1)
     })
 
-    it('should count by the last X-Forwarded-For entry when a client prepends its own', async () => {
-      const { url } = start(createHub())
-      await fillCap(url, '203.0.113.7')
-
-      const spoofed = await openAs(url, '198.51.100.1, 203.0.113.7')
-
-      expect(spoofed.res.status).toBe(429)
-    })
-
-    it('should count by the socket address when there is no X-Forwarded-For header', async () => {
+    it('should count by the socket address when there is no X-Real-IP header', async () => {
       const { url } = start(createHub())
       for (let i = 0; i < MAX_CONNECTIONS_PER_IP; i++) await openEvents(url)
 
       const rejected = await openEvents(url)
+
+      expect(rejected.res.status).toBe(429)
+    })
+
+    it('should ignore X-Forwarded-For when a client varies it to dodge the cap', async () => {
+      const { url } = start(createHub())
+      for (let i = 0; i < MAX_CONNECTIONS_PER_IP; i++) await openEvents(url, '/events', { 'X-Forwarded-For': `198.51.100.${i}` })
+
+      const rejected = await openEvents(url, '/events', { 'X-Forwarded-For': '198.51.100.200' })
 
       expect(rejected.res.status).toBe(429)
     })
@@ -235,7 +235,7 @@ describe('server', () => {
       const sock = net.connect(Number(url.port), url.hostname)
       await new Promise<void>(resolve => sock.once('connect', () => resolve()))
       sock.on('error', () => {})
-      sock.write(`GET /events HTTP/1.1\r\nHost: x\r\nX-Forwarded-For: ${ip}\r\n\r\n`)
+      sock.write(`GET /events HTTP/1.1\r\nHost: x\r\nX-Real-IP: ${ip}\r\n\r\n`)
       sock.pause()
       stops.push(() => sock.destroy())
       return sock
@@ -258,7 +258,7 @@ describe('server', () => {
       }
 
       expect(hub.subscriberCount()).toBe(1)
-      const again = await openEvents(url, '/events', { 'X-Forwarded-For': '203.0.113.7' })
+      const again = await openEvents(url, '/events', { 'X-Real-IP': '203.0.113.7' })
       expect(again.res.status).toBe(200)
     }, 20_000)
 

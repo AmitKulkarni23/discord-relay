@@ -34,13 +34,12 @@ export function formatEvent(msg: Msg): string {
 
 /**
  * Returns the IP to count a connection against. On Railway the socket address is the proxy's,
- * so the client comes from X-Forwarded-For. That is trustworthy because Railway's proxy is the
- * only ingress (this service has no TCP proxy). The last entry is the one the proxy wrote, so a
- * client cannot spoof it by sending the header itself. Without it (local runs) the socket address is used.
+ * so the client comes from X-Real-IP, the header Railway documents for it. That is trustworthy
+ * because Railway's proxy is the only ingress (this service has no TCP proxy). Without it
+ * (local runs) the socket address is used.
  */
 function clientIp(req: Request, server: Bun.Server<undefined>): string {
-  const forwarded = req.headers.get('x-forwarded-for')?.split(',').at(-1)?.trim()
-  return forwarded || (server.requestIP(req)?.address ?? 'unknown')
+  return req.headers.get('x-real-ip') || (server.requestIP(req)?.address ?? 'unknown')
 }
 
 /**

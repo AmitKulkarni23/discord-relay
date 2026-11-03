@@ -1,6 +1,7 @@
 /**
  * Finds how many concurrent /events clients the server holds: ramps through client counts and
- * stops at the first level that fails. Spawns load/server.ts unless --host names a remote one.
+ * stops at the first level that fails. Exits 1 if any level failed. Spawns load/server.ts unless
+ * --host names a remote one; add --public for a deploy behind HTTPS with routes under /__load.
  *
  *   bun load/run.ts --levels 1000,5000,10000 --rate 5 --hold 60 --workers 4
  */
@@ -10,6 +11,8 @@ import type { WorkerCommand, WorkerReply } from './worker.ts'
 const { values } = parseArgs({
   options: {
     host: { type: 'string' },
+    public: { type: 'boolean', default: false },
+    controlPath: { type: 'string', default: '/__load' },
     port: { type: 'string', default: '3100' },
     levels: { type: 'string', default: '100,1000,2000,5000,10000' },
     rate: { type: 'string', default: '5' },
@@ -30,7 +33,8 @@ const workerCount = Number(values.workers)
 const connectPerSec = Number(values.connectPerSec)
 const maxP99Ms = Number(values.maxP99Ms)
 const listeners = Number(values.listeners)
-const ports = Array.from({ length: listeners }, (_, i) => (i === 0 ? port : port + 1 + i))
+const isPublic = values.public as boolean
+const ports = isPublic ? [443] : Array.from({ length: listeners }, (_, i) => (i === 0 ? port : port + 1 + i))
 const levels = (values.levels as string).split(',').map(Number)
 const GRACE_MS = 10_000
 
@@ -38,7 +42,7 @@ const localServer = values.host
   ? null
   : Bun.spawn(['bun', 'load/server.ts'], { env: { ...process.env, PORT: String(port), LISTENERS: String(listeners) }, stdout: 'ignore', stderr: 'inherit' })
 const host = values.host ?? '127.0.0.1'
-const control = `http://${host.includes(':') ? `[${host}]` : host}:${port + 1}`
+const control = isPublic ? `https://${host}${values.controlPath}` : `http://${host.includes(':') ? `[${host}]` : host}:${port + 1}`
 
 type Stats = { now: number; seq: number; clients: number; cpuPct: number; rssMb: number; rssMaxMb: number; lagMsMax: number; publishes: number; publishMsAvg: number; publishMsMax: number }
 const getStats = async (): Promise<Stats> => (await fetch(`${control}/stats`, { signal: AbortSignal.timeout(30_000) })).json() as Promise<Stats>
@@ -143,7 +147,7 @@ for (const target of levels) {
   const connectStart = performance.now()
   await all((w, i) => {
     const count = Math.floor(toOpen / workerCount) + (i < toOpen % workerCount ? 1 : 0)
-    w.command({ type: 'open', host, ports, count, perSec: connectPerSec / workerCount, worker: i, first: Math.floor(opened / workerCount) })
+    w.command({ type: 'open', host, ports, tls: isPublic, count, perSec: connectPerSec / workerCount, worker: i, first: Math.floor(opened / workerCount) })
     return w.next()
   }).then(replies => {
     const failed = replies.reduce((n, r) => n + (r.type === 'opened' ? r.failed : 0), 0)
@@ -233,4 +237,4 @@ for (const target of levels) {
 }
 
 console.log(JSON.stringify({ event: 'done', maxPassing: results.filter(r => r.passed).at(-1)?.clients ?? 0 }))
-stop(0)
+stop(results.every(r => r.passed) ? 0 : 1)

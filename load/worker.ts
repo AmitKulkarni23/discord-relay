@@ -7,7 +7,7 @@ type Conn = { tail: string; responded: boolean; live: boolean; last: number; inW
 type Socket = Bun.Socket<Conn>
 
 export type WorkerCommand =
-  | { type: 'open'; host: string; ports: number[]; count: number; perSec: number; worker: number; first: number }
+  | { type: 'open'; host: string; ports: number[]; tls: boolean; count: number; perSec: number; worker: number; first: number }
   | { type: 'window'; from: number; offsetMs: number }
   | { type: 'end'; to: number; graceMs: number }
   | { type: 'close' }
@@ -18,7 +18,10 @@ export type WorkerReply =
 
 const send = (reply: WorkerReply) => process.send?.(reply)
 
-const EVENT = /id: \d*?(\d{10})\ndata: [^\n]*?"createdAt":"([^"]+)"[^\n]*\n\n/g
+// Simulated messages only: on the live service the buffer can also hold real Discord history.
+const EVENT = /id: 1900000000(\d{10})\ndata: [^\n]*?"createdAt":"([^"]+)"[^\n]*\n\n/g
+/** HTTP chunk framing. A proxy may split an event across chunks, which would otherwise hide it from EVENT. */
+const CHUNK_FRAMING = /\r\n[0-9a-f]+\r\n/g
 
 const conns = new Set<Socket>()
 let closed = 0
@@ -64,10 +67,11 @@ function onData(s: Socket, buf: Buffer): void {
     }
   }
 
+  const body = text.replace(CHUNK_FRAMING, '')
   const now = Date.now()
   let end = 0
   EVENT.lastIndex = 0
-  for (let m = EVENT.exec(text); m; m = EVENT.exec(text)) {
+  for (let m = EVENT.exec(body); m; m = EVENT.exec(body)) {
     end = EVENT.lastIndex
     const seq = Number(m[1])
     if (conn.last && seq <= conn.last) conn.dups++
@@ -83,7 +87,7 @@ function onData(s: Socket, buf: Buffer): void {
     hist.set(ms, (hist.get(ms) ?? 0) + 1)
   }
   // Keep a partial event for the next chunk. Pings between events stay here until the next match, which is harmless.
-  conn.tail = end ? text.slice(end) : text
+  conn.tail = end ? body.slice(end) : body
 }
 
 function onGone(s: Socket): void {
@@ -111,6 +115,7 @@ async function open(cmd: Extract<WorkerCommand, { type: 'open' }>): Promise<void
     awaitingResponse++
     Bun.connect<Conn>({
       hostname: cmd.host,
+      tls: cmd.tls,
       port: cmd.ports[n % cmd.ports.length] as number,
       data: { tail: '', responded: false, live: false, last: 0, inWindow: 0, gaps: 0, dups: 0 },
       socket: {

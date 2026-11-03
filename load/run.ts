@@ -13,6 +13,7 @@ const { values } = parseArgs({
     host: { type: 'string' },
     public: { type: 'boolean', default: false },
     controlPath: { type: 'string', default: '/__load' },
+    controlUrl: { type: 'string' },
     port: { type: 'string', default: '3100' },
     levels: { type: 'string', default: '100,1000,2000,5000,10000' },
     rate: { type: 'string', default: '5' },
@@ -42,7 +43,7 @@ const localServer = values.host
   ? null
   : Bun.spawn(['bun', 'load/server.ts'], { env: { ...process.env, PORT: String(port), LISTENERS: String(listeners) }, stdout: 'ignore', stderr: 'inherit' })
 const host = values.host ?? '127.0.0.1'
-const control = isPublic ? `https://${host}${values.controlPath}` : `http://${host.includes(':') ? `[${host}]` : host}:${port + 1}`
+const control = values.controlUrl ?? (isPublic ? `https://${host}${values.controlPath}` : `http://${host.includes(':') ? `[${host}]` : host}:${port + 1}`)
 
 type Stats = { now: number; seq: number; clients: number; cpuPct: number; rssMb: number; rssMaxMb: number; lagMsMax: number; publishes: number; publishMsAvg: number; publishMsMax: number }
 const getStats = async (): Promise<Stats> => (await fetch(`${control}/stats`, { signal: AbortSignal.timeout(30_000) })).json() as Promise<Stats>

@@ -6,6 +6,39 @@
 bun load/run.ts --levels 1000,5000,10000 --rate 5 --hold 45
 ```
 
+## Clean run through the public URL (2026-11-03 11:07 PST)
+
+One unattended run with no other load test nearby, against the live `discord-relay` service and its real bot. It used the same temporary build as the runs below, 3 generators in a separate Railway environment, 5 msg/s and a 45 s hold per level. Latency cells show the highest generator.
+
+| Clients | Delivered | p50 | p99 | Slowest | CPU avg, one core | Memory | Refused | Result |
+|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| 5,001 | 100.00% | 53 ms | 87 ms | 0.9 s | 29-33% | 419 MB | 0 | Pass |
+| 7,500 | 100.00% | 73 ms | 120 ms | 1.0 s | 41-100% | 583 MB | 0 | Pass |
+| 10,002 | 100.00% | 88 ms | 160 ms | 0.7 s | 36-68% | 677 MB | 0 | Pass |
+| 12,000 | 100.00% | 101 ms | 348 ms | 0.8 s | 63-74% | 811 MB | 0 | Pass |
+| 15,000 | 100.00% | 121 ms | 420 ms | 5.9 s | 65-83% | 872 MB | 0 | Pass |
+
+Railway metrics for `discord-relay` during the run:
+
+```
+current            avg             max             limit
+  CPU       0 vCPU (0%)        0.33 vCPU       1.2 vCPU        8.0 vCPU
+  Memory    1.02 GB (13%)      508 MB          1.02 GB         8.00 GB
+
+  Public Network Traffic
+  ──────────────────────────────────────────────
+  Egress       0 MB                    avg: 419 MB           max: 1.42 GB
+  Ingress      0 MB                    avg: 50 MB            max: 174 MB
+```
+
+Edge errors during the run:
+
+```
+0 5xx log lines retrieved (limit 5000)
+After restore: streams 1-20 ok: 20, stream 21 status: 429
+```
+
+
 ## Live service through the public URL (2026-11-03)
 
 This is the `discord-relay` production service with its real Discord bot, reached through Railway's edge as a browser would. The test used a temporary, uncommitted build: the 20-stream-per-IP cap raised, a simulated producer added, and a stats route added. Generators ran as a Railway service in a separate environment. Messages were about 470 bytes, `BUFFER_SIZE` was 100, and each level was held for 45 s.

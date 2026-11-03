@@ -1,8 +1,8 @@
-import { afterEach, describe, expect, it } from 'bun:test'
+import { afterEach, describe, expect, it, spyOn } from 'bun:test'
 import net from 'node:net'
 import { createHub, type Hub } from './hub.ts'
 import type { Flags } from './flags.ts'
-import { formatEvent, MAX_CONNECTIONS_PER_IP, startServer } from './server.ts'
+import { encodeEvent, formatEvent, MAX_CONNECTIONS_PER_IP, startServer } from './server.ts'
 import type { Msg } from './types.ts'
 
 const CHANNEL = '1301000000000000001'
@@ -84,7 +84,36 @@ describe('formatEvent', () => {
   })
 })
 
+describe('encodeEvent', () => {
+  describe('when the same message is encoded twice', () => {
+    it('should return the same bytes when the message object is unchanged', () => {
+      const msg = makeMsg('1302000000000000001')
+
+      expect(encodeEvent(msg)).toBe(encodeEvent(msg))
+      expect(new TextDecoder().decode(encodeEvent(msg))).toBe(formatEvent(msg))
+    })
+  })
+})
+
 describe('server', () => {
+  describe('when several browsers read one message', () => {
+    it('should send every browser the replay and the live message intact when bytes are shared', async () => {
+      const hub = createHub()
+      hub.publish(makeMsg('1302000000000000001', 'replayed to both'))
+      const { url } = start(hub)
+      const first = await openEvents(url)
+      const second = await openEvents(url)
+      await waitFor(() => hub.subscriberCount() === 2)
+
+      hub.publish(makeMsg('1302000000000000002', 'live to both'))
+
+      for (const events of [first, second]) {
+        const text = await events.readUntil(t => t.includes('live to both'))
+        expect(text).toContain('replayed to both')
+      }
+    })
+  })
+
   describe('when a browser opens /events', () => {
     it('should send the buffered messages first, oldest first, when it connects', async () => {
       const hub = createHub()
@@ -159,6 +188,20 @@ describe('server', () => {
       const events = await openEvents(url)
 
       expect(await events.readUntil(t => t.includes(': ping\n\n'))).toContain(': ping')
+    })
+
+    it('should ping every stream from one timer when several are open', async () => {
+      const timers = spyOn(globalThis, 'setInterval')
+      const { url } = start(createHub(), { pingMs: 20 })
+
+      const first = await openEvents(url)
+      const second = await openEvents(url)
+      await first.readUntil(t => t.includes(': ping\n\n'))
+      await second.readUntil(t => t.includes(': ping\n\n'))
+      const created = timers.mock.calls.length
+      timers.mockRestore()
+
+      expect(created).toBe(1)
     })
   })
 

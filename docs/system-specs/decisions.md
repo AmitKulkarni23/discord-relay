@@ -48,7 +48,7 @@ Revisit if a few seconds of downtime on a crash is unacceptable, or if connectio
 
 ## D7. Reconnects resend the full buffer
 
-Every `/events` connection receives the full buffer, and the browser dedupes by message ID. This avoids tracking each client's position, and resending the buffer (100 messages by default, at most 500) every 15 minutes costs almost nothing.
+Every `/events` connection receives the full buffer, and the browser dedupes by message ID. This avoids tracking each client's position, and resending the buffer (100 messages by default, at most 500) every 15 minutes costs almost nothing, because each message is serialized once and every stream shares the bytes.
 
 The alternative is `Last-Event-ID` replay of only the missed messages. Every event already carries the message ID, so switching is a small change.
 

@@ -32,6 +32,25 @@ export function formatEvent(msg: Msg): string {
   return `id: ${msg.id}\ndata: ${JSON.stringify(msg)}\n\n`
 }
 
+const encoder = new TextEncoder()
+const CONNECTED = encoder.encode(': connected\n\n')
+const PING = encoder.encode(': ping\n\n')
+/** Keyed by object, so a message's bytes are freed once it leaves the buffer and every queue. */
+const encodedEvents = new WeakMap<Msg, Uint8Array>()
+
+/**
+ * Returns a message's SSE bytes, serializing it only the first time. Every stream
+ * enqueues the same array, which is safe because default streams do not detach chunks.
+ */
+export function encodeEvent(msg: Msg): Uint8Array {
+  let bytes = encodedEvents.get(msg)
+  if (!bytes) {
+    bytes = encoder.encode(formatEvent(msg))
+    encodedEvents.set(msg, bytes)
+  }
+  return bytes
+}
+
 /**
  * Returns the IP to count a connection against. On Railway the socket address is the proxy's,
  * so the client comes from X-Real-IP, the header Railway documents for it. That is trustworthy
@@ -53,11 +72,13 @@ export function startServer(deps: ServerDeps): { url: URL; stop: () => void } {
   if (first === undefined) throw new Error('startServer needs at least one channel')
   const defaultChannel: string = first
   const startedAt = Date.now()
-  const encoder = new TextEncoder()
-  /** One close function per open /events stream, used by `stop`. */
-  const openStreams = new Set<() => void>()
+  /** Every open /events stream: pinged by the one timer below, closed by `stop`. */
+  const openStreams = new Set<{ ping: () => void; close: () => void }>()
   /** Open /events streams per client IP. An entry is removed at zero, so this stays bounded by open streams. */
   const connectionsByIp = new Map<string, number>()
+  const pingTimer = setInterval(() => {
+    for (const stream of openStreams) stream.ping()
+  }, pingMs)
 
   /**
    * Streams one channel's buffered messages, then each new one, with a ping
@@ -83,16 +104,16 @@ export function startServer(deps: ServerDeps): { url: URL; stop: () => void } {
     const stream = new ReadableStream<Uint8Array>({
       start(controller) {
         // A write can throw if the browser went away before abort fired; treat that as a disconnect.
-        const send = (text: string) => {
+        const send = (bytes: Uint8Array) => {
           try {
-            controller.enqueue(encoder.encode(text))
+            controller.enqueue(bytes)
           } catch {
             cleanup()
           }
         }
         // Live writes only: the replay is already bounded by the buffer and can exceed the limit on its own.
-        const write = (text: string) => {
-          if ((controller.desiredSize ?? 0) >= 0) return send(text)
+        const write = (bytes: Uint8Array) => {
+          if ((controller.desiredSize ?? 0) >= 0) return send(bytes)
           log.warn('client_dropped', { reason: 'stopped reading', limitBytes: MAX_QUEUED_BYTES })
           cleanup()
           // error() frees the queue, where close() would keep it until the client read it all.
@@ -101,18 +122,16 @@ export function startServer(deps: ServerDeps): { url: URL; stop: () => void } {
           server.timeout(req, 1)
         }
         // Send something at once so headers flush even when the buffer is empty.
-        send(': connected\n\n')
-        for (const m of hub.recent(channelId)) send(formatEvent(m))
-        const unsubscribe = hub.subscribe(channelId, m => write(formatEvent(m)))
-        const ping = setInterval(() => write(': ping\n\n'), pingMs)
+        send(CONNECTED)
+        for (const m of hub.recent(channelId)) send(encodeEvent(m))
+        const unsubscribe = hub.subscribe(channelId, m => write(encodeEvent(m)))
 
         let closed = false
         cleanup = () => {
           if (closed) return
           closed = true
           unsubscribe()
-          clearInterval(ping)
-          openStreams.delete(close)
+          openStreams.delete(open)
           const left = (connectionsByIp.get(ip) ?? 1) - 1
           if (left > 0) connectionsByIp.set(ip, left)
           else connectionsByIp.delete(ip)
@@ -123,7 +142,8 @@ export function startServer(deps: ServerDeps): { url: URL; stop: () => void } {
           controller.close()
         }
 
-        openStreams.add(close)
+        const open = { ping: () => write(PING), close }
+        openStreams.add(open)
         req.signal.addEventListener('abort', cleanup)
         log.debug('client_connected', { clients: hub.subscriberCount() })
       },
@@ -169,7 +189,8 @@ export function startServer(deps: ServerDeps): { url: URL; stop: () => void } {
   return {
     url: server.url,
     stop() {
-      for (const close of [...openStreams]) close()
+      clearInterval(pingTimer)
+      for (const stream of [...openStreams]) stream.close()
       server.stop()
     },
   }

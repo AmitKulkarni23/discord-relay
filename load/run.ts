@@ -163,7 +163,7 @@ for (const target of levels) {
   await Bun.sleep(5000)
   await getStats()
 
-  const from = (await getStats()).seq + rate * 2
+  const from = (await getStats()).seq + Math.ceil(rate * 2)
   for (const w of workers) w.command({ type: 'window', from, offsetMs })
   const samples: Stats[] = []
   const holdEnd = performance.now() + holdSec * 1000

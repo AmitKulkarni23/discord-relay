@@ -94,6 +94,8 @@ export function startServer(deps: ServerDeps): { url: URL; stop: () => void } {
    * past the per-IP cap, and drops a client that stops reading.
    */
   function events(req: Request, server: Bun.Server<undefined>): Response {
+    // Railway's ID for this request, also in its network logs. Null on local runs.
+    const requestId = req.headers.get('x-railway-request-id')
     const params = new URL(req.url).searchParams
     const channelId = params.get('channel') ?? defaultChannel
     if (!channelIds.includes(channelId)) return new Response('Unknown channel', { status: 404 })
@@ -102,7 +104,7 @@ export function startServer(deps: ServerDeps): { url: URL; stop: () => void } {
     const ip = clientIp(req, server)
     const connections = connectionsByIp.get(ip) ?? 0
     if (connections >= MAX_CONNECTIONS_PER_IP) {
-      log.debug('client_rejected', { reason: 'too many connections from one IP' })
+      log.debug('client_rejected', { requestId, reason: 'too many connections from one IP' })
       return new Response('Too many connections', { status: 429, headers: { 'Retry-After': '30' } })
     }
     connectionsByIp.set(ip, connections + 1)
@@ -123,7 +125,7 @@ export function startServer(deps: ServerDeps): { url: URL; stop: () => void } {
         // Live writes only: the replay is already bounded by the buffer and can exceed the limit on its own.
         const write = (bytes: Uint8Array) => {
           if ((controller.desiredSize ?? 0) >= 0) return send(bytes)
-          log.warn('client_dropped', { reason: 'stopped reading', limitBytes: MAX_QUEUED_BYTES })
+          log.warn('client_dropped', { requestId, reason: 'stopped reading', limitBytes: MAX_QUEUED_BYTES })
           cleanup()
           // error() frees the queue, where close() would keep it until the client read it all.
           controller.error(new Error('client stopped reading'))
@@ -147,7 +149,7 @@ export function startServer(deps: ServerDeps): { url: URL; stop: () => void } {
           const left = (connectionsByIp.get(ip) ?? 1) - 1
           if (left > 0) connectionsByIp.set(ip, left)
           else connectionsByIp.delete(ip)
-          log.debug('client_disconnected', { clients: hub.subscriberCount() })
+          log.debug('client_disconnected', { requestId, clients: hub.subscriberCount() })
         }
         const close = () => {
           cleanup()
@@ -157,7 +159,7 @@ export function startServer(deps: ServerDeps): { url: URL; stop: () => void } {
         const open = { ping: () => write(PING), close }
         openStreams.add(open)
         req.signal.addEventListener('abort', cleanup)
-        log.debug('client_connected', { clients: hub.subscriberCount() })
+        log.debug('client_connected', { requestId, clients: hub.subscriberCount() })
       },
       cancel() {
         cleanup()

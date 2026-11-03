@@ -10,7 +10,7 @@ Each row lists what can break, what a user would report, how we notice, and what
 | 2 | Proxy closes a stream with no data for 5 min | Same as 1 | Same as 1 | `: ping` every 25 s | Mitigated |
 | 3 | Browser loses its network | "Reconnecting…" until it is back | `EventSource` `error` event | Reconnect with backoff and `?since=`. Messages older than the buffer are skipped | Mitigated |
 | 4a | A write to a stream that already closed | Nothing | Write throws before `abort` fires | The write is caught and treated as a disconnect, so a dead tab cannot crash the server | Mitigated |
-| 4 | A client stops reading, or falls too far behind | That client reconnects and gets the buffer again | `client_dropped` log line (`@event:client_dropped`) | Each stream counts queued bytes. Past 1 MiB on a live write, the stream errors, its queue is freed and the socket is closed | Mitigated |
+| 4 | A client stops reading, or falls too far behind | That client reconnects and gets what it missed | `client_dropped` log line (`@event:client_dropped`) | Each stream counts queued bytes. Past 1 MiB on a live write, the stream errors, its queue is freed and the socket is closed | Mitigated |
 | 4b | One machine opens many streams to exhaust memory | Past the cap, that machine's page shows "Reconnecting…" | `@httpStatus:429` in Railway's HTTP logs | 20 open streams per IP, then 429. Shared networks share the cap, and many IPs (a botnet, an IPv6 range) get past it | Mitigated for one IP. Many IPs accepted |
 | 5 | A tab stays open for days | The page slows down | None | The browser keeps at most 500 messages | Mitigated |
 | 6 | More than 10,000 open connections | New visitors cannot connect | Railway limit | Nothing yet | Accepted. Confirm with Railway whether the limit is per domain or per replica, then add replicas or a push service |
@@ -60,4 +60,4 @@ Each row lists what can break, what a user would report, how we notice, and what
 4. If messages arrive with no text, the MessageContent intent is off in the Discord developer portal.
 5. Compare `CHANNEL_ID` with the channel's ID (Discord developer mode, then Copy Channel ID).
 6. Confirm the bot has View Channel and Read Message History in that channel.
-7. If only some users are affected, look at their side: network, browser extensions, or a tab that has been open for days.
+7. If only some users are affected, look at their side: network, browser extensions, or a tab that has been open for days. Filter on `@event:client_dropped` around the time they report. Each `client_*` line has a `requestId` that matches Railway's network logs.

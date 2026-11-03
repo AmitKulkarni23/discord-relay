@@ -52,6 +52,16 @@ async function openEvents(base: URL, path = '/events', headers: Record<string, s
   return { res, reader, readUntil, abort: () => abort.abort() }
 }
 
+/** Captures the JSON log lines written during a test. Undone by `afterEach`. */
+function captureLogs(): Array<Record<string, unknown>> {
+  const lines: Array<Record<string, unknown>> = []
+  const spy = spyOn(console, 'log').mockImplementation((line: string) => {
+    lines.push(JSON.parse(line) as Record<string, unknown>)
+  })
+  stops.push(() => spy.mockRestore())
+  return lines
+}
+
 const stops: Array<() => void> = []
 afterEach(() => {
   while (stops.length) stops.pop()?.()
@@ -247,6 +257,36 @@ describe('server', () => {
     })
   })
 
+  describe('when Railway sends a request ID', () => {
+    const REQUEST_ID = 'hX3kPq9mRgOaLw2nT7vYtA'
+    const headers = { 'X-Railway-Request-Id': REQUEST_ID }
+
+    it('should log it when a stream connects and disconnects', async () => {
+      const hub = createHub()
+      const { url } = start(hub)
+      const logs = captureLogs()
+
+      const events = await openEvents(url, '/events', headers)
+      await waitFor(() => hub.subscriberCount() === 1)
+      events.abort()
+      await waitFor(() => hub.subscriberCount() === 0)
+
+      expect(logs.find(l => l.event === 'client_connected')?.requestId).toBe(REQUEST_ID)
+      expect(logs.find(l => l.event === 'client_disconnected')?.requestId).toBe(REQUEST_ID)
+    })
+
+    it('should log it when the IP is past the cap', async () => {
+      const { url } = start(createHub())
+      for (let i = 0; i < MAX_CONNECTIONS_PER_IP; i++) await openEvents(url)
+      const logs = captureLogs()
+
+      const rejected = await openEvents(url, '/events', headers)
+
+      expect(rejected.res.status).toBe(429)
+      expect(logs.find(l => l.event === 'client_rejected')?.requestId).toBe(REQUEST_ID)
+    })
+  })
+
   describe('when the browser disconnects', () => {
     it('should unsubscribe it from the hub when the request is aborted', async () => {
       const hub = createHub()
@@ -320,7 +360,7 @@ describe('server', () => {
       const sock = net.connect(Number(url.port), url.hostname)
       await new Promise<void>(resolve => sock.once('connect', () => resolve()))
       sock.on('error', () => {})
-      sock.write(`GET /events HTTP/1.1\r\nHost: x\r\nX-Real-IP: ${ip}\r\n\r\n`)
+      sock.write(`GET /events HTTP/1.1\r\nHost: x\r\nX-Real-IP: ${ip}\r\nX-Railway-Request-Id: stalled-request\r\n\r\n`)
       sock.pause()
       stops.push(() => sock.destroy())
       return sock
@@ -329,6 +369,7 @@ describe('server', () => {
     it('should drop it, free its slot and keep other readers when it falls too far behind', async () => {
       const hub = createHub()
       const { url } = start(hub)
+      const logs = captureLogs()
       await openStalled(url, '203.0.113.7')
       const reader = await openEvents(url)
       await waitFor(() => hub.subscriberCount() === 2)
@@ -343,6 +384,7 @@ describe('server', () => {
       }
 
       expect(hub.subscriberCount()).toBe(1)
+      expect(logs.find(l => l.event === 'client_dropped')?.requestId).toBe('stalled-request')
       const again = await openEvents(url, '/events', { 'X-Real-IP': '203.0.113.7' })
       expect(again.res.status).toBe(200)
     }, 20_000)

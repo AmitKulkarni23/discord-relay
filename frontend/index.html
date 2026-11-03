@@ -3,13 +3,25 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="color-scheme" content="dark" />
+    <meta name="color-scheme" content="dark light" />
     <meta name="theme-color" content="#0D0E11" />
     <meta name="description" content="A Discord channel, relayed live." />
     <title>DiscordRelay</title>
+    <!-- Paint the reader's theme before React mounts, so the page never flashes the wrong one. Colours match theme.ts. -->
+    <style>
+      html { background: #0d0e11; }
+      html[data-color-scheme='light'] { background: #f7f8fa; }
+      body { margin: 0; }
+    </style>
+    <script>
+      try {
+        const stored = localStorage.getItem('mui-mode')
+        const scheme = stored === 'dark' || stored === 'light' ? stored : matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
+        document.documentElement.setAttribute('data-color-scheme', scheme)
+      } catch {}
+    </script>
   </head>
-  <!-- Background set here too so the page never flashes white before React mounts. -->
-  <body style="margin: 0; background: #0d0e11">
+  <body>
     <div id="root"></div>
     <script type="module" src="./app.tsx"></script>
   </body>

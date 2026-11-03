@@ -7,19 +7,21 @@ import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
 import CssBaseline from '@mui/material/CssBaseline'
 import Divider from '@mui/material/Divider'
+import IconButton from '@mui/material/IconButton'
 import Tab from '@mui/material/Tab'
 import Tabs from '@mui/material/Tabs'
 import SvgIcon from '@mui/material/SvgIcon'
 import Toolbar from '@mui/material/Toolbar'
+import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
-import { alpha, keyframes, ThemeProvider } from '@mui/material/styles'
+import { alpha, keyframes, ThemeProvider, useColorScheme } from '@mui/material/styles'
 import type { ChannelInfo, Msg } from '../backend/types.ts'
 // Bun's HTML bundler does not code-split, so this ships in the main bundle even with
 // the `attachments` flag off (a few KB). It only renders when the flag is on; split with Bun.build if it grows.
 import Attachments from './attachments.tsx'
 import { addMsg, buildRows, compareIds, eventsUrl, parseConfig, parseMsg, retryDelay, sortMsgs } from './feed.ts'
 import { isDiscordCdn } from './media.ts'
-import { theme } from './theme.ts'
+import { GROUND, theme } from './theme.ts'
 
 /** The browser's view of the /events stream. */
 type Status = 'connecting' | 'live' | 'reconnecting'
@@ -78,9 +80,41 @@ function StatusChip({ status }: { status: Status }): ReactElement {
   )
 }
 
+/** Switches between light and dark. Follows the OS until the reader picks; MUI stores the pick and syncs other tabs. */
+function ThemeToggle(): ReactElement {
+  const { mode, systemMode, setMode } = useColorScheme()
+  const current = (mode === 'system' ? systemMode : mode) ?? 'dark'
+  const next = current === 'dark' ? 'light' : 'dark'
+  const label = `Switch to ${next} mode`
+
+  // The browser's own toolbar colour on mobile.
+  useEffect(() => {
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', GROUND[current])
+  }, [current])
+
+  return (
+    <Tooltip title={label}>
+      <IconButton aria-label={label} onClick={() => setMode(next)} sx={{ width: 36, height: 36, color: 'text.secondary', '&:hover': { color: 'text.primary' } }}>
+        <SvgIcon sx={{ fontSize: 20 }} viewBox="0 0 24 24">
+          <g fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            {next === 'light' ? (
+              <>
+                <circle cx="12" cy="12" r="4" />
+                <path d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
+              </>
+            ) : (
+              <path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5Z" />
+            )}
+          </g>
+        </SvgIcon>
+      </IconButton>
+    </Tooltip>
+  )
+}
+
 type TopBarProps = { channels: ChannelInfo[]; activeId: string | null; onSelect: (id: string) => void; status: Status }
 
-/** Sticky top bar: product name, the channel (tabs when there are several), connection state. */
+/** Sticky top bar: product name, the channel (tabs when there are several), connection state, theme. */
 function TopBar({ channels, activeId, onSelect, status }: TopBarProps): ReactElement {
   const active = channels.find(c => c.id === activeId)
   return (
@@ -114,8 +148,9 @@ function TopBar({ channels, activeId, onSelect, status }: TopBarProps): ReactEle
             {channelLabel(active)}
           </Typography>
         ) : null}
-        <Box sx={{ ml: 'auto' }}>
+        <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 1 }}>
           <StatusChip status={status} />
+          <ThemeToggle />
         </Box>
       </Toolbar>
     </AppBar>
@@ -178,7 +213,7 @@ const MessageRow = memo(function MessageRow({ msg, head, attachmentsOn }: { msg:
         pb: 0.25,
         mt: head ? 0.75 : 0,
         borderRadius: 1,
-        '--arrive-tint': (t) => alpha(t.palette.primary.main, 0.16),
+        '--arrive-tint': 'rgba(var(--mui-palette-primary-mainChannel) / 0.16)',
         animation: fresh ? `${arrive} 1.2s cubic-bezier(0.16, 1, 0.3, 1)` : 'none',
         '@media (prefers-reduced-motion: reduce)': { animation: 'none' },
         '&:hover': { bgcolor: 'action.hover' },
@@ -258,17 +293,20 @@ function NewMessagesPill({ count, onClick }: { count: number; onClick: () => voi
           <path d="M12 4v14m0 0-6-6m6 6 6-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
         </SvgIcon>
       }
-      sx={{
-        position: 'fixed',
-        bottom: 24,
-        left: '50%',
-        transform: 'translateX(-50%)',
-        borderRadius: 999,
-        px: 2,
-        textTransform: 'none',
-        fontWeight: 600,
-        boxShadow: (t) => `0 6px 20px ${alpha(t.palette.common.black, 0.45)}`,
-      }}
+      sx={[
+        {
+          position: 'fixed',
+          bottom: 24,
+          left: '50%',
+          transform: 'translateX(-50%)',
+          borderRadius: 999,
+          px: 2,
+          textTransform: 'none',
+          fontWeight: 600,
+        },
+        (t) => ({ boxShadow: `0 6px 20px ${alpha(t.palette.common.black, 0.45)}` }),
+        (t) => t.applyStyles('light', { boxShadow: `0 6px 20px ${alpha(t.palette.common.black, 0.18)}` }),
+      ]}
     >
       {count} new message{count === 1 ? '' : 's'}
     </Button>
@@ -390,8 +428,8 @@ function App(): ReactElement {
   }
 
   return (
-    <ThemeProvider theme={theme}>
-      <CssBaseline />
+    <ThemeProvider theme={theme} defaultMode="system" noSsr>
+      <CssBaseline enableColorScheme />
       <TopBar channels={channels} activeId={activeId} onSelect={selectChannel} status={status} />
       <Box
         component="main"
@@ -409,6 +447,10 @@ function App(): ReactElement {
     </ThemeProvider>
   )
 }
+
+// A page always lands on the newest message and follows it, even on reload: the browser restoring
+// an old offset would leave the reader mid-history, and the stick-to-bottom logic would then hold them there.
+window.history.scrollRestoration = 'manual'
 
 const root = document.getElementById('root')
 if (!root) throw new Error('index.html is missing #root')

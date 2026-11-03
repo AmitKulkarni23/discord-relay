@@ -1,27 +1,38 @@
-import { alpha, createTheme } from '@mui/material/styles'
+import { createTheme } from '@mui/material/styles'
 
 /**
- * The page's only colour source. Dark by design: reviewers keep it open
- * beside Discord on a laptop. Violet is the single accent (focus, the
- * new-messages pill, the arrival tint); green means live, amber means
- * reconnecting, and nothing else is coloured.
+ * The page's only colour source. Two schemes of one identity: cool neutrals,
+ * violet as the single accent (focus, the new-messages pill, the arrival tint),
+ * green means live, amber means reconnecting, and nothing else is coloured.
+ * Each colour is darkened for light so text and status dots keep their contrast.
+ * The page follows the OS until the reader picks a mode (ThemeToggle in app.tsx).
  */
-const ground = '#0D0E11'
-const surface = '#15171B'
-const line = '#24272E'
-const ink = '#E7E8EB'
-const inkMuted = '#A0A5AE'
-const accent = '#A493F7'
+/** The page background per scheme; also the browser's toolbar colour. */
+export const GROUND = { dark: '#0D0E11', light: '#F7F8FA' }
 
 export const theme = createTheme({
-  palette: {
-    mode: 'dark',
-    background: { default: ground, paper: surface },
-    divider: line,
-    text: { primary: ink, secondary: inkMuted },
-    primary: { main: accent, contrastText: ground },
-    success: { main: '#4CC38A' },
-    warning: { main: '#E5A93B' },
+  cssVariables: { colorSchemeSelector: 'data-color-scheme' },
+  colorSchemes: {
+    dark: {
+      palette: {
+        background: { default: GROUND.dark, paper: '#15171B' },
+        divider: '#24272E',
+        text: { primary: '#E7E8EB', secondary: '#A0A5AE' },
+        primary: { main: '#A493F7', contrastText: '#0D0E11' },
+        success: { main: '#4CC38A' },
+        warning: { main: '#E5A93B' },
+      },
+    },
+    light: {
+      palette: {
+        background: { default: GROUND.light, paper: '#FFFFFF' },
+        divider: '#E1E3E8',
+        text: { primary: '#16181D', secondary: '#5C626E' },
+        primary: { main: '#5B45D6', contrastText: '#FFFFFF' },
+        success: { main: '#1A8F5C' },
+        warning: { main: '#B7791F' },
+      },
+    },
   },
   shape: { borderRadius: 8 },
   typography: {
@@ -35,10 +46,10 @@ export const theme = createTheme({
   components: {
     MuiCssBaseline: {
       styleOverrides: {
-        html: { colorScheme: 'dark', scrollbarColor: `${line} ${ground}` },
-        body: { caretColor: accent, WebkitFontSmoothing: 'antialiased' },
-        '::selection': { backgroundColor: alpha(accent, 0.35), color: ink },
-        ':focus-visible': { outline: `2px solid ${accent}`, outlineOffset: 2 },
+        html: { scrollbarColor: 'var(--mui-palette-divider) var(--mui-palette-background-default)' },
+        body: { caretColor: 'var(--mui-palette-primary-main)', WebkitFontSmoothing: 'antialiased' },
+        '::selection': { backgroundColor: 'rgba(var(--mui-palette-primary-mainChannel) / 0.35)', color: 'var(--mui-palette-text-primary)' },
+        ':focus-visible': { outline: '2px solid var(--mui-palette-primary-main)', outlineOffset: 2 },
       },
     },
   },

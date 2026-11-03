@@ -13,7 +13,7 @@ Each row lists what can break, what a user would report, how we notice, and what
 | 4 | A client stops reading, or falls too far behind | That client reconnects and gets what it missed | `client_dropped` log line (`@event:client_dropped`) | Each stream counts queued bytes. Past 1 MiB on a live write, the stream errors, its queue is freed and the socket is closed | Mitigated |
 | 4b | One machine opens many streams to exhaust memory | Past the cap, that machine's page shows "Reconnecting…" | `@httpStatus:429` in Railway's HTTP logs | 20 open streams per IP, then 429. Shared networks share the cap, and many IPs (a botnet, an IPv6 range) get past it | Mitigated for one IP. Many IPs accepted |
 | 5 | A tab stays open for days | The page slows down | None | The browser keeps at most 500 messages | Mitigated |
-| 6 | More than 10,000 open connections | New visitors cannot connect | Railway limit | Nothing yet | Accepted. Confirm with Railway whether the limit is per domain or per replica, then add replicas or a push service |
+| 6 | More than 10,000 in-flight requests on the domain at one edge node | New visitors cannot connect | Railway limit | Nothing yet | Accepted. Railway counts per domain, per edge node, across all replicas and client IPs, and neither replicas nor a plan upgrade raise it. Past that, use a push service, or WebSockets, whose established connections give their slot back. The app itself passed 10,000 clients at 5 msg/s (README, Load test) |
 
 ## Discord to server (Gateway)
 
@@ -32,7 +32,7 @@ Each row lists what can break, what a user would report, how we notice, and what
 |---|---|---|---|---|---|
 | 13 | Process crashes | "Reconnecting…" for a few seconds | An `unhandled_error` log line (`@level:error`) for any uncaught exception or rejection | Restart policy (on failure), and history is fetched again at startup | Mitigated |
 | 14 | An env var is missing | The deploy never goes live | Startup validation | Exit 1 with a log naming the variable | Mitigated |
-| 15 | A deploy or crash drops every client at the same moment | "Reconnecting…" for up to a second on a deploy, longer on a crash | `clients` on `/health` | SIGTERM handler, 30 s of overlap and draining, and a start command of `bun run` so reconnects land on a ready server after a deploy. Browsers reconnect with backoff and jitter and fetch only newer messages. No cap on total connections beyond Railway's 10,000, and not load tested | Reduced |
+| 15 | A deploy or crash drops every client at the same moment | "Reconnecting…" for up to a second on a deploy, longer on a crash | `clients` on `/health` | SIGTERM handler, 30 s of overlap and draining, and a start command of `bun run` so reconnects land on a ready server after a deploy. Browsers reconnect with backoff and jitter and fetch only newer messages. No cap on total connections beyond Railway's 10,000. 10,000 clients connecting at once were load tested over the private network and recovered in about 7 s with a full replay; Railway's public edge was not tested | Reduced |
 | 16 | Two bots run during the deploy overlap | Nothing | None | Harmless because the bot only reads. It would post duplicate replies if it ever wrote | Accepted |
 | 17 | A restart empties the in-memory buffer | An empty page for a moment | None | Fetch the latest `BUFFER_SIZE` messages at startup | Mitigated |
 | 18 | The buffer grows without limit | A crash from running out of memory | None | Fixed-size ring buffer of `BUFFER_SIZE` messages, at most 500 | Mitigated |

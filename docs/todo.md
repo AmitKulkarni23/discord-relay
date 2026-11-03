@@ -44,15 +44,15 @@ This tests the real path end to end (Discord → bot → hub → SSE → browser
 
 ### Testing fan-out
 
-Do not load test production: it costs egress, and real reviewers share the one replica. Use a separate Railway environment (or local) with a fake source.
+Built: `load/`, with results in the README. Still open:
 
-- A small Bun script that opens N `/events` streams (`fetch` with a reader per stream) and records, for each message, the time from publish to receipt on every stream. Report p50/p99 latency and how many streams dropped.
-- A fake source that calls `hub.publish` at a fixed rate instead of Discord. The integration tests already do this, so the pattern exists.
-- Ramp N: 100, 1,000, 5,000, 10,000. Watch memory, CPU and `/health` `clients` on Railway's metrics tab.
+- Find out why a few connections stall for up to 46 s at 12,500 clients and above on Railway, when CPU is under 50%.
+- Find out why the Bun generator saw repeated messages at 50 msg/s on a saturated local server.
+- Run a long soak to look for leaks, since levels are only held for 45 s.
 
 ### What Railway can and cannot do here
 
-- **Connections:** Railway's proxy caps a service at about 10,000 concurrent connections, and cuts any request at 15 minutes (`EventSource` reconnects, and the browser dedupes by ID). See `interview_talking_points.md` for the memory and bandwidth math.
+- **Connections:** Railway's edge caps a domain at 10,000 in-flight requests on each edge node, whatever the replica count or plan, and cuts any request at 15 minutes (`EventSource` reconnects, and the browser dedupes by ID). See `interview_talking_points.md` for the memory and bandwidth math.
 - **Vertical scaling:** Railway grows CPU and memory up to the plan's limit with no config. That covers the 10k-connection range.
 - **Horizontal scaling:** adding replicas does not work as-is, because every replica would start its own bot with its own buffer (decision D6). Past one replica, split the design: one bot service publishes to Redis or NATS, and N fan-out replicas subscribe and serve SSE. Or buy fan-out from a push service.
 

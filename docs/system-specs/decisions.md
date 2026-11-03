@@ -56,7 +56,7 @@ We use a query parameter instead of the `Last-Event-ID` header because the brows
 
 `EventSource` retries a dropped stream after a fixed delay of about 3 seconds and stops for good on an HTTP error. So every error closes it and the page reconnects after a random delay, up to 1 s and doubling per attempt to 30 s. Backoff starts over only after a stream has stayed open 30 s, so a server that accepts connections and then dies keeps pushing browsers further apart.
 
-Revisit if the load test in `todo.md` shows a one-second spread is too narrow for a deploy. The next step is having the server close streams at random times across the 30 s draining window. Streams dropped together also reach the 15-minute cut together, which `?since=` makes cheap but does not spread.
+The load test (README) connected 10,000 clients at once without failures, with no spread at all, over the private network. Revisit if that does not hold through Railway's public edge, which the test bypasses. The next step is having the server close streams at random times across the 30 s draining window. Streams dropped together also reach the 15-minute cut together, which `?since=` makes cheap but does not spread.
 
 ## D8. Feature flags in Railway Feature Flags
 

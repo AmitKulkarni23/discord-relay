@@ -46,6 +46,10 @@ discord-relay/
 │   ├── attachments.tsx    # images, video, audio, file cards
 │   ├── theme.ts           # MUI theme
 │   └── app.tsx            # React + MUI
+├── load/                  # load test: fake producer + raw-socket clients (not deployed, results in README)
+│   ├── run.ts             # ramps client counts, stops at the first failing level
+│   ├── server.ts          # real hub and server, fake producer, control port
+│   └── worker.ts          # one generator process
 ├── docs/
 │   ├── system-specs/      # architecture, failure modes, decisions
 │   └── task-specs/        # one spec per task, TASK_INDEX.md lists them in order
@@ -99,6 +103,7 @@ bun run typecheck
 bun test           # unit + integration, no network
 bun test --coverage  # per-file floor in bunfig.toml
 bun audit          # known vulnerabilities
+bun load/run.ts --levels 1000,5000 --rate 5   # local load test, never against production
 ```
 
 ```bash

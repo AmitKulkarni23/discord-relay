@@ -17,7 +17,7 @@ import type { ChannelInfo, Msg } from '../backend/types.ts'
 // Bun's HTML bundler does not code-split, so this ships in the main bundle even with
 // the `attachments` flag off (a few KB). It only renders when the flag is on; split with Bun.build if it grows.
 import Attachments from './attachments.tsx'
-import { addMsg, buildRows, compareIds, parseConfig, parseMsg, sortMsgs } from './feed.ts'
+import { addMsg, buildRows, compareIds, eventsUrl, parseConfig, parseMsg, retryDelay, sortMsgs } from './feed.ts'
 import { isDiscordCdn } from './media.ts'
 import { theme } from './theme.ts'
 
@@ -28,8 +28,8 @@ type Status = 'connecting' | 'live' | 'reconnecting'
 const FRESH_MS = 15_000
 /** How close to the bottom (px) still counts as reading the newest message. */
 const BOTTOM_SLACK = 80
-/** Longest wait between manual reconnects after the browser gives up on a stream. */
-const MAX_RETRY_MS = 30_000
+/** How long a stream must stay open before reconnect backoff starts over. */
+const STABLE_MS = 30_000
 
 const timeFmt = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' })
 const fullFmt = new Intl.DateTimeFormat(undefined, { dateStyle: 'full', timeStyle: 'short' })
@@ -306,37 +306,41 @@ function App(): ReactElement {
     setStatus('connecting')
     setSeenId(null)
     atBottom.current = true
-    const src = streamChannel ? `/events?channel=${encodeURIComponent(streamChannel)}` : '/events'
     let es: EventSource | undefined
     let retry: ReturnType<typeof setTimeout> | undefined
-    let delay = 1000
-    let stopped = false
+    let stable: ReturnType<typeof setTimeout> | undefined
+    let attempt = 0
+    let since: string | null = null
 
-    // EventSource retries on its own after a dropped stream, but gives up for
-    // good on an HTTP error (e.g. a 502 mid-deploy); then we reconnect ourselves.
+    // EventSource's own retry has a fixed delay and stops for good on an HTTP error (e.g. a 502
+    // mid-deploy), so every error closes it and this loop reconnects with backoff and jitter.
     const connect = (): void => {
-      es = new EventSource(src)
+      es = new EventSource(eventsUrl(streamChannel, since))
       es.onopen = () => {
-        delay = 1000
         setStatus('live')
+        // Not on open alone: a server that accepts and then dies must keep backing off.
+        stable = setTimeout(() => {
+          attempt = 0
+        }, STABLE_MS)
       }
       es.onmessage = e => {
         const m = parseMsg(String(e.data))
-        if (m) setMsgs(prev => addMsg(prev, m))
+        if (!m) return
+        if (since === null || compareIds(m.id, since) > 0) since = m.id
+        setMsgs(prev => addMsg(prev, m))
       }
       es.onerror = () => {
+        es?.close()
+        clearTimeout(stable)
         setStatus('reconnecting')
-        if (es?.readyState === EventSource.CLOSED && !stopped) {
-          retry = setTimeout(connect, delay)
-          delay = Math.min(delay * 2, MAX_RETRY_MS)
-        }
+        retry = setTimeout(connect, retryDelay(attempt++))
       }
     }
 
     connect()
     return () => {
-      stopped = true
       clearTimeout(retry)
+      clearTimeout(stable)
       es?.close()
     }
   }, [streamChannel])

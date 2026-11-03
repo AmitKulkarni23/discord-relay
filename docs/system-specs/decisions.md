@@ -46,13 +46,17 @@ Option A gives every replica its own bot. That works because the bot only reads,
 
 Revisit if a few seconds of downtime on a crash is unacceptable, or if connections approach Railway's 10,000 limit.
 
-## D7. Reconnects resend the full buffer
+## D7. Reconnects get only newer messages
 
-Every `/events` connection receives the full buffer, and the browser dedupes by message ID. This avoids tracking each client's position, and resending the buffer (100 messages by default, at most 500) every 15 minutes costs almost nothing, because each message is serialized once and every stream shares the bytes.
+A new page receives the full buffer. A reconnecting browser passes the newest ID it holds as `?since=` and receives only newer messages, including any that arrive live while a restarted server refills its buffer. Without this, every 15-minute cut resends the whole buffer to every client: about 58 KB each, or about 56 GB a day at 10,000 clients.
 
-The alternative is `Last-Event-ID` replay of only the missed messages. Every event already carries the message ID, so switching is a small change.
+We use a query parameter instead of the `Last-Event-ID` header because the browser's own reconnect is what sends that header, and the page replaces it with its own loop (D7a). Messages older than the buffer are still skipped.
 
-Revisit if the buffer grows large.
+## D7a. The browser reconnects itself, with jitter
+
+`EventSource` retries a dropped stream after a fixed delay of about 3 seconds and stops for good on an HTTP error. So every error closes it and the page reconnects after a random delay, up to 1 s and doubling per attempt to 30 s. Backoff starts over only after a stream has stayed open 30 s, so a server that accepts connections and then dies keeps pushing browsers further apart.
+
+Revisit if the load test in `todo.md` shows a one-second spread is too narrow for a deploy. The next step is having the server close streams at random times across the 30 s draining window. Streams dropped together also reach the 15-minute cut together, which `?since=` makes cheap but does not spread.
 
 ## D8. Feature flags in Railway Feature Flags
 

@@ -3,6 +3,9 @@ import type { Attachment, ChannelInfo, Msg } from '../backend/types.ts'
 /** The most messages the browser holds; the oldest are dropped past this. */
 export const MAX_MSGS = 500
 
+/** Longest wait between reconnects. */
+export const MAX_RETRY_MS = 30_000
+
 /** Messages from one author closer together than this share a group header. */
 const GROUP_GAP_MS = 5 * 60_000
 
@@ -50,6 +53,23 @@ export function buildRows(msgs: Msg[]): Row[] {
     prev = msg
   }
   return rows
+}
+
+/**
+ * Returns how long to wait before a reconnect: a random point in a window that
+ * doubles per attempt, so browsers dropped together do not come back together.
+ */
+export function retryDelay(attempt: number, random: () => number = Math.random): number {
+  return random() * Math.min(1000 * 2 ** attempt, MAX_RETRY_MS)
+}
+
+/** Builds the /events URL. `since` is the newest ID held, so a reconnect gets only newer messages. */
+export function eventsUrl(channel: string | null, since: string | null): string {
+  const params = new URLSearchParams()
+  if (channel) params.set('channel', channel)
+  if (since) params.set('since', since)
+  const query = params.toString()
+  return query ? `/events?${query}` : '/events'
 }
 
 /** Parses one SSE `data:` payload into a Msg, or null when it does not match the shape. */

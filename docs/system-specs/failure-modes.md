@@ -6,9 +6,9 @@ Each row lists what can break, what a user would report, how we notice, and what
 
 | # | Failure | User sees | Detection | Handling | Status |
 |---|---|---|---|---|---|
-| 1 | Railway proxy ends the request at 15 min | A brief "Reconnecting…" | `EventSource` `error` event | `EventSource` reconnects on its own, the server resends the buffer, and the browser dedupes by ID | Mitigated |
+| 1 | Railway proxy ends the request at 15 min | A brief "Reconnecting…" | `EventSource` `error` event | The page reconnects after a random delay with `?since=`, and the server sends only newer messages | Mitigated |
 | 2 | Proxy closes a stream with no data for 5 min | Same as 1 | Same as 1 | `: ping` every 25 s | Mitigated |
-| 3 | Browser loses its network | "Reconnecting…" until it is back | `EventSource` `error` event | Reconnect and full buffer. Messages older than the buffer are skipped | Mitigated |
+| 3 | Browser loses its network | "Reconnecting…" until it is back | `EventSource` `error` event | Reconnect with backoff and `?since=`. Messages older than the buffer are skipped | Mitigated |
 | 4a | A write to a stream that already closed | Nothing | Write throws before `abort` fires | The write is caught and treated as a disconnect, so a dead tab cannot crash the server | Mitigated |
 | 4 | A client stops reading, or falls too far behind | That client reconnects and gets the buffer again | `client_dropped` log line (`@event:client_dropped`) | Each stream counts queued bytes. Past 1 MiB on a live write, the stream errors, its queue is freed and the socket is closed | Mitigated |
 | 4b | One machine opens many streams to exhaust memory | Past the cap, that machine's page shows "Reconnecting…" | `@httpStatus:429` in Railway's HTTP logs | 20 open streams per IP, then 429. Shared networks share the cap, and many IPs (a botnet, an IPv6 range) get past it | Mitigated for one IP. Many IPs accepted |
@@ -32,7 +32,7 @@ Each row lists what can break, what a user would report, how we notice, and what
 |---|---|---|---|---|---|
 | 13 | Process crashes | "Reconnecting…" for a few seconds | An `unhandled_error` log line (`@level:error`) for any uncaught exception or rejection | Restart policy (on failure), and history is fetched again at startup | Mitigated |
 | 14 | An env var is missing | The deploy never goes live | Startup validation | Exit 1 with a log naming the variable | Mitigated |
-| 15 | A deploy kills the old process at once (Railway's default drain is 0 s) | Every client drops at the same moment | None | SIGTERM handler, 30 s of overlap and draining, and a start command of `bun run` instead of a package script | Mitigated |
+| 15 | A deploy or crash drops every client at the same moment | "Reconnecting…" for up to a second on a deploy, longer on a crash | `clients` on `/health` | SIGTERM handler, 30 s of overlap and draining, and a start command of `bun run` so reconnects land on a ready server after a deploy. Browsers reconnect with backoff and jitter and fetch only newer messages. No cap on total connections beyond Railway's 10,000, and not load tested | Reduced |
 | 16 | Two bots run during the deploy overlap | Nothing | None | Harmless because the bot only reads. It would post duplicate replies if it ever wrote | Accepted |
 | 17 | A restart empties the in-memory buffer | An empty page for a moment | None | Fetch the latest `BUFFER_SIZE` messages at startup | Mitigated |
 | 18 | The buffer grows without limit | A crash from running out of memory | None | Fixed-size ring buffer of `BUFFER_SIZE` messages, at most 500 | Mitigated |

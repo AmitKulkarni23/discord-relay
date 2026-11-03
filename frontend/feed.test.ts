@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test'
 import type { Msg } from '../backend/types.ts'
-import { addMsg, buildRows, compareIds, MAX_MSGS, parseConfig, parseMsg, sortMsgs } from './feed.ts'
+import { addMsg, buildRows, compareIds, eventsUrl, MAX_MSGS, MAX_RETRY_MS, parseConfig, parseMsg, retryDelay, sortMsgs } from './feed.ts'
 
 const CHANNEL = '1566584977829900002'
 
@@ -180,6 +180,36 @@ describe('parseConfig', () => {
       const config = parseConfig({ attachments: 'yes', channels: [{ id: 42 }, { id: '1566584977829900002', name: 'relay' }, null] })
 
       expect(config).toEqual({ attachments: false, channels: [{ id: '1566584977829900002', name: 'relay' }] })
+    })
+  })
+})
+
+describe('retryDelay', () => {
+  describe('when retries keep failing', () => {
+    it('should double the ceiling until the maximum when the random draw is at its top', () => {
+      const top = () => 1
+      expect([0, 1, 2, 3, 4, 5, 6, 99].map(attempt => retryDelay(attempt, top))).toEqual([1000, 2000, 4000, 8000, 16_000, MAX_RETRY_MS, MAX_RETRY_MS, MAX_RETRY_MS])
+    })
+
+    it('should spread the wait across the whole window when the random draw varies', () => {
+      expect(retryDelay(2, () => 0)).toBe(0)
+      expect(retryDelay(2, () => 0.5)).toBe(2000)
+    })
+  })
+})
+
+describe('eventsUrl', () => {
+  describe('when connecting for the first time', () => {
+    it('should omit since when no message has been seen', () => {
+      expect(eventsUrl(null, null)).toBe('/events')
+      expect(eventsUrl(CHANNEL, null)).toBe(`/events?channel=${CHANNEL}`)
+    })
+  })
+
+  describe('when reconnecting', () => {
+    it('should send the newest seen ID when one is held', () => {
+      expect(eventsUrl(null, '1566588496691400002')).toBe('/events?since=1566588496691400002')
+      expect(eventsUrl(CHANNEL, '1566588496691400002')).toBe(`/events?channel=${CHANNEL}&since=1566588496691400002`)
     })
   })
 })

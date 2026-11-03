@@ -142,6 +142,48 @@ describe('server', () => {
     })
   })
 
+  describe('when a browser reconnects with ?since=', () => {
+    /** Starts a server holding three messages, the way a reconnect finds it. */
+    function startWithBuffer() {
+      const hub = createHub()
+      for (const id of ['1302000000000000001', '1302000000000000002', '1302000000000000003']) hub.publish(makeMsg(id))
+      return { hub, url: start(hub).url }
+    }
+
+    it('should replay only newer messages when the ID is valid', async () => {
+      const { url } = startWithBuffer()
+
+      const events = await openEvents(url, '/events?since=1302000000000000002')
+      const text = await events.readUntil(t => t.includes('id: 1302000000000000003'))
+
+      expect(text).not.toContain('id: 1302000000000000001')
+      expect(text).not.toContain('id: 1302000000000000002')
+    })
+
+    it('should skip a live message when the browser already has it', async () => {
+      const hub = createHub()
+      const { url } = start(hub)
+      const events = await openEvents(url, '/events?since=1302000000000000002')
+      await waitFor(() => hub.subscriberCount() === 1)
+
+      // A restarted server refills its buffer by publishing history, so old IDs can arrive live.
+      hub.publish(makeMsg('1302000000000000001'))
+      hub.publish(makeMsg('1302000000000000003'))
+
+      const text = await events.readUntil(t => t.includes('id: 1302000000000000003'))
+      expect(text).not.toContain('id: 1302000000000000001')
+    })
+
+    it('should replay the full buffer when the ID is not a snowflake', async () => {
+      const { url } = startWithBuffer()
+
+      const events = await openEvents(url, '/events?since=1302%27%20OR%201')
+      const text = await events.readUntil(t => t.includes('id: 1302000000000000003'))
+
+      expect(text).toContain('id: 1302000000000000001')
+    })
+  })
+
   describe('when a browser picks a channel', () => {
     it('should stream the first configured channel when no channel is given', async () => {
       const hub = createHub()

@@ -51,6 +51,11 @@ export function encodeEvent(msg: Msg): Uint8Array {
   return bytes
 }
 
+/** Reads ?since=, an untrusted message ID. Anything else is 0, which every ID is newer than, so the full buffer is sent. */
+function parseSince(value: string | null): bigint {
+  return value && /^\d{1,20}$/.test(value) ? BigInt(value) : 0n
+}
+
 /**
  * Returns the IP to count a connection against. On Railway the socket address is the proxy's,
  * so the client comes from X-Real-IP, the header Railway documents for it. That is trustworthy
@@ -84,12 +89,16 @@ export function startServer(deps: ServerDeps): { url: URL; stop: () => void } {
    * Streams one channel's buffered messages, then each new one, with a ping
    * every `pingMs`. The channel comes from `?channel=` (untrusted, so only a
    * configured ID is accepted) or defaults to the first configured channel.
+   * A reconnecting browser passes `?since=` with the newest ID it holds and gets only newer messages.
    * Unsubscribes when the browser disconnects or the server stops. Returns 429
    * past the per-IP cap, and drops a client that stops reading.
    */
   function events(req: Request, server: Bun.Server<undefined>): Response {
-    const channelId = new URL(req.url).searchParams.get('channel') ?? defaultChannel
+    const params = new URL(req.url).searchParams
+    const channelId = params.get('channel') ?? defaultChannel
     if (!channelIds.includes(channelId)) return new Response('Unknown channel', { status: 404 })
+    const since = parseSince(params.get('since'))
+    const isNew = (m: Msg) => BigInt(m.id) > since
     const ip = clientIp(req, server)
     const connections = connectionsByIp.get(ip) ?? 0
     if (connections >= MAX_CONNECTIONS_PER_IP) {
@@ -123,8 +132,11 @@ export function startServer(deps: ServerDeps): { url: URL; stop: () => void } {
         }
         // Send something at once so headers flush even when the buffer is empty.
         send(CONNECTED)
-        for (const m of hub.recent(channelId)) send(encodeEvent(m))
-        const unsubscribe = hub.subscribe(channelId, m => write(encodeEvent(m)))
+        for (const m of hub.recent(channelId).filter(isNew)) send(encodeEvent(m))
+        // A restarted server refills its buffer through publish, so a live message can be one the browser holds.
+        const unsubscribe = hub.subscribe(channelId, m => {
+          if (isNew(m)) write(encodeEvent(m))
+        })
 
         let closed = false
         cleanup = () => {

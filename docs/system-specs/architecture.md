@@ -100,8 +100,9 @@ sequenceDiagram
     S-->>W: ": ping" every 25 s
   end
   Note over P,W: proxy cuts the request at 15 min, or the server restarts
-  W->>S: GET /events (EventSource reconnects on its own)
-  S-->>W: full buffer again
+  W->>W: wait a random delay, which grows with each failed attempt
+  W->>S: GET /events?since=<newest ID held>
+  S-->>W: only newer messages
   W->>W: dedupe by message ID, nothing shows twice
 ```
 
@@ -118,7 +119,7 @@ sequenceDiagram
   R->>O: SIGTERM
   O->>W: close SSE streams
   O->>O: destroy Discord client, exit 0
-  W->>N: EventSource reconnects
+  W->>N: reconnect after a random delay
   Note over R,O: SIGKILL after the draining window if O has not exited
 ```
 
@@ -127,7 +128,7 @@ sequenceDiagram
 | Route | Response |
 |---|---|
 | `GET /` | The React page. Bun bundles `frontend/` from the HTML import; `NODE_ENV=production` makes it a minified build with no hot reload. |
-| `GET /events?channel=<id>` | `text/event-stream` for one channel. Sends its buffer, then live events, with `: ping` every 25 s. No `channel` means the first configured channel; an ID that is not configured returns 404. Past 20 open streams from one IP it returns 429 with `Retry-After: 30`. A client more than 1 MiB behind on live writes is dropped. |
+| `GET /events?channel=<id>` | `text/event-stream` for one channel. Sends its buffer, then live events, with `: ping` every 25 s. `since=<id>` limits both to messages newer than that ID; an invalid value is ignored. No `channel` means the first configured channel; an ID that is not configured returns 404. Past 20 open streams from one IP it returns 429 with `Retry-After: 30`. A client more than 1 MiB behind on live writes is dropped. |
 | `GET /config` | `{ "attachments": bool, "editsDeletes": bool, "debugPanel": bool, "channels": [{ "id": string, "name": string \| null }] }`. A `name` is null until the bot has loaded that channel at startup. |
 | `GET /health` | `200` when the Gateway is connected, `503` otherwise. Body: `{ "discord": "connected" \| "disconnected", "clients": n, "buffered": n, "lastEventAt": iso \| null, "uptimeSec": n }` |
 
@@ -146,7 +147,7 @@ data: {"id":"1301234567890123456","channelId":"…"}
 : ping
 ```
 
-The `id:` is always the Discord message ID. On reconnect the server ignores `Last-Event-ID` and resends the full buffer, which is safe because the browser dedupes by ID (see D7 in `decisions.md`).
+The `id:` is always the Discord message ID. On reconnect the browser passes the newest ID it holds as `?since=` and gets only newer messages (see D7 in `decisions.md`).
 
 ## Message shape
 
@@ -188,11 +189,12 @@ Feature flags are Railway Feature Flags, not variables: `attachments`, `edits-de
 
 | Limit | Value | Why |
 |---|---|---|
-| Server buffer per channel | `BUFFER_SIZE`, default 100, 1 to 500 | Keeps memory bounded. Every reconnect resends the whole buffer, and 500 matches the browser cap. |
+| Server buffer per channel | `BUFFER_SIZE`, default 100, 1 to 500 | Keeps memory bounded. A new page gets the whole buffer, and 500 matches the browser cap. |
 | History fetched at startup | Same as the buffer | Fetched in pages of 100, the most Discord returns per request. |
 | Browser message cap | 500 | Keeps a tab that stays open for days fast. |
 | Open streams per client IP | 20, then 429 | Stops one machine holding thousands of subscriptions. The IP is the `X-Real-IP` header Railway sets. |
 | Queued bytes per stream | 1 MiB, then the client is dropped | Stops a client that stopped reading from growing server memory. A replay may exceed it, since the buffer bounds it. |
+| Reconnect delay | Random, up to 1 s, doubling per attempt to 30 s | Spreads browsers dropped together. Starts over once a stream has stayed open 30 s. |
 | SSE heartbeat | 25 s | Railway closes requests that send no data for 5 min. |
 | Gateway watchdog | Exit 1 after 5 min disconnected | Railway runs healthchecks only at deploy time. |
 | Debug panel refresh | `/health` every 10 s | Diagnostics only. Messages are never polled. |

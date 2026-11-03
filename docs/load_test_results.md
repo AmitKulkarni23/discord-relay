@@ -30,6 +30,23 @@ What this means:
 - **The cap affects page loads too.** `/health` and the stats route also got 502s while the edge was refusing connections.
 - **The first 502 was at 14:41:17 UTC, and the burst lasted about 9 s.**
 
+The exact error, from one of the 5,000 entries retrieved from Railway's HTTP logs. The retrieval was capped at 5,000 lines, every entry had this error, and a search for status 529 returned nothing:
+
+```json
+{
+  "timestamp": "2026-11-03T14:41:17.320165542Z",
+  "method": "GET",
+  "path": "/events",
+  "httpStatus": 502,
+  "totalDuration": 1,
+  "edgeRegion": "us-west2",
+  "upstreamAddress": "",
+  "upstreamProto": "",
+  "upstreamErrors": "[{\"deploymentInstanceID\":\"542a648e-3e53-4acb-8488-7e87ef2e0ba9\",\"error\":\"too many upstream connections for host\",\"duration\":0}]",
+  "deploymentInstanceId": "00000000-0000-0000-0000-000000000000"
+}
+```
+
 Open questions:
 
 - Why 12,000 passed when Railway documents 10,000 per domain per edge node. Traffic spread across edge nodes is one possibility, not confirmed; every 502 entry retrieved came from edge region `us-west2`.

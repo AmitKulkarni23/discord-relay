@@ -46,7 +46,9 @@ This tests the real path end to end (Discord → bot → hub → SSE → browser
 
 Built: `load/`, with results in `docs/load_test_results.md`. Still open:
 
-- Find out why a few connections stall for up to 46 s at 12,500 clients and above on Railway, when CPU is under 50%.
+- Find out why a few connections stalled for up to 46 s in the one-generator private runs. The later five-generator runs did not show this at up to 57,500 clients, so one generator's network path is a suspect, not confirmed.
+- Find out why p99 was higher at 1 msg/s than at 5 msg/s for the same client count over the private network.
+- Decide whether to detect dead connections sooner. Streams from clients that vanished stayed counted for more than 5 minutes, using memory and writes (`docs/load_test_results.md`).
 - Find out why the Bun generator saw repeated messages at 50 msg/s on a saturated local server.
 - Run a long soak to look for leaks, since levels are only held for 45 s.
 

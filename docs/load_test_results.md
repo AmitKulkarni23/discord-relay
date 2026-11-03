@@ -56,9 +56,45 @@ Open questions:
 
 One generator could not hold more than 6,000 connections through the public URL: at 7,500, 10,000 and 12,000 it stayed at 6,000 and its extra connections failed with no HTTP response. Railway also logged a high ephemeral port warning for the generator. A separate generator on a laptop then held 7,000 clients with 100% delivery (1 msg/s, p99 492 ms, 15 s hold), so 6,000 is a limit of one generator's outbound path, not of the service or the edge. That laptop run is a diagnostic only.
 
+## True max of the service over the private network (2026-11-03)
+
+This measures the live `discord-relay` service and its real bot with Railway's edge out of the path. It used the same temporary build, with 5 generators in the production environment connecting over the private network and 8 vCPU and 8 GB limits on the service. The server was restarted with zero clients before each ramp. Each level was held for 45 s. A level passes only if every generator gets 100% delivery with no drops and a p99 of at most 1 s, so "generators passing" counts how many of the 5 met that.
+
+| Clients | Msg/s | Delivered | p50 (worst generator) | p99 (range across generators) | Slowest | Memory (process) | Generators passing |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+| 12,500 | 5 | 100% | 201 ms | 129-417 ms | 0.8 s | 824 MB | 5 of 5 |
+| 15,000 | 5 | 100% | 223 ms | 197-406 ms | 0.5 s | 971 MB | 5 of 5 |
+| 17,500 | 5 | 100% | 268 ms | 306-524 ms | 0.7 s | 1.08 GB | 5 of 5 |
+| 20,000 | 5 | 100% | 290 ms | 375-542 ms | 0.6 s | 1.22 GB | 5 of 5 |
+| 25,000 | 5 | 100% | 339 ms | 711-998 ms | 1.2 s | 1.39 GB | 5 of 5 |
+| 20,000 | 1 | 100% | 368 ms | 695-1,115 ms | 1.2 s | 1.48 GB | 2 of 5 |
+| 30,000 | 1 | 100% | 512 ms | 758-1,132 ms | 1.4 s | 1.87 GB | 2 of 5 |
+| 40,000 | 1 | 100% | 573 ms | 844-1,185 ms | 1.3 s | 2.42 GB | 2 of 5 |
+| 50,000 | 1 | 100% | 695 ms | 1,146-1,447 ms | 1.7 s | 2.88 GB | 0 of 5 |
+| 57,500 | 1 | 100% | 728 ms | 1,205-1,518 ms | 1.8 s | 3.12 GB | 0 of 5 |
+
+Railway's own metrics peaked at 1.0 vCPU and 1.64 GB in the 5 msg/s ramp, and 1.0 vCPU and 3.58 GB in the 1 msg/s ramp. Per-level CPU is left out: 5 generators each read and reset the same counter, which made the figures unreliable.
+
+What this means:
+
+- **At 5 msg/s the server held 25,000 clients within the pass criteria.** That was the top of the ramp, and with a worst p99 of 998 ms it is at the edge of the 1 s limit.
+- **The hard ceiling was not found.** At 57,500 clients every message still reached every client, with no refusals, drops, gaps or duplicates. Delivery only got slower.
+- **The server has about 5 times the capacity of the public path.** Through the public URL, 12,000 passed and 15,000 was refused at the edge.
+- **One core is the likely bottleneck, and memory is not.** Railway's metrics peaked at 1.0 of 8 vCPU, and 57,500 clients used 3.58 GB of 8 GB.
+
+Limits of this result:
+
+- **1 msg/s looks slower than 5 msg/s at the same client count, and that is unexplained.** At 20,000 clients the p99 was up to 1,115 ms at 1 msg/s and up to 542 ms at 5 msg/s. So do not read the 1 msg/s pass counts as a precise limit.
+- **This is not what visitors can reach.** Real traffic goes through the edge, and these clients were raw sockets, not browsers.
+- **It covers short holds only.** Each level ran for 45 s.
+
+### Dead connections linger
+
+Generators that stop without closing their sockets stay counted on the server. After one ramp ended, `/health` still reported 25,896 clients more than 5 minutes later. An earlier, discarded ramp reached 75,896 subscribers because of this, with about 50,000 of them live, and Railway's memory peaked at 7.04 GB of 8 GB. The process did not crash. Real clients that disappear without closing, such as a phone losing signal, would behave the same way.
+
 ## Separate server over the private network (2026-11-03)
 
-This earlier run used the same hub and server code with a simulated producer and no Discord bot, on its own Railway service. Generators connected over Railway's private network, which bypasses the edge. It shows what the server does without the edge, on a different deployment from the run above.
+This earlier run used the same hub and server code with a simulated producer and no Discord bot, on its own Railway service. Generators connected over Railway's private network, which bypasses the edge. It is kept for comparison: it used one generator per run, while the later run with 5 generators on the live service held 25,000 clients at 5 msg/s.
 
 One Railway replica (8 vCPU, 8 GB limit), generator in a second service, messages of about 470 bytes, `BUFFER_SIZE` 100, each level held for 45 s:
 

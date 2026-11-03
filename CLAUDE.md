@@ -46,7 +46,7 @@ discord-relay/
 │   ├── attachments.tsx    # images, video, audio, file cards
 │   ├── theme.ts           # MUI theme
 │   └── app.tsx            # React + MUI
-├── load/                  # load test: fake producer + raw-socket clients (not deployed, results in README)
+├── load/                  # load test: fake producer + raw-socket clients (not deployed, results in docs/load_test_results.md)
 │   ├── run.ts             # ramps client counts, stops at the first failing level
 │   ├── server.ts          # real hub and server, fake producer, control port
 │   └── worker.ts          # one generator process

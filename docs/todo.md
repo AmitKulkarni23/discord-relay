@@ -44,7 +44,7 @@ This tests the real path end to end (Discord → bot → hub → SSE → browser
 
 ### Testing fan-out
 
-Built: `load/`, with results in the README. Still open:
+Built: `load/`, with results in `docs/load_test_results.md`. Still open:
 
 - Find out why a few connections stall for up to 46 s at 12,500 clients and above on Railway, when CPU is under 50%.
 - Find out why the Bun generator saw repeated messages at 50 msg/s on a saturated local server.

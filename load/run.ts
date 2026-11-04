@@ -11,6 +11,7 @@
  *
  * --slowPct makes that share of clients read slowly: --slowMode stop never reads after the headers, crawl takes one
  * read per second. They are left out of the delivery figures, so a level passes only if everyone else is unaffected.
+ * --burst publishes that many messages in one go every --burstEverySec, instead of --rate, and silence between.
  * Filling the 1 MiB limit takes about (1 MiB + socket buffers) / (rate x msgBytes), so hold long enough to see drops.
  */
 import { parseArgs } from 'node:util'
@@ -27,6 +28,8 @@ const { values } = parseArgs({
     rate: { type: 'string', default: '5' },
     msgBytes: { type: 'string', default: '0' },
     channels: { type: 'string', default: '1' },
+    burst: { type: 'string', default: '0' },
+    burstEverySec: { type: 'string', default: '10' },
     slowPct: { type: 'string', default: '0' },
     slowMode: { type: 'string', default: 'stop' },
     hold: { type: 'string', default: '60' },
@@ -40,7 +43,9 @@ const { values } = parseArgs({
 })
 
 const port = Number(values.port)
-const rate = Number(values.rate)
+const burst = Number(values.burst)
+const burstEverySec = Number(values.burstEverySec)
+const rate = burst ? burst / burstEverySec : Number(values.rate)
 const msgBytes = Number(values.msgBytes)
 const holdSec = Number(values.hold)
 const workerCount = Number(values.workers)
@@ -51,6 +56,8 @@ const isPublic = values.public as boolean
 const ports = isPublic ? [443] : Array.from({ length: listeners }, (_, i) => (i === 0 ? port : port + 1 + i))
 const levels = (values.levels as string).split(',').map(Number)
 const GRACE_MS = 10_000
+// The window skips at least one burst and needs a few more to measure.
+if (burst && holdSec < burstEverySec * 3) throw new Error('--hold must be at least 3 times --burstEverySec')
 
 const localServer = values.host
   ? null
@@ -165,16 +172,18 @@ void localServer?.exited.then(code => {
 
 const { channelIds } = await waitForServer()
 const offsetMs = await clockOffset()
-await fetch(`${control}/rate?perSec=0&msgBytes=0`, { method: 'POST' })
+await fetch(`${control}/rate?perSec=0`, { method: 'POST' })
 await Bun.sleep(1000)
 const baseline = await getStats()
-await fetch(`${control}/rate?perSec=${rate}&msgBytes=${msgBytes}`, { method: 'POST' })
+await fetch(`${control}/rate?perSec=${rate}&msgBytes=${msgBytes}&burst=${burst}&everySec=${burstEverySec}`, { method: 'POST' })
 console.log(
   JSON.stringify({
     event: 'start',
     host,
     rate,
     msgBytes,
+    burst,
+    burstEverySec,
     channels: channelIds.length,
     slowPct: values.slowPct,
     slowMode: values.slowMode,
@@ -224,7 +233,7 @@ for (const target of levels) {
   await Bun.sleep(5000)
   await getStats()
 
-  const from = (await getStats()).seq + Math.ceil(rate * 2)
+  const from = (await getStats()).seq + (burst ? burst * Math.max(1, Math.ceil(2 / burstEverySec)) : Math.ceil(rate * 2))
   for (const w of workers) w.command({ type: 'window', from, offsetMs })
   const windowStart = performance.now()
   const samples: Stats[] = []

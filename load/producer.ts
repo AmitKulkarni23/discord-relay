@@ -11,7 +11,7 @@ const ID_BASE = 1_900_000_000n * 10_000_000_000n
 const EVENT_OVERHEAD = 296
 const CONTENT = 'Simulated load test message from the DiscordRelay harness, not a real Discord message. '.repeat(2)
 
-export type LoadControl = { stats: () => Response; setRate: (perSec: number, msgBytes: number) => void }
+export type LoadControl = { stats: () => Response; setRate: (perSec: number, msgBytes: number, burst: number, everySec: number) => void }
 
 export function createLoadControl(hub: Hub, channelIds: string[], bufferSize: number): LoadControl {
   let seq = 0
@@ -57,20 +57,26 @@ export function createLoadControl(hub: Hub, channelIds: string[], bufferSize: nu
   let publisher: ReturnType<typeof setInterval> | undefined
 
   return {
-    /** Fills the buffer on first use, so a new client's replay is full size, then publishes at this rate. */
-    setRate(perSec, msgBytes) {
+    /**
+     * Fills the buffer on first use, so a new client's replay is full size, then publishes at this rate.
+     * With `burst`, publishes that many messages in one go every `everySec` instead, with silence between.
+     */
+    setRate(perSec, msgBytes, burst, everySec) {
       clearInterval(publisher)
       if (msgBytes > 0) content = 'x'.repeat(Math.max(0, msgBytes - EVENT_OVERHEAD))
       if (perSec <= 0) return
       if (seq === 0) for (let i = 0; i < bufferSize; i++) publishToAll()
-      publisher = setInterval(() => {
-        const start = performance.now()
-        publishToAll()
-        const ms = performance.now() - start
-        publishes++
-        publishMsTotal += ms
-        publishMsMax = Math.max(publishMsMax, ms)
-      }, 1000 / perSec)
+      publisher = setInterval(
+        () => {
+          const start = performance.now()
+          for (let i = 0; i < (burst || 1); i++) publishToAll()
+          const ms = performance.now() - start
+          publishes++
+          publishMsTotal += ms
+          publishMsMax = Math.max(publishMsMax, ms)
+        },
+        burst ? everySec * 1000 : 1000 / perSec,
+      )
     },
 
     stats() {

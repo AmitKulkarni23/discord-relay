@@ -56,7 +56,13 @@ discord-relay/
 │   ├── run.ts             # ramps client counts, stops at the first failing level
 │   ├── server.ts          # real hub and server, fake producer, control port
 │   ├── producer.ts        # fake messages and resource stats
-│   └── consumer.ts        # one consumer process: many raw /events connections
+│   ├── max.ts             # finds the usable max at one rate: ramps, narrows and repeats
+│   ├── verdict.ts         # judges a step: PASS, SLOW, BROKEN or INVALID
+│   ├── agent.ts           # runs on each consumer machine, driven by run.ts
+│   ├── railway-metrics.ts # adds Railway's CPU and memory to a run's results
+│   ├── consumer-process.ts # a running copy of consumer.ts
+│   ├── consumer.ts        # one consumer process: many raw /events connections
+│   └── tests/             # the pure logic: verdicts, search and metrics
 ├── docs/
 │   ├── system-specs/      # architecture, failure modes, decisions
 │   └── task-specs/        # one spec per task, TASK_INDEX.md lists them in order
@@ -113,7 +119,7 @@ bun run typecheck
 bun test           # unit + integration, no network
 bun test --coverage  # per-file floor in bunfig.toml
 bun audit          # known vulnerabilities
-bun load/run.ts --consumers 1000,5000 --rate 5   # local load test, never against production. Knobs: --help
+bun load/run.ts --consumers 1000,5000 --rate 5   # local load test, never against production. Knobs: --help. Plan: docs/load_test_plan.md
 ```
 
 ```bash

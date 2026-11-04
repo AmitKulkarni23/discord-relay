@@ -42,7 +42,7 @@ One channel, messages of about 470 bytes, a 60 s hold per step, `BUFFER_SIZE` 10
 
 ## Steps
 
-1. **Harness (local, `load/` only).** Add the results above, report the busiest process, coordinate several machines so `--consumers` is the total and only one reader samples the server's stats, add the search for the limit, and read server CPU and memory from `railway metrics`.
+1. **Harness (local, `load/` only). Done.** The results above and the busiest process are in `load/run.ts`. Several machines are coordinated through `load/agent.ts`, so `--consumers` is the total and only the runner reads the server's stats. `load/max.ts` searches for the limit, and `load/railway-metrics.ts` reads server CPU and memory from `railway metrics`.
 2. **Railway (needs approval).** A separate server service with no Discord bot, and enough consumer machines for the count being tested. Check the cost first, and tear it all down afterwards.
 3. **Find the limits.** Run each rate from no open connections, narrow down between the last pass and the first failure, and repeat the limit 3 times.
 4. **Confirm it holds.** About 70% of the usable max at 10 msg/s for 30 minutes, watching for memory growth.
@@ -64,3 +64,25 @@ The live service is not touched at any point.
 - **What visitors can reach:** the private network skips Railway's edge, and public runs reached about 15,000 clients. Report both.
 - **The bot's cost:** Discord and discord.js are not in the path, so real limits could be somewhat lower.
 - **Real browsers:** consumers do not render anything, which is why step 6 exists.
+
+## Running it
+
+On each consumer machine, and once on the load server:
+
+```bash
+PORT=4000 bun load/agent.ts
+PORT=3100 CHANNELS=1 bun load/server.ts
+```
+
+From one machine that can reach them all, which on Railway means one inside the private network:
+
+```bash
+bun load/max.ts --host <server> --machines http://<consumer-1>:4000,http://<consumer-2>:4000 \
+  --rate 10 --consumers 5000,10000,20000,30000,40000,60000 --hold 60 --maxSec 3600 | tee results.jsonl
+```
+
+Then, from anywhere the Railway CLI is logged in:
+
+```bash
+bun load/railway-metrics.ts results.jsonl --service <server service>
+```

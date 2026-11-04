@@ -6,7 +6,7 @@
 bun load/run.ts --consumer machines 1000,5000,10000 --rate 5 --hold 45
 ```
 
-Knobs, which can be combined. The results below predate them and used the defaults.
+Knobs, which can be combined. The results below predate them and used the defaults, and they also predate the verdicts and multi-machine coordination in `docs/load_test_plan.md`: each machine ran its own ramp.
 
 | Knob | What it tests | Example |
 |---|---|---|

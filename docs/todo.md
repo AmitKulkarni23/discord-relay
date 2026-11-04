@@ -118,6 +118,7 @@ Not added: discord-relay is a private repo, and GitHub runs CodeQL on private re
 ## UI changes
 - Add a little bit of wow to the UI. It is plain and bland for now
 - Should we add a debug panel to show the number of messages flowing in and the number of connections to the application?
+- Message grouping: decide whether to keep it. The feed is always in time order; a message drops its avatar and name only when the message directly before it has the same author and is within 5 minutes (`buildRows` in `frontend/feed.ts`). Discord and Slack group the same way, from memory and not checked against their docs: Discord's window is about 7 minutes, and Slack keeps thread replies out of the main timeline. Recommendation: keep it. A header on every message is a one-line change plus test updates.
 
 
 ## Demo changes

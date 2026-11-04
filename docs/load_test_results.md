@@ -1,9 +1,9 @@
 # Load test results
 
-`load/` runs the real hub and server with a fake producer, and opens raw TCP connections to `/events`. It ramps client counts and stops at the first level that fails. A level passes when every client gets every message, none drop, and p99 delivery is at most 1 s.
+`load/` runs the real hub and server with a fake producer, and opens raw TCP connections to `/events`. It ramps client counts and stops at the first step that fails. A step passes when every client gets every message, none drop, and p99 delivery is at most 1 s.
 
 ```bash
-bun load/run.ts --levels 1000,5000,10000 --rate 5 --hold 45
+bun load/run.ts --consumer machines 1000,5000,10000 --rate 5 --hold 45
 ```
 
 Knobs, which can be combined. The results below predate them and used the defaults.
@@ -21,7 +21,7 @@ A message held up by a reconnect counts towards p99, so raise `--maxP99Ms` for `
 
 ## Clean run through the public URL (2026-11-03 11:07 PST)
 
-One unattended run with no other load test nearby, against the live `discord-relay` service and its real bot. It used the same temporary build as the runs below, 3 consumers in a separate Railway environment, 5 msg/s and a 45 s hold per level. Latency cells show the highest consumer.
+One unattended run with no other load test nearby, against the live `discord-relay` service and its real bot. It used the same temporary build as the runs below, 3 consumer machines in a separate Railway environment, 5 msg/s and a 45 s hold per step. Latency cells show the highest consumer.
 
 | Clients | Delivered | p50 | p99 | Slowest | CPU avg, one core | Memory | Refused | Result |
 |---:|---:|---:|---:|---:|---:|---:|---:|---|
@@ -54,11 +54,11 @@ After restore: streams 1-20 ok: 20, stream 21 status: 429
 
 ## Live service through the public URL (2026-11-03)
 
-This is the `discord-relay` production service with its real Discord bot, reached through Railway's edge as a browser would. The test used a temporary, uncommitted build: the 20-stream-per-IP cap raised, a simulated producer added, and a stats route added. Consumers ran as a Railway service in a separate environment. Messages were about 470 bytes, `BUFFER_SIZE` was 100, and each level was held for 45 s.
+This is the `discord-relay` production service with its real Discord bot, reached through Railway's edge as a browser would. The test used a temporary, uncommitted build: the 20-stream-per-IP cap raised, a simulated producer added, and a stats route added. Consumer machines ran as a Railway service in a separate environment. Messages were about 470 bytes, `BUFFER_SIZE` was 100, and each step was held for 45 s.
 
-These runs happened back to back, so treat CPU and latency as approximate. With several consumers, each one also read and reset the server's stats, so their CPU figures are a range across consumers, and the memory figure is the highest any of them saw.
+These runs happened back to back, so treat CPU and latency as approximate. With several consumer machines, each one also read and reset the server's stats, so their CPU figures are a range across consumer machines, and the memory figure is the highest any of them saw.
 
-| Clients | Consumers | Msg/s | Delivered | p50 | p99 | Slowest | CPU (one core) | Memory | Result |
+| Clients | Consumer machines | Msg/s | Delivered | p50 | p99 | Slowest | CPU (one core) | Memory | Result |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---|
 | 2,500 | 1 | 5 | 100% | 36 ms | 106 ms | 1.6 s | 18-21% | 199 MB | Pass |
 | 3,000 | 1 | 5 | 100% | 41 ms | 118 ms | 0.8 s | 23-26% | 234 MB | Pass |
@@ -71,7 +71,7 @@ These runs happened back to back, so treat CPU and latency as approximate. With 
 
 What this means:
 
-- **12,000 clients at 5 msg/s passed, and the attempt at 15,000 failed at the edge.** Later levels in the same run, attempting 20,000 and 25,000, also failed. These bracket the limit but do not pin it to a number.
+- **12,000 clients at 5 msg/s passed, and the attempt at 15,000 failed at the edge.** Later steps in the same run, attempting 20,000 and 25,000, also failed. These bracket the limit but do not pin it to a number.
 - **The server was not what failed.** Railway's HTTP logs show `too many upstream connections for host` on all 5,000 of the 502 entries retrieved, with no upstream address and about 1 ms duration, so those requests never reached the app. The process did not restart, and peak memory in that run was 1.39 GB of 8 GB.
 - **The cap affects page loads too.** `/health` and the stats route also got 502s while the edge was refusing connections.
 - **The first 502 was at 14:41:17 UTC, and the burst lasted about 9 s.**
@@ -98,15 +98,15 @@ Open questions:
 - Why 12,000 passed when Railway documents 10,000 per domain per edge node. Traffic spread across edge nodes is one possibility, not confirmed; every 502 entry retrieved came from edge region `us-west2`.
 - Why `/health` briefly reported 17,686 clients in the 15,000 run, and why about 2,500 established streams were dropped in that run.
 
-### One consumer stops at 6,000
+### One consumer machine stops at 6,000
 
-One consumer could not hold more than 6,000 connections through the public URL: at 7,500, 10,000 and 12,000 it stayed at 6,000 and its extra connections failed with no HTTP response. Railway also logged a high ephemeral port warning for the consumer. A separate consumer on a laptop then held 7,000 clients with 100% delivery (1 msg/s, p99 492 ms, 15 s hold), so 6,000 is a limit of one consumer's outbound path, not of the service or the edge. That laptop run is a diagnostic only.
+One consumer machine could not hold more than 6,000 connections through the public URL: at 7,500, 10,000 and 12,000 it stayed at 6,000 and its extra connections failed with no HTTP response. Railway also logged a high ephemeral port warning for the consumer. A separate consumer on a laptop then held 7,000 clients with 100% delivery (1 msg/s, p99 492 ms, 15 s hold), so 6,000 is a limit of one consumer machine's outbound path, not of the service or the edge. That laptop run is a diagnostic only.
 
 ## True max of the service over the private network (2026-11-03)
 
-This measures the live `discord-relay` service and its real bot with Railway's edge out of the path. It used the same temporary build, with 5 consumers in the production environment connecting over the private network and 8 vCPU and 8 GB limits on the service. The server was restarted with zero clients before each ramp. Each level was held for 45 s. A level passes only if every consumer gets 100% delivery with no drops and a p99 of at most 1 s, so "consumers passing" counts how many of the 5 met that.
+This measures the live `discord-relay` service and its real bot with Railway's edge out of the path. It used the same temporary build, with 5 consumer machines in the production environment connecting over the private network and 8 vCPU and 8 GB limits on the service. The server was restarted with zero clients before each ramp. Each step was held for 45 s. A step passes only if every consumer gets 100% delivery with no drops and a p99 of at most 1 s, so "consumer machines passing" counts how many of the 5 met that.
 
-| Clients | Msg/s | Delivered | p50 (worst consumer) | p99 (range across consumers) | Slowest | Memory (process) | Consumers passing |
+| Clients | Msg/s | Delivered | p50 (worst consumer machine) | p99 (range across consumer machines) | Slowest | Memory (process) | Consumer machines passing |
 |---:|---:|---:|---:|---:|---:|---:|---:|
 | 12,500 | 5 | 100% | 201 ms | 129-417 ms | 0.8 s | 824 MB | 5 of 5 |
 | 15,000 | 5 | 100% | 223 ms | 197-406 ms | 0.5 s | 971 MB | 5 of 5 |
@@ -119,7 +119,7 @@ This measures the live `discord-relay` service and its real bot with Railway's e
 | 50,000 | 1 | 100% | 695 ms | 1,146-1,447 ms | 1.7 s | 2.88 GB | 0 of 5 |
 | 57,500 | 1 | 100% | 728 ms | 1,205-1,518 ms | 1.8 s | 3.12 GB | 0 of 5 |
 
-Railway's own metrics peaked at 1.0 vCPU and 1.64 GB in the 5 msg/s ramp, and 1.0 vCPU and 3.58 GB in the 1 msg/s ramp. Per-level CPU is left out: 5 consumers each read and reset the same counter, which made the figures unreliable.
+Railway's own metrics peaked at 1.0 vCPU and 1.64 GB in the 5 msg/s ramp, and 1.0 vCPU and 3.58 GB in the 1 msg/s ramp. Per-step CPU is left out: 5 consumer machines each read and reset the same counter, which made the figures unreliable.
 
 What this means:
 
@@ -132,17 +132,17 @@ Limits of this result:
 
 - **1 msg/s looks slower than 5 msg/s at the same client count, and that is unexplained.** At 20,000 clients the p99 was up to 1,115 ms at 1 msg/s and up to 542 ms at 5 msg/s. So do not read the 1 msg/s pass counts as a precise limit.
 - **This is not what visitors can reach.** Real traffic goes through the edge, and these clients were raw sockets, not browsers.
-- **It covers short holds only.** Each level ran for 45 s.
+- **It covers short holds only.** Each step ran for 45 s.
 
 ### Dead connections linger
 
-Consumers that stop without closing their sockets stay counted on the server. After one ramp ended, `/health` still reported 25,896 clients more than 5 minutes later. An earlier, discarded ramp reached 75,896 subscribers because of this, with about 50,000 of them live, and Railway's memory peaked at 7.04 GB of 8 GB. The process did not crash. Real clients that disappear without closing, such as a phone losing signal, would behave the same way.
+Consumer machines that stop without closing their sockets stay counted on the server. After one ramp ended, `/health` still reported 25,896 clients more than 5 minutes later. An earlier, discarded ramp reached 75,896 subscribers because of this, with about 50,000 of them live, and Railway's memory peaked at 7.04 GB of 8 GB. The process did not crash. Real clients that disappear without closing, such as a phone losing signal, would behave the same way.
 
 ## Separate server over the private network (2026-11-03)
 
-This earlier run used the same hub and server code with a simulated producer and no Discord bot, on its own Railway service. Consumers connected over Railway's private network, which bypasses the edge. It is kept for comparison: it used one consumer per run, while the later run with 5 consumers on the live service held 25,000 clients at 5 msg/s.
+This earlier run used the same hub and server code with a simulated producer and no Discord bot, on its own Railway service. Consumer machines connected over Railway's private network, which bypasses the edge. It is kept for comparison: it used one consumer machine per run, while the later run with 5 consumer machines on the live service held 25,000 clients at 5 msg/s.
 
-One Railway replica (8 vCPU, 8 GB limit), consumer in a second service, messages of about 470 bytes, `BUFFER_SIZE` 100, each level held for 45 s:
+One Railway replica (8 vCPU, 8 GB limit), consumer machine in a second service, messages of about 470 bytes, `BUFFER_SIZE` 100, each step held for 45 s:
 
 | Clients | Msg/s | Delivered | p50 | p99 | Slowest | CPU (one core) | Memory | Result |
 |---|---|---:|---:|---:|---:|---:|---:|---|
@@ -166,7 +166,7 @@ What this does not cover:
 
 - **Railway's public edge:** the private network bypasses it, because the 20-stream-per-IP cap needs a different `X-Real-IP` per connection.
 - **Real browsers:** page loads, rendering and attachments are not part of the test.
-- **Sustained load:** levels are held for 45 s, so this is not a leak test.
+- **Sustained load:** steps are held for 45 s, so this is not a leak test.
 - **Egress:** 10,000 clients at 5 msg/s is about 24 MB/s of data, and that traffic would be billed on the public domain.
 
-One unexplained result: on a laptop at 50 msg/s, where the server was saturated, the Bun consumer saw 995 repeated messages. A separate Python client with stalled reads saw none in 52,065 messages at 300 msg/s, so the source is unknown. Browsers dedupe by message ID, so a repeat would not show on the page.
+One unexplained result: on a laptop at 50 msg/s, where the server was saturated, the Bun consumer program saw 995 repeated messages. A separate Python client with stalled reads saw none in 52,065 messages at 300 msg/s, so the source is unknown. Browsers dedupe by message ID, so a repeat would not show on the page.

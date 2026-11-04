@@ -32,7 +32,7 @@ export type ConsumerCommand =
       channelIds: string[]
       count: number
       perSec: number
-      consumer: number
+      processIndex: number
       first: number
       slowPct: number
       slowMode: string
@@ -227,7 +227,7 @@ function dial(conn: Conn): void {
   const request =
     `GET /events?channel=${cmd.channelIds[n % cmd.channelIds.length]}${since} HTTP/1.1\r\nHost: ${cmd.host}\r\nAccept: text/event-stream\r\n` +
     // Unique per connection so the per-IP cap does not apply. Only works without Railway's proxy in the path, which sets this header itself.
-    `X-Real-IP: 10.${cmd.consumer}.${(n >> 8) & 255}.${n & 255}\r\nConnection: keep-alive\r\n\r\n`
+    `X-Real-IP: 10.${cmd.processIndex}.${(n >> 8) & 255}.${n & 255}\r\nConnection: keep-alive\r\n\r\n`
   Bun.connect<Conn>({
     hostname: cmd.host,
     tls: cmd.tls,

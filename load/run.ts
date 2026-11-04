@@ -1,37 +1,37 @@
-/** Ramps /events clients until a level fails; `bun load/run.ts --help` lists every knob. */
+/** Ramps /events consumers until a step fails; `bun load/run.ts --help` lists every knob. */
 import { parseArgs } from 'node:util'
 import type { ConsumerCommand, ConsumerReply } from './consumer.ts'
 
-const HELP = `Finds how many concurrent /events clients the server holds: ramps through client counts and stops at the
-first level that fails. Exits 1 if any level failed. Local only unless you mean otherwise: never point it at production.
+const HELP = `Finds how many consumers (open /events connections, each standing in for one browser) the server holds: tries each
+count in turn and stops at the first step that fails. Exits 1 if any step failed. Local only unless you mean otherwise: never point it at production.
 
-  bun load/run.ts --levels 1000,5000,10000 --rate 5 --hold 60 --consumers 4
+  bun load/run.ts --consumers 1000,5000,10000 --rate 5 --hold 60 --processes 4
 
 Load
-  --levels <n,n>         client counts to ramp through (default 100,1000,2000,5000,10000)
+  --consumers <n,n>      consumer counts to try, one step each (default 100,1000,2000,5000,10000)
   --rate <n>             messages per second, per channel (default 5)
-  --hold <sec>           how long each level holds (default 60)
+  --hold <sec>           how long each step holds (default 60)
   --msgBytes <n>         size of each SSE event; 0 keeps about 470 (default 0). About 10000 is the realistic top
-  --channels <n>         spread clients evenly across this many channels (default 1). A remote server sets CHANNELS instead
+  --channels <n>         spread consumers evenly across this many channels (default 1). A remote server sets CHANNELS instead
 
 Traffic shape
   --burst <n>            publish this many at once every --burstEverySec, instead of --rate (default 0, off)
   --burstEverySec <sec>  time between bursts (default 10). --hold must be at least 3 times this
-  --slowPct <n>          percent of clients that read slowly (default 0). Left out of delivery figures, so a level
+  --slowPct <n>          percent of consumers that read slowly (default 0). Left out of delivery figures, so a step
                          passes only if everyone else is unaffected
   --slowMode <mode>      stop never reads after the headers, crawl takes one read per second (default stop)
-  --churnPerSec <n>      close and reconnect this many clients every second (default 0). A 15 minute cut of N clients is N / 900
+  --churnPerSec <n>      close and reconnect this many consumers every second (default 0). A 15 minute cut of N consumers is N / 900
   --storm                close every client at once halfway through the hold, as a deploy does
-  --stormJitterMs <ms>   clients return over this window (default 1000). Raise --maxP99Ms to about this for a storm
+  --stormJitterMs <ms>   consumers return over this window (default 1000). Raise --maxP99Ms to about this for a storm
 
 Pass or fail
-  --maxP99Ms <ms>        latency limit for a level (default 1000)
-  --keepGoing            run every level even after one fails
+  --maxP99Ms <ms>        latency limit for a step (default 1000)
+  --keepGoing            run every step even after one fails
   --maxSec <sec>         abort the whole run after this long (default 900)
 
 Consumers
-  --consumers <n>        consumer processes (default 4)
-  --connectPerSec <n>    how fast clients connect (default 1000)
+  --processes <n>        processes running the consumers, split evenly. Test rig only: the server is unaffected (default 4)
+  --connectPerSec <n>    how fast consumers connect (default 1000)
   --listeners <n>        ports the server listens on (default 1)
 
 Target
@@ -53,7 +53,7 @@ const { values } = parseArgs({
     controlPath: { type: 'string', default: '/__load' },
     controlUrl: { type: 'string' },
     port: { type: 'string', default: '3100' },
-    levels: { type: 'string', default: '100,1000,2000,5000,10000' },
+    consumers: { type: 'string', default: '100,1000,2000,5000,10000' },
     rate: { type: 'string', default: '5' },
     msgBytes: { type: 'string', default: '0' },
     channels: { type: 'string', default: '1' },
@@ -65,7 +65,7 @@ const { values } = parseArgs({
     slowPct: { type: 'string', default: '0' },
     slowMode: { type: 'string', default: 'stop' },
     hold: { type: 'string', default: '60' },
-    consumers: { type: 'string', default: '4' },
+    processes: { type: 'string', default: '4' },
     listeners: { type: 'string', default: '1' },
     connectPerSec: { type: 'string', default: '1000' },
     maxP99Ms: { type: 'string', default: '1000' },
@@ -85,13 +85,13 @@ const burstEverySec = Number(values.burstEverySec)
 const rate = burst ? burst / burstEverySec : Number(values.rate)
 const msgBytes = Number(values.msgBytes)
 const holdSec = Number(values.hold)
-const consumerCount = Number(values.consumers)
+const processCount = Number(values.processes)
 const connectPerSec = Number(values.connectPerSec)
 const maxP99Ms = Number(values.maxP99Ms)
 const listeners = Number(values.listeners)
 const isPublic = values.public as boolean
 const ports = isPublic ? [443] : Array.from({ length: listeners }, (_, i) => (i === 0 ? port : port + 1 + i))
-const levels = (values.levels as string).split(',').map(Number)
+const consumerLevels = (values.consumers as string).split(',').map(Number)
 const GRACE_MS = 10_000
 // The window skips at least one burst and needs a few more to measure.
 if (burst && holdSec < burstEverySec * 3) throw new Error('--hold must be at least 3 times --burstEverySec')
@@ -122,8 +122,8 @@ type Stats = {
 const getStats = async (): Promise<Stats> => (await fetch(`${control}/stats`, { signal: AbortSignal.timeout(30_000) })).json() as Promise<Stats>
 
 /** A consumer's replies arrive on one queue, in order. */
-type Consumer = { command: (c: ConsumerCommand) => void; next: () => Promise<ConsumerReply>; kill: () => void }
-function spawnConsumer(): Consumer {
+type ConsumerProcess = { command: (c: ConsumerCommand) => void; next: () => Promise<ConsumerReply>; kill: () => void }
+function spawnProcess(): ConsumerProcess {
   const replies: ConsumerReply[] = []
   const waiting: Array<(r: ConsumerReply) => void> = []
   const proc = Bun.spawn(['bun', 'load/consumer.ts'], {
@@ -177,11 +177,11 @@ async function clockOffset(): Promise<number> {
   return best.offset
 }
 
-const consumers = Array.from({ length: consumerCount }, spawnConsumer)
-const all = <T>(fn: (w: Consumer, i: number) => Promise<T>) => Promise.all(consumers.map(fn))
+const processes = Array.from({ length: processCount }, spawnProcess)
+const all = <T>(fn: (w: ConsumerProcess, i: number) => Promise<T>) => Promise.all(processes.map(fn))
 
 function stop(code: number): never {
-  for (const w of consumers) w.kill()
+  for (const w of processes) w.kill()
   localServer?.kill()
   process.exit(code)
 }
@@ -228,24 +228,24 @@ console.log(
     slowPct: values.slowPct,
     slowMode: values.slowMode,
     holdSec,
-    consumerCount,
-    levels,
+    processCount,
+    consumers: consumerLevels,
     baselineRssMb: baseline.rssMb,
     clockOffsetMs: offsetMs,
   }),
 )
 console.log(
-  'clients | conn s | delivered | p50 ms | p99 ms |  max ms | cpu avg% | cpu max% | rss MB | KB/client | srv lag ms | consumer lag ms | consumer cpu% | dropped | egress MB/s | slow gone | reconnects | recon fails | recon max ms | result',
+  'consumers | conn s | delivered | p50 ms | p99 ms |  max ms | cpu avg% | cpu max% | rss MB | KB/client | srv lag ms | process lag ms | process cpu% | dropped | egress MB/s | slow gone | reconnects | recon fails | recon max ms | result',
 )
 
 let opened = 0
 const results = []
 
-for (const target of levels) {
+for (const target of consumerLevels) {
   const toOpen = target - opened
   const connectStart = performance.now()
   await all((w, i) => {
-    const count = Math.floor(toOpen / consumerCount) + (i < toOpen % consumerCount ? 1 : 0)
+    const count = Math.floor(toOpen / processCount) + (i < toOpen % processCount ? 1 : 0)
     w.command({
       type: 'open',
       host,
@@ -253,9 +253,9 @@ for (const target of levels) {
       tls: isPublic,
       channelIds,
       count,
-      perSec: connectPerSec / consumerCount,
-      consumer: i,
-      first: Math.floor(opened / consumerCount),
+      perSec: connectPerSec / processCount,
+      processIndex: i,
+      first: Math.floor(opened / processCount),
       slowPct: Number(values.slowPct),
       slowMode: values.slowMode as string,
     })
@@ -274,14 +274,14 @@ for (const target of levels) {
   await getStats()
 
   const from = (await getStats()).seq + (burst ? burst * Math.max(1, Math.ceil(2 / burstEverySec)) : Math.ceil(rate * 2))
-  for (const w of consumers) w.command({ type: 'window', from, offsetMs })
+  for (const w of processes) w.command({ type: 'window', from, offsetMs })
   const windowStart = performance.now()
   const churnPerSec = Number(values.churnPerSec)
-  if (churnPerSec) for (const w of consumers) w.command({ type: 'churn', perSec: churnPerSec / consumerCount })
+  if (churnPerSec) for (const w of processes) w.command({ type: 'churn', perSec: churnPerSec / processCount })
   if (values.storm) {
     setTimeout(
       () => {
-        for (const w of consumers) w.command({ type: 'storm', jitterMs: Number(values.stormJitterMs) })
+        for (const w of processes) w.command({ type: 'storm', jitterMs: Number(values.stormJitterMs) })
       },
       (holdSec * 1000) / 2,
     )
@@ -308,8 +308,8 @@ for (const target of levels) {
   let gaps = 0
   let dups = 0
   let behind = 0
-  let consumerLag = 0
-  let consumerCpu = 0
+  let processLag = 0
+  let processCpu = 0
   let rxBytes = 0
   let slowTotal = 0
   let reconnects = 0
@@ -323,8 +323,8 @@ for (const target of levels) {
     gaps += r.gaps
     dups += r.dups
     behind += r.behind
-    consumerLag = Math.max(consumerLag, r.lagMsMax)
-    consumerCpu += r.cpuPct
+    processLag = Math.max(processLag, r.lagMsMax)
+    processCpu += r.cpuPct
     rxBytes += r.rxBytes
     slowTotal += r.slowTotal
     reconnects += r.reconnects
@@ -361,8 +361,8 @@ for (const target of levels) {
     rssMax,
     kbPerClient,
     lagMax,
-    consumerLag,
-    consumerCpu,
+    processLag,
+    processCpu,
     dropped,
     egressMbPerSec,
     slowTotal,
@@ -383,7 +383,7 @@ for (const target of levels) {
 
   console.log(
     [
-      String(target).padStart(7),
+      String(target).padStart(9),
       connectSec.toFixed(1).padStart(6),
       `${deliveredPct.toFixed(2)}%`.padStart(9),
       String(p50).padStart(6),
@@ -394,8 +394,8 @@ for (const target of levels) {
       last.rssMb.toFixed(0).padStart(6),
       kbPerClient.toFixed(1).padStart(9),
       lagMax.toFixed(0).padStart(10),
-      consumerLag.toFixed(0).padStart(15),
-      consumerCpu.toFixed(0).padStart(13),
+      processLag.toFixed(0).padStart(14),
+      processCpu.toFixed(0).padStart(12),
       String(dropped).padStart(7),
       egressMbPerSec.toFixed(2).padStart(11),
       String(slowGone).padStart(9),
@@ -405,7 +405,7 @@ for (const target of levels) {
       passed ? 'PASS' : 'FAIL',
     ].join(' | '),
   )
-  console.log(JSON.stringify({ event: 'level', ...row }))
+  console.log(JSON.stringify({ event: 'step', ...row }))
 
   if (!passed && !values.keepGoing) break
 }

@@ -5,6 +5,7 @@ import { useStickToBottom } from '../hooks/use-stick-to-bottom.ts'
 import { buildRows } from '../lib/messages.ts'
 import type { Status } from '../lib/stream.ts'
 import { BAR_HEIGHT } from '../theme.ts'
+import { ErrorBoundary, MessageError } from './error-boundary.tsx'
 import { DayDivider, EmptyState, NewMessagesPill } from './feed-states.tsx'
 import { MessageRow } from './message-row.tsx'
 
@@ -35,13 +36,11 @@ export function Feed({ messages, status, channelName, attachmentsOn }: FeedProps
           <EmptyState key={status} status={status} channelName={channelName} />
         ) : (
           <Box role="log" aria-label={channelName ? `Messages in #${channelName}` : 'Messages'} sx={{ mt: 'auto' }}>
-            {rows.map(r =>
-              r.kind === 'day' ? (
-                <DayDivider key={r.key} date={r.date} />
-              ) : (
-                <MessageRow key={r.key} msg={r.msg} head={r.head} attachmentsOn={attachmentsOn} scroll={scroll} />
-              ),
-            )}
+            {rows.map(r => (
+              <ErrorBoundary key={r.key} fallback={<MessageError />}>
+                {r.kind === 'day' ? <DayDivider date={r.date} /> : <MessageRow msg={r.msg} head={r.head} attachmentsOn={attachmentsOn} scroll={scroll} />}
+              </ErrorBoundary>
+            ))}
           </Box>
         )}
       </Box>

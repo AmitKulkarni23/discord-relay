@@ -121,6 +121,13 @@ describe('parseMsg', () => {
       expect(parseMsg('not json')).toBeNull()
     })
 
+    it('should return null when a date is not a date, since formatting it would throw during render', () => {
+      const m = makeMsg('1566588496691400001', '2026-11-01T23:03:23.418Z')
+
+      expect(parseMsg(JSON.stringify({ ...m, createdAt: 'not a date' }))).toBeNull()
+      expect(parseMsg(JSON.stringify({ ...m, editedAt: 'not a date' }))).toBeNull()
+    })
+
     it('should return null when a required field is missing or mistyped', () => {
       const m = makeMsg('1566588496691400001', '2026-11-01T23:03:23.418Z')
       expect(parseMsg(JSON.stringify({ ...m, author: { name: 'relay_tester' } }))).toBeNull()

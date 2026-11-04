@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import CssBaseline from '@mui/material/CssBaseline'
 import { ThemeProvider } from '@mui/material/styles'
 import App from './app.tsx'
+import { ErrorBoundary, PageError } from './components/error-boundary.tsx'
 import { theme } from './theme.ts'
 
 // A page always lands on the newest message and follows it, even on reload: the browser restoring
@@ -15,7 +16,9 @@ createRoot(root).render(
   <StrictMode>
     <ThemeProvider theme={theme} defaultMode="system" noSsr>
       <CssBaseline enableColorScheme />
-      <App />
+      <ErrorBoundary fallback={<PageError />}>
+        <App />
+      </ErrorBoundary>
     </ThemeProvider>
   </StrictMode>,
 )

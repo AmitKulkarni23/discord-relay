@@ -76,6 +76,11 @@ function isAttachment(v: unknown): v is Attachment {
   )
 }
 
+/** True for a string a Date can read. An invalid date would throw when formatted, during render. */
+function isDate(v: unknown): v is string {
+  return typeof v === 'string' && !Number.isNaN(Date.parse(v))
+}
+
 /** Narrows an unknown value to a Msg. */
 function isMsg(v: unknown): v is Msg {
   if (!isRecord(v) || !isRecord(v.author)) return false
@@ -84,8 +89,8 @@ function isMsg(v: unknown): v is Msg {
     typeof v.id === 'string' &&
     typeof v.channelId === 'string' &&
     typeof v.content === 'string' &&
-    typeof v.createdAt === 'string' &&
-    (v.editedAt === null || typeof v.editedAt === 'string') &&
+    isDate(v.createdAt) &&
+    (v.editedAt === null || isDate(v.editedAt)) &&
     Array.isArray(v.attachments) &&
     v.attachments.every(isAttachment) &&
     typeof a.id === 'string' &&

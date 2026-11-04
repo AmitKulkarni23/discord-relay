@@ -3,11 +3,11 @@ type Level = 'debug' | 'info' | 'warn' | 'error'
 
 /**
  * Writes one JSON log line to stdout, e.g.
- * `{"time":"…","level":"info","event":"client_connected","clients":3}`.
- * `level` and `event` are written last so a field can never override them.
+ * `{"clients":3,"time":"…","level":"info","event":"client_connected"}`.
+ * `time`, `level` and `event` are written last so a field can never override them.
  */
 function write(level: Level, event: string, fields: Record<string, unknown>): void {
-  console.log(JSON.stringify({ time: new Date().toISOString(), ...fields, level, event }))
+  console.log(JSON.stringify({ ...fields, time: new Date().toISOString(), level, event }))
 }
 
 /**

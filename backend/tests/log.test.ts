@@ -37,5 +37,11 @@ describe('log', () => {
 
       expect(lastLine()).toMatchObject({ level: 'info', event: 'history_loaded', count: 100 })
     })
+
+    it('should keep the real timestamp when fields contain a time', () => {
+      log.info('history_loaded', { time: 'spoofed' })
+
+      expect(lastLine().time).not.toBe('spoofed')
+    })
   })
 })

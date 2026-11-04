@@ -14,7 +14,18 @@ export type WorkerCommand =
 
 export type WorkerReply =
   | { type: 'opened'; ok: number; failed: number; statuses: Record<string, number> }
-  | { type: 'report'; live: number; closed: number; received: number; gaps: number; dups: number; behind: number; histMs: Record<string, number>; lagMsMax: number; cpuPct: number }
+  | {
+      type: 'report'
+      live: number
+      closed: number
+      received: number
+      gaps: number
+      dups: number
+      behind: number
+      histMs: Record<string, number>
+      lagMsMax: number
+      cpuPct: number
+    }
 
 const send = (reply: WorkerReply) => process.send?.(reply)
 

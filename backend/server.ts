@@ -112,59 +112,62 @@ export function startServer(deps: ServerDeps): { url: URL; stop: () => void } {
     server.timeout(req, 0)
     let cleanup = () => {}
 
-    const stream = new ReadableStream<Uint8Array>({
-      start(controller) {
-        // A write can throw if the browser went away before abort fired; treat that as a disconnect.
-        const send = (bytes: Uint8Array) => {
-          try {
-            controller.enqueue(bytes)
-          } catch {
-            cleanup()
+    const stream = new ReadableStream<Uint8Array>(
+      {
+        start(controller) {
+          // A write can throw if the browser went away before abort fired; treat that as a disconnect.
+          const send = (bytes: Uint8Array) => {
+            try {
+              controller.enqueue(bytes)
+            } catch {
+              cleanup()
+            }
           }
-        }
-        // Live writes only: the replay is already bounded by the buffer and can exceed the limit on its own.
-        const write = (bytes: Uint8Array) => {
-          if ((controller.desiredSize ?? 0) >= 0) return send(bytes)
-          log.warn('client_dropped', { requestId, reason: 'stopped reading', limitBytes: MAX_QUEUED_BYTES })
-          cleanup()
-          // error() frees the queue, where close() would keep it until the client read it all.
-          controller.error(new Error('client stopped reading'))
-          // Bun keeps the socket open for a client that is not reading until it times out.
-          server.timeout(req, 1)
-        }
-        // Send something at once so headers flush even when the buffer is empty.
-        send(CONNECTED)
-        for (const m of hub.recent(channelId).filter(isNew)) send(encodeEvent(m))
-        // A restarted server refills its buffer through publish, so a live message can be one the browser holds.
-        const unsubscribe = hub.subscribe(channelId, m => {
-          if (isNew(m)) write(encodeEvent(m))
-        })
+          // Live writes only: the replay is already bounded by the buffer and can exceed the limit on its own.
+          const write = (bytes: Uint8Array) => {
+            if ((controller.desiredSize ?? 0) >= 0) return send(bytes)
+            log.warn('client_dropped', { requestId, reason: 'stopped reading', limitBytes: MAX_QUEUED_BYTES })
+            cleanup()
+            // error() frees the queue, where close() would keep it until the client read it all.
+            controller.error(new Error('client stopped reading'))
+            // Bun keeps the socket open for a client that is not reading until it times out.
+            server.timeout(req, 1)
+          }
+          // Send something at once so headers flush even when the buffer is empty.
+          send(CONNECTED)
+          for (const m of hub.recent(channelId).filter(isNew)) send(encodeEvent(m))
+          // A restarted server refills its buffer through publish, so a live message can be one the browser holds.
+          const unsubscribe = hub.subscribe(channelId, m => {
+            if (isNew(m)) write(encodeEvent(m))
+          })
 
-        let closed = false
-        cleanup = () => {
-          if (closed) return
-          closed = true
-          unsubscribe()
-          openStreams.delete(open)
-          const left = (connectionsByIp.get(ip) ?? 1) - 1
-          if (left > 0) connectionsByIp.set(ip, left)
-          else connectionsByIp.delete(ip)
-          log.debug('client_disconnected', { requestId, clients: hub.subscriberCount() })
-        }
-        const close = () => {
-          cleanup()
-          controller.close()
-        }
+          let closed = false
+          cleanup = () => {
+            if (closed) return
+            closed = true
+            unsubscribe()
+            openStreams.delete(open)
+            const left = (connectionsByIp.get(ip) ?? 1) - 1
+            if (left > 0) connectionsByIp.set(ip, left)
+            else connectionsByIp.delete(ip)
+            log.debug('client_disconnected', { requestId, clients: hub.subscriberCount() })
+          }
+          const close = () => {
+            cleanup()
+            controller.close()
+          }
 
-        const open = { ping: () => write(PING), close }
-        openStreams.add(open)
-        req.signal.addEventListener('abort', cleanup)
-        log.debug('client_connected', { requestId, clients: hub.subscriberCount() })
+          const open = { ping: () => write(PING), close }
+          openStreams.add(open)
+          req.signal.addEventListener('abort', cleanup)
+          log.debug('client_connected', { requestId, clients: hub.subscriberCount() })
+        },
+        cancel() {
+          cleanup()
+        },
       },
-      cancel() {
-        cleanup()
-      },
-    }, new ByteLengthQueuingStrategy({ highWaterMark: MAX_QUEUED_BYTES }))
+      new ByteLengthQueuingStrategy({ highWaterMark: MAX_QUEUED_BYTES }),
+    )
 
     return new Response(stream, {
       headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' },

@@ -127,10 +127,7 @@ describe('buildRows', () => {
     })
 
     it('should start a new group when more than five minutes pass', () => {
-      const rows = buildRows([
-        makeMsg('1566588496691400001', '2026-11-01T23:00:00.000Z'),
-        makeMsg('1566588496691400002', '2026-11-01T23:05:01.000Z'),
-      ])
+      const rows = buildRows([makeMsg('1566588496691400001', '2026-11-01T23:00:00.000Z'), makeMsg('1566588496691400002', '2026-11-01T23:05:01.000Z')])
 
       expect(rows.filter(r => r.kind === 'msg').map(r => r.kind === 'msg' && r.head)).toEqual([true, true])
     })
@@ -188,7 +185,16 @@ describe('retryDelay', () => {
   describe('when retries keep failing', () => {
     it('should double the ceiling until the maximum when the random draw is at its top', () => {
       const top = () => 1
-      expect([0, 1, 2, 3, 4, 5, 6, 99].map(attempt => retryDelay(attempt, top))).toEqual([1000, 2000, 4000, 8000, 16_000, MAX_RETRY_MS, MAX_RETRY_MS, MAX_RETRY_MS])
+      expect([0, 1, 2, 3, 4, 5, 6, 99].map(attempt => retryDelay(attempt, top))).toEqual([
+        1000,
+        2000,
+        4000,
+        8000,
+        16_000,
+        MAX_RETRY_MS,
+        MAX_RETRY_MS,
+        MAX_RETRY_MS,
+      ])
     })
 
     it('should spread the wait across the whole window when the random draw varies', () => {

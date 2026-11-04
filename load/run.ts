@@ -45,7 +45,18 @@ const localServer = values.host
 const host = values.host ?? '127.0.0.1'
 const control = values.controlUrl ?? (isPublic ? `https://${host}${values.controlPath}` : `http://${host.includes(':') ? `[${host}]` : host}:${port + 1}`)
 
-type Stats = { now: number; seq: number; clients: number; cpuPct: number; rssMb: number; rssMaxMb: number; lagMsMax: number; publishes: number; publishMsAvg: number; publishMsMax: number }
+type Stats = {
+  now: number
+  seq: number
+  clients: number
+  cpuPct: number
+  rssMb: number
+  rssMaxMb: number
+  lagMsMax: number
+  publishes: number
+  publishMsAvg: number
+  publishMsMax: number
+}
 const getStats = async (): Promise<Stats> => (await fetch(`${control}/stats`, { signal: AbortSignal.timeout(30_000) })).json() as Promise<Stats>
 
 /** A worker's replies arrive on one queue, in order. */
@@ -114,10 +125,13 @@ function stop(code: number): never {
 }
 
 // Nothing here may wait forever: a hard deadline, and every process exits together if one part dies.
-setTimeout(() => {
-  console.error(JSON.stringify({ event: 'deadline_exceeded', maxSec: values.maxSec }))
-  stop(1)
-}, Number(values.maxSec) * 1000)
+setTimeout(
+  () => {
+    console.error(JSON.stringify({ event: 'deadline_exceeded', maxSec: values.maxSec }))
+    stop(1)
+  },
+  Number(values.maxSec) * 1000,
+)
 process.on('uncaughtException', err => {
   console.error(err)
   stop(1)
@@ -138,7 +152,9 @@ await Bun.sleep(1000)
 const baseline = await getStats()
 await fetch(`${control}/rate?perSec=${rate}`, { method: 'POST' })
 console.log(JSON.stringify({ event: 'start', host, rate, holdSec, workerCount, levels, baselineRssMb: baseline.rssMb, clockOffsetMs: offsetMs }))
-console.log('clients | conn s | delivered | p50 ms | p99 ms |  max ms | cpu avg% | cpu max% | rss MB | KB/client | srv lag ms | gen lag ms | gen cpu% | dropped | result')
+console.log(
+  'clients | conn s | delivered | p50 ms | p99 ms |  max ms | cpu avg% | cpu max% | rss MB | KB/client | srv lag ms | gen lag ms | gen cpu% | dropped | result',
+)
 
 let opened = 0
 const results = []
@@ -212,26 +228,52 @@ for (const target of levels) {
   const lagMax = Math.max(...samples.map(s => s.lagMsMax))
   const kbPerClient = ((last.rssMb - baseline.rssMb) * 1024) / target
   const passed = received === expected && dropped === 0 && gaps === 0 && p99 <= maxP99Ms && live === target
-  const row = { clients: target, connectSec, deliveredPct, p50, p99, max, cpuAvg, cpuMax, rssMb: last.rssMb, rssMax, kbPerClient, lagMax, genLag, genCpu, dropped, gaps, dups, behind, live, serverClients: last.clients, publishMsAvg: last.publishMsAvg, publishMsMax: Math.max(...samples.map(s => s.publishMsMax)), passed }
+  const row = {
+    clients: target,
+    connectSec,
+    deliveredPct,
+    p50,
+    p99,
+    max,
+    cpuAvg,
+    cpuMax,
+    rssMb: last.rssMb,
+    rssMax,
+    kbPerClient,
+    lagMax,
+    genLag,
+    genCpu,
+    dropped,
+    gaps,
+    dups,
+    behind,
+    live,
+    serverClients: last.clients,
+    publishMsAvg: last.publishMsAvg,
+    publishMsMax: Math.max(...samples.map(s => s.publishMsMax)),
+    passed,
+  }
   results.push(row)
 
-  console.log([
-    String(target).padStart(7),
-    connectSec.toFixed(1).padStart(6),
-    `${deliveredPct.toFixed(2)}%`.padStart(9),
-    String(p50).padStart(6),
-    String(p99).padStart(6),
-    String(max).padStart(7),
-    cpuAvg.toFixed(0).padStart(8),
-    cpuMax.toFixed(0).padStart(8),
-    last.rssMb.toFixed(0).padStart(6),
-    kbPerClient.toFixed(1).padStart(9),
-    lagMax.toFixed(0).padStart(10),
-    genLag.toFixed(0).padStart(10),
-    genCpu.toFixed(0).padStart(8),
-    String(dropped).padStart(7),
-    passed ? 'PASS' : 'FAIL',
-  ].join(' | '))
+  console.log(
+    [
+      String(target).padStart(7),
+      connectSec.toFixed(1).padStart(6),
+      `${deliveredPct.toFixed(2)}%`.padStart(9),
+      String(p50).padStart(6),
+      String(p99).padStart(6),
+      String(max).padStart(7),
+      cpuAvg.toFixed(0).padStart(8),
+      cpuMax.toFixed(0).padStart(8),
+      last.rssMb.toFixed(0).padStart(6),
+      kbPerClient.toFixed(1).padStart(9),
+      lagMax.toFixed(0).padStart(10),
+      genLag.toFixed(0).padStart(10),
+      genCpu.toFixed(0).padStart(8),
+      String(dropped).padStart(7),
+      passed ? 'PASS' : 'FAIL',
+    ].join(' | '),
+  )
   console.log(JSON.stringify({ event: 'level', ...row }))
 
   if (!passed && !values.keepGoing) break

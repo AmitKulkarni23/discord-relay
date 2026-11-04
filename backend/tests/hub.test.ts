@@ -71,11 +71,7 @@ describe('hub', () => {
         hub.publish(makeMsg(id))
       }
 
-      expect(hub.recent(GENERAL).map(m => m.id)).toEqual([
-        '1302000000000000002',
-        '1302000000000000003',
-        '1302000000000000004',
-      ])
+      expect(hub.recent(GENERAL).map(m => m.id)).toEqual(['1302000000000000002', '1302000000000000003', '1302000000000000004'])
     })
   })
 

@@ -477,7 +477,12 @@ describe('server', () => {
 
       const res = await fetch(new URL('/config', url))
 
-      expect(await res.json()).toMatchObject({ channels: [{ id: CHANNEL, name: null }, { id: CHANNEL_2, name: 'announcements' }] })
+      expect(await res.json()).toMatchObject({
+        channels: [
+          { id: CHANNEL, name: null },
+          { id: CHANNEL_2, name: 'announcements' },
+        ],
+      })
     })
   })
 

@@ -94,7 +94,11 @@ function ThemeToggle(): ReactElement {
 
   return (
     <Tooltip title={label}>
-      <IconButton aria-label={label} onClick={() => setMode(next)} sx={{ width: 36, height: 36, color: 'text.secondary', '&:hover': { color: 'text.primary' } }}>
+      <IconButton
+        aria-label={label}
+        onClick={() => setMode(next)}
+        sx={{ width: 36, height: 36, color: 'text.secondary', '&:hover': { color: 'text.primary' } }}
+      >
         <SvgIcon sx={{ fontSize: 20 }} viewBox="0 0 24 24">
           <g fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             {next === 'light' ? (
@@ -139,7 +143,16 @@ function TopBar({ channels, activeId, onSelect, status }: TopBarProps): ReactEle
                 value={c.id}
                 label={channelLabel(c)}
                 disableRipple
-                sx={{ minHeight: 56, minWidth: 0, px: 1.5, textTransform: 'none', fontSize: 14, fontWeight: 500, color: 'text.secondary', '&.Mui-selected': { color: 'text.primary' } }}
+                sx={{
+                  minHeight: 56,
+                  minWidth: 0,
+                  px: 1.5,
+                  textTransform: 'none',
+                  fontSize: 14,
+                  fontWeight: 500,
+                  color: 'text.secondary',
+                  '&.Mui-selected': { color: 'text.primary' },
+                }}
               />
             ))}
           </Tabs>
@@ -246,7 +259,20 @@ const MessageRow = memo(function MessageRow({ msg, head, attachmentsOn }: { msg:
               {msg.author.name}
             </Typography>
             {msg.author.bot ? (
-              <Chip label="BOT" size="small" variant="outlined" sx={{ height: 18, fontSize: 11, fontWeight: 600, borderRadius: 1, borderColor: 'divider', alignSelf: 'center', '& .MuiChip-label': { px: 0.75 } }} />
+              <Chip
+                label="BOT"
+                size="small"
+                variant="outlined"
+                sx={{
+                  height: 18,
+                  fontSize: 11,
+                  fontWeight: 600,
+                  borderRadius: 1,
+                  borderColor: 'divider',
+                  alignSelf: 'center',
+                  '& .MuiChip-label': { px: 0.75 },
+                }}
+              />
             ) : null}
             <Typography variant="caption" sx={{ color: 'text.secondary', flexShrink: 0 }}>
               {time}
@@ -254,9 +280,7 @@ const MessageRow = memo(function MessageRow({ msg, head, attachmentsOn }: { msg:
           </Box>
         ) : null}
         <MessageBody msg={msg} attachmentsOn={attachmentsOn} />
-        {attachmentsOn && msg.attachments.length > 0 ? (
-          <Attachments items={msg.attachments} />
-        ) : null}
+        {attachmentsOn && msg.attachments.length > 0 ? <Attachments items={msg.attachments} /> : null}
       </Box>
     </Box>
   )
@@ -304,8 +328,8 @@ function NewMessagesPill({ count, onClick }: { count: number; onClick: () => voi
           textTransform: 'none',
           fontWeight: 600,
         },
-        (t) => ({ boxShadow: `0 6px 20px ${alpha(t.palette.common.black, 0.45)}` }),
-        (t) => t.applyStyles('light', { boxShadow: `0 6px 20px ${alpha(t.palette.common.black, 0.18)}` }),
+        t => ({ boxShadow: `0 6px 20px ${alpha(t.palette.common.black, 0.45)}` }),
+        t => t.applyStyles('light', { boxShadow: `0 6px 20px ${alpha(t.palette.common.black, 0.18)}` }),
       ]}
     >
       {count} new message{count === 1 ? '' : 's'}
@@ -439,7 +463,9 @@ function App(): ReactElement {
           <EmptyState status={status} channelName={channelName} />
         ) : (
           <Box role="log" aria-label={channelName ? `Messages in #${channelName}` : 'Messages'} sx={{ mt: 'auto' }}>
-            {rows.map(r => (r.kind === 'day' ? <DayDivider key={r.key} date={r.date} /> : <MessageRow key={r.key} msg={r.msg} head={r.head} attachmentsOn={attachmentsOn} />))}
+            {rows.map(r =>
+              r.kind === 'day' ? <DayDivider key={r.key} date={r.date} /> : <MessageRow key={r.key} msg={r.msg} head={r.head} attachmentsOn={attachmentsOn} />,
+            )}
           </Box>
         )}
       </Box>

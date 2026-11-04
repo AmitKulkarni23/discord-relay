@@ -82,7 +82,15 @@ function Spoiler({ hidden, children }: { hidden: boolean; children: ReactNode })
       </Box>
       <ButtonBase
         onClick={() => setShown(true)}
-        sx={{ position: 'absolute', inset: 0, color: 'text.primary', fontWeight: 600, fontSize: 14, bgcolor: 'action.hover', '&:focus-visible': { outlineOffset: -2 } }}
+        sx={{
+          position: 'absolute',
+          inset: 0,
+          color: 'text.primary',
+          fontWeight: 600,
+          fontSize: 14,
+          bgcolor: 'action.hover',
+          '&:focus-visible': { outlineOffset: -2 },
+        }}
       >
         Spoiler: show
       </ButtonBase>
@@ -109,11 +117,31 @@ function FileIcon(): ReactElement {
 /** A file as a bordered row: name (a link when the URL is safe), size and type. */
 function FileCard({ a, href }: { a: Attachment; href: string | null }): ReactElement {
   return (
-    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25, px: 1.5, py: 1, border: 1, borderColor: 'divider', borderRadius: 1, bgcolor: 'background.paper', maxWidth: MAX_W, width: '100%' }}>
+    <Box
+      sx={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 1.25,
+        px: 1.5,
+        py: 1,
+        border: 1,
+        borderColor: 'divider',
+        borderRadius: 1,
+        bgcolor: 'background.paper',
+        maxWidth: MAX_W,
+        width: '100%',
+      }}
+    >
       <FileIcon />
       <Box sx={{ minWidth: 0 }}>
         {href ? (
-          <Link href={href} target="_blank" rel="noopener noreferrer" underline="hover" sx={{ display: 'block', fontSize: 14, fontWeight: 500, color: 'primary.main', overflowWrap: 'anywhere' }}>
+          <Link
+            href={href}
+            target="_blank"
+            rel="noopener noreferrer"
+            underline="hover"
+            sx={{ display: 'block', fontSize: 14, fontWeight: 500, color: 'primary.main', overflowWrap: 'anywhere' }}
+          >
             {a.name}
           </Link>
         ) : (

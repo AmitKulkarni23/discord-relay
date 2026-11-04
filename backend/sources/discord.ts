@@ -179,10 +179,7 @@ export function startDiscord(deps: DiscordDeps) {
         return
       }
       if ('name' in channel && typeof channel.name === 'string') names.set(channelId, channel.name)
-      const messages = await collectHistory(
-        async (before, limit) => [...(await channel.messages.fetch({ limit, before })).values()],
-        historyLimit,
-      )
+      const messages = await collectHistory(async (before, limit) => [...(await channel.messages.fetch({ limit, before })).values()], historyLimit)
       for (const m of messages) handle(m)
       log.info('history_loaded', { channelId, count: messages.length })
     } catch (err) {

@@ -129,7 +129,19 @@ describe('isMissingContent', () => {
     it('should return false when there is an attachment but no text', () => {
       const msg = makeDiscordMessage({
         content: '',
-        attachments: new Map([['1', { url: 'https://cdn.discordapp.com/attachments/1301000000000000001/3/screenshot.png', name: 'screenshot.png', contentType: 'image/png', size: 20480, width: 800, height: 600 }]]),
+        attachments: new Map([
+          [
+            '1',
+            {
+              url: 'https://cdn.discordapp.com/attachments/1301000000000000001/3/screenshot.png',
+              name: 'screenshot.png',
+              contentType: 'image/png',
+              size: 20480,
+              width: 800,
+              height: 600,
+            },
+          ],
+        ]),
       })
       expect(isMissingContent(toMsg(msg))).toBe(false)
     })
@@ -192,7 +204,10 @@ function fakeChannel(count: number) {
   const fetchPage = async (before: string | undefined, limit: number) => {
     calls.push({ before, limit })
     const older = before === undefined ? ids : ids.filter(id => BigInt(id) < BigInt(before))
-    return older.slice(-limit).reverse().map(id => ({ id }))
+    return older
+      .slice(-limit)
+      .reverse()
+      .map(id => ({ id }))
   }
   return { ids, calls, fetchPage }
 }

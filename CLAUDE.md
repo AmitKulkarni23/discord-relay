@@ -99,7 +99,8 @@ The MessageContent intent MUST be enabled for the bot in the Discord developer p
 ```bash
 bun install
 bun run dev        # local server with hot reload
-bun run lint       # Biome lint (formatting off)
+bun run format     # Prettier: format in place
+bun run format:check  # Prettier: fail if anything is unformatted
 bun run typecheck
 bun test           # unit + integration, no network
 bun test --coverage  # per-file floor in bunfig.toml
@@ -116,7 +117,7 @@ railway config apply   # apply them
 ## Testing
 
 - **Unit + integration** (`bun test`): no Discord, no network. Integration tests run the real `Bun.serve` with a fake source publishing to the hub.
-- GitHub Actions runs lint, typecheck and `bun test --coverage` on every push and PR, and fails the build if any of them fail. `bun audit` runs too but only reports.
+- GitHub Actions runs the Prettier check, typecheck and `bun test --coverage` on every push and PR, and fails the build if any of them fail. `bun audit` runs too but only reports.
 - Dependabot opens weekly grouped PRs for npm packages and GitHub Actions; each runs CI and nothing deploys until merged.
 - Write the test first, see it fail, then implement.
 

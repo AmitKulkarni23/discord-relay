@@ -32,13 +32,16 @@ discord-relay/
 │   └── railway.ts         # Railway IaC (service, healthcheck, start command, non-secret vars)
 ├── backend/
 │   ├── server.ts          # entry point: wiring + Bun.serve (/, /events, /health, /config)
+│   ├── events.ts          # GET /events: SSE streams, limits and their timers
 │   ├── config.ts          # env vars: read and validated once at startup
 │   ├── flags.ts           # Railway Feature Flags reader (railway SDK)
 │   ├── log.ts             # structured JSON logs: log.debug/info/warn/error
 │   ├── hub.ts             # Observer: ring buffer + publish/subscribe, keyed by channelId
 │   ├── types.ts           # Msg type shared with the frontend
 │   ├── sources/
-│   │   └── discord.ts     # discord.js client → normalized messages
+│   │   ├── discord.ts     # discord.js client: connection, history and retries
+│   │   ├── discord-message.ts # discord.js message → Msg
+│   │   └── watchdog.ts    # notices a Gateway that stays down
 │   └── tests/             # mirrors backend/: tests/hub.test.ts, tests/sources/discord.test.ts
 ├── frontend/
 │   ├── index.html

@@ -74,7 +74,7 @@ sequenceDiagram
   D->>B: messageCreate
   B->>B: ignore other channels, normalize to Msg
   B->>H: publish(msg)
-  H->>H: drop if ID already buffered, else push (evict oldest past BUFFER_SIZE)
+  H->>H: drop if ID already buffered or older than a full buffer, else insert in ID order (evict oldest ID past BUFFER_SIZE)
   H->>S: notify subscribers of channelId
   S-->>W: "id: msgId / data: {Msg JSON}" on every open stream
 ```

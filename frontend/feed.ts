@@ -1,4 +1,6 @@
-import type { Attachment, ChannelInfo, Msg } from '../backend/types.ts'
+import { compareIds, type Attachment, type ChannelInfo, type Msg } from '../backend/types.ts'
+
+export { compareIds }
 
 /** The most messages the browser holds; the oldest are dropped past this. */
 export const MAX_MSGS = 500
@@ -8,11 +10,6 @@ export const MAX_RETRY_MS = 30_000
 
 /** Messages from one author closer together than this share a group header. */
 const GROUP_GAP_MS = 5 * 60_000
-
-/** Orders two Discord snowflakes by time without converting them to numbers. */
-export function compareIds(a: string, b: string): number {
-  return a.length - b.length || (a < b ? -1 : a > b ? 1 : 0)
-}
 
 /**
  * Stores `m` keyed by ID. A resend with the same edit time returns `prev`

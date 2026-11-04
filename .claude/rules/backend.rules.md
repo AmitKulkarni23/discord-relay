@@ -21,6 +21,7 @@ paths:
 - The hub ring buffer MUST be fixed-size: `BUFFER_SIZE` (1 to 500, default 100). Unbounded arrays, maps or queues MUST NOT be added.
 - On startup the bot MUST fetch the latest `BUFFER_SIZE` messages to fill the buffer, in pages of at most 100 (Discord's limit).
 - The hub MUST drop a message whose ID is already in the buffer (dedupe by Discord message ID).
+- The hub buffer MUST stay in ID order, and eviction MUST remove the oldest ID, whatever order messages arrive in.
 - The Discord client MUST request `Guilds`, `GuildMessages` and `MessageContent`. A message with empty content and no attachments MUST log a warning naming the MessageContent intent.
 
 ## SSE (`/events`)

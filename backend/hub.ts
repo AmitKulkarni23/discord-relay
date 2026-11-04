@@ -1,4 +1,4 @@
-import type { Msg } from './types.ts'
+import { compareIds, type Msg } from './types.ts'
 import { log } from './log.ts'
 
 /** Receives each new message for the channel it subscribed to. */
@@ -29,15 +29,23 @@ export function createHub(capacity = 100) {
 
   return {
     /**
-     * Stores a message and sends it to every subscriber of its channel.
-     * Ignores a message whose ID is already buffered, so history and live
-     * events can overlap safely. A throwing subscriber does not affect the others.
+     * Stores a message in ID order and sends it to every subscriber of its channel. Ignores a
+     * message whose ID is already buffered, so history and live events can overlap safely, and one
+     * older than a full buffer, which would be evicted at once. Eviction always removes the oldest ID.
+     * A throwing subscriber does not affect the others.
      */
     publish(msg: Msg): void {
       const c = channel(msg.channelId)
-      if (c.buffer.some(m => m.id === msg.id)) return
+      // Walk back from the newest: a live message stops at the first comparison.
+      let at = c.buffer.length
+      for (; at > 0; at--) {
+        const order = compareIds((c.buffer[at - 1] as Msg).id, msg.id)
+        if (order === 0) return
+        if (order < 0) break
+      }
+      if (at === 0 && c.buffer.length >= capacity) return
 
-      c.buffer.push(msg)
+      c.buffer.splice(at, 0, msg)
       // shift() is O(n), fine at the 500 maximum; use a circular array if capacity grows to thousands
       if (c.buffer.length > capacity) c.buffer.shift()
 

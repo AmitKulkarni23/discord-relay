@@ -20,6 +20,42 @@ function makeMsg(id: string, overrides: Partial<Msg> = {}): Msg {
 }
 
 describe('hub', () => {
+  describe('when a message arrives out of ID order', () => {
+    const LIVE = '1302000000000000900'
+    const OLD = ['1302000000000000001', '1302000000000000002', '1302000000000000003'] as const
+
+    it('should replay oldest first when a live message lands before history', () => {
+      const hub = createHub(10)
+
+      hub.publish(makeMsg(LIVE))
+      for (const id of OLD) hub.publish(makeMsg(id))
+
+      expect(hub.recent(CHANNEL).map(m => m.id)).toEqual([...OLD, LIVE])
+    })
+
+    it('should keep the newest message when history overflows the buffer', () => {
+      const hub = createHub(3)
+
+      hub.publish(makeMsg(LIVE))
+      for (const id of OLD) hub.publish(makeMsg(id))
+
+      expect(hub.recent(CHANNEL).map(m => m.id)).toEqual([OLD[1], OLD[2], LIVE])
+    })
+
+    it('should not store or send a message older than a full buffer', () => {
+      const hub = createHub(2)
+      hub.publish(makeMsg(OLD[1]))
+      hub.publish(makeMsg(OLD[2]))
+      const fn = mock(() => {})
+      hub.subscribe(CHANNEL, fn)
+
+      hub.publish(makeMsg(OLD[0]))
+
+      expect(fn).not.toHaveBeenCalled()
+      expect(hub.recent(CHANNEL).map(m => m.id)).toEqual([OLD[1], OLD[2]])
+    })
+  })
+
   describe('when a message is published', () => {
     it('should deliver it to subscribers of its channel when they are subscribed', () => {
       const hub = createHub()

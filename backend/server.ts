@@ -35,6 +35,10 @@ export function formatEvent(msg: Msg): string {
 const encoder = new TextEncoder()
 const CONNECTED = encoder.encode(': connected\n\n')
 const PING = encoder.encode(': ping\n\n')
+const DISCORD_UP = encoder.encode('event: discord\ndata: connected\n\n')
+const DISCORD_DOWN = encoder.encode('event: discord\ndata: disconnected\n\n')
+/** How often the server checks the Gateway, to tell open pages when it changes. */
+const DISCORD_CHECK_MS = 1000
 /** Keyed by object, so a message's bytes are freed once it leaves the buffer and every queue. */
 const encodedEvents = new WeakMap<Msg, Uint8Array>()
 
@@ -78,12 +82,19 @@ export function startServer(deps: ServerDeps): { url: URL; stop: () => void } {
   const defaultChannel: string = first
   const startedAt = Date.now()
   /** Every open /events stream: pinged by the one timer below, closed by `stop`. */
-  const openStreams = new Set<{ ping: () => void; close: () => void }>()
+  const openStreams = new Set<{ write: (bytes: Uint8Array) => void; close: () => void }>()
   /** Open /events streams per client IP. An entry is removed at zero, so this stays bounded by open streams. */
   const connectionsByIp = new Map<string, number>()
   const pingTimer = setInterval(() => {
-    for (const stream of openStreams) stream.ping()
+    for (const stream of openStreams) stream.write(PING)
   }, pingMs)
+  const discordBytes = (up: boolean): Uint8Array => (up ? DISCORD_UP : DISCORD_DOWN)
+  let discordUp = isDiscordConnected()
+  const discordTimer = setInterval(() => {
+    if (isDiscordConnected() === discordUp) return
+    discordUp = !discordUp
+    for (const stream of openStreams) stream.write(discordBytes(discordUp))
+  }, DISCORD_CHECK_MS)
 
   /**
    * Streams one channel's buffered messages, then each new one, with a ping
@@ -135,6 +146,7 @@ export function startServer(deps: ServerDeps): { url: URL; stop: () => void } {
           }
           // Send something at once so headers flush even when the buffer is empty.
           send(CONNECTED)
+          send(discordBytes(isDiscordConnected()))
           for (const m of hub.recent(channelId).filter(isNew)) send(encodeEvent(m))
           // A restarted server refills its buffer through publish, so a live message can be one the browser holds.
           const unsubscribe = hub.subscribe(channelId, m => {
@@ -157,7 +169,7 @@ export function startServer(deps: ServerDeps): { url: URL; stop: () => void } {
             controller.close()
           }
 
-          const open = { ping: () => write(PING), close }
+          const open = { write, close }
           openStreams.add(open)
           req.signal.addEventListener('abort', cleanup)
           log.debug('client_connected', { requestId, clients: hub.subscriberCount() })
@@ -207,6 +219,7 @@ export function startServer(deps: ServerDeps): { url: URL; stop: () => void } {
     url: server.url,
     stop() {
       clearInterval(pingTimer)
+      clearInterval(discordTimer)
       for (const stream of [...openStreams]) stream.close()
       server.stop()
     },

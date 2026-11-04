@@ -3,7 +3,7 @@ import { createTheme } from '@mui/material/styles'
 /**
  * The page's only colour source. Two schemes of one identity: cool neutrals,
  * violet as the single accent (focus, the new-messages pill, the arrival tint),
- * green means live, amber means reconnecting, and nothing else is coloured.
+ * green means live, amber means reconnecting or waiting for Discord, and nothing else is coloured.
  * Each colour is darkened for light so text and status dots keep their contrast.
  * The page follows the OS until the reader picks a mode (ThemeToggle in app.tsx).
  */

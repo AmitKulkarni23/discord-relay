@@ -85,6 +85,32 @@ function start(hub: Hub, overrides: { connected?: boolean; pingMs?: number; chan
   return server
 }
 
+describe('the discord status event', () => {
+  it('should tell a new stream that Discord is connected', async () => {
+    const { url } = start(createHub(10))
+    const stream = await openEvents(url)
+    expect(await stream.readUntil(t => t.includes('event: discord'))).toContain('event: discord\ndata: connected\n\n')
+    stream.abort()
+  })
+
+  it('should tell a new stream that Discord is disconnected', async () => {
+    const { url } = start(createHub(10), { connected: false })
+    const stream = await openEvents(url)
+    expect(await stream.readUntil(t => t.includes('event: discord'))).toContain('event: discord\ndata: disconnected\n\n')
+    stream.abort()
+  })
+
+  it('should push a change to an open stream', async () => {
+    const overrides = { connected: true }
+    const { url } = start(createHub(10), overrides)
+    const stream = await openEvents(url)
+    await stream.readUntil(t => t.includes('data: connected'))
+    overrides.connected = false
+    expect(await stream.readUntil(t => t.includes('data: disconnected'))).toContain('event: discord\ndata: disconnected\n\n')
+    stream.abort()
+  })
+})
+
 describe('formatEvent', () => {
   describe('when given a message', () => {
     it('should produce an SSE event with the message ID when formatted', () => {
@@ -250,7 +276,7 @@ describe('server', () => {
       const second = await openEvents(url)
       await first.readUntil(t => t.includes(': ping\n\n'))
       await second.readUntil(t => t.includes(': ping\n\n'))
-      const created = timers.mock.calls.length
+      const created = timers.mock.calls.filter(([, ms]) => ms === 20).length
       timers.mockRestore()
 
       expect(created).toBe(1)

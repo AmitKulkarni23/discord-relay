@@ -26,8 +26,8 @@ import { addMsg, buildRows, compareIds, eventsUrl, fetchConfig, parseMarkup, par
 import { isDiscordCdn } from './media.ts'
 import { GROUND, theme } from './theme.ts'
 
-/** The browser's view of the /events stream. */
-type Status = 'connecting' | 'live' | 'reconnecting'
+/** The browser's view of the /events stream and, once it is open, of the bot's Discord connection. */
+type Status = 'connecting' | 'live' | 'reconnecting' | 'discord'
 
 /** A message younger than this when its row mounts gets the arrival tint. */
 const FRESH_MS = 15_000
@@ -80,11 +80,11 @@ function channelLabel(c: ChannelInfo): string {
   return `# ${c.name ?? c.id}`
 }
 
-const STATUS_LABEL: Record<Status, string> = { connecting: 'Connecting', live: 'Live', reconnecting: 'Reconnecting' }
+const STATUS_LABEL: Record<Status, string> = { connecting: 'Connecting', live: 'Live', reconnecting: 'Reconnecting', discord: 'Waiting for Discord' }
 
-/** The connection chip: green when the stream is open, amber while it retries. */
+/** The connection chip: green only when messages can really flow; amber while the stream retries or the bot has lost Discord. */
 function StatusChip({ status }: { status: Status }): ReactElement {
-  const dot = status === 'live' ? 'success.main' : status === 'reconnecting' ? 'warning.main' : 'text.secondary'
+  const dot = status === 'live' ? 'success.main' : status === 'connecting' ? 'text.secondary' : 'warning.main'
   return (
     <Box role="status" aria-live="polite">
       <Chip
@@ -464,7 +464,9 @@ function EmptyState({ status, channelName }: { status: Status; channelName: stri
   const [title, body] =
     status === 'live'
       ? ['No messages yet', `Post in ${where} and it shows up here, live.`]
-      : [status === 'connecting' ? 'Connecting to the relay' : 'Reconnecting to the relay', 'Messages appear as soon as the stream opens.']
+      : status === 'discord'
+        ? ['Waiting for Discord', 'The relay is reconnecting to Discord. Messages appear as soon as it is back.']
+        : [status === 'connecting' ? 'Connecting to the relay' : 'Reconnecting to the relay', 'Messages appear as soon as the stream opens.']
   return (
     <Box sx={{ m: 'auto', textAlign: 'center', py: 8, px: 2 }}>
       <Typography variant="subtitle2" component="p" sx={{ fontSize: 15, color: 'text.primary', mb: 0.5 }}>
@@ -512,7 +514,9 @@ function NewMessagesPill({ count, onClick }: { count: number; onClick: () => voi
 /** The page: one EventSource, up to 500 messages keyed by ID, newest at the bottom. */
 function App(): ReactElement {
   const [msgs, setMsgs] = useState<Map<string, Msg>>(() => new Map())
-  const [status, setStatus] = useState<Status>('connecting')
+  const [stream, setStream] = useState<Status>('connecting')
+  /** What the server last said about Discord; only meaningful while the stream is open. */
+  const [discordUp, setDiscordUp] = useState(true)
   const [channels, setChannels] = useState<ChannelInfo[]>([])
   const [attachmentsOn, setAttachmentsOn] = useState(false)
   /** The channel picked in the URL or the tabs; null means the server's default. */
@@ -520,6 +524,8 @@ function App(): ReactElement {
   /** Newest message ID the reader has seen at the bottom of the page. */
   const [seenId, setSeenId] = useState<string | null>(null)
   const atBottom = useRef(true)
+
+  const status: Status = stream === 'live' && !discordUp ? 'discord' : stream
 
   const sorted = useMemo(() => sortMsgs(msgs), [msgs])
   const rows = useMemo(() => buildRows(sorted), [sorted])
@@ -537,7 +543,7 @@ function App(): ReactElement {
   // One stream per selected channel: switching closes the old stream and starts a fresh list.
   useEffect(() => {
     setMsgs(new Map())
-    setStatus('connecting')
+    setStream('connecting')
     setSeenId(null)
     atBottom.current = true
     let es: EventSource | undefined
@@ -551,12 +557,13 @@ function App(): ReactElement {
     const connect = (): void => {
       es = new EventSource(eventsUrl(streamChannel, since))
       es.onopen = () => {
-        setStatus('live')
+        setStream('live')
         // Not on open alone: a server that accepts and then dies must keep backing off.
         stable = setTimeout(() => {
           attempt = 0
         }, STABLE_MS)
       }
+      es.addEventListener('discord', e => setDiscordUp(e.data !== 'disconnected'))
       es.onmessage = e => {
         const m = parseMsg(String(e.data))
         if (!m) return
@@ -566,7 +573,7 @@ function App(): ReactElement {
       es.onerror = () => {
         es?.close()
         clearTimeout(stable)
-        setStatus('reconnecting')
+        setStream('reconnecting')
         retry = setTimeout(connect, retryDelay(attempt++))
       }
     }

@@ -1,11 +1,11 @@
 /** Ramps /events clients until a level fails; `bun load/run.ts --help` lists every knob. */
 import { parseArgs } from 'node:util'
-import type { WorkerCommand, WorkerReply } from './worker.ts'
+import type { ConsumerCommand, ConsumerReply } from './consumer.ts'
 
 const HELP = `Finds how many concurrent /events clients the server holds: ramps through client counts and stops at the
 first level that fails. Exits 1 if any level failed. Local only unless you mean otherwise: never point it at production.
 
-  bun load/run.ts --levels 1000,5000,10000 --rate 5 --hold 60 --workers 4
+  bun load/run.ts --levels 1000,5000,10000 --rate 5 --hold 60 --consumers 4
 
 Load
   --levels <n,n>         client counts to ramp through (default 100,1000,2000,5000,10000)
@@ -29,8 +29,8 @@ Pass or fail
   --keepGoing            run every level even after one fails
   --maxSec <sec>         abort the whole run after this long (default 900)
 
-Generators
-  --workers <n>          generator processes (default 4)
+Consumers
+  --consumers <n>        consumer processes (default 4)
   --connectPerSec <n>    how fast clients connect (default 1000)
   --listeners <n>        ports the server listens on (default 1)
 
@@ -65,7 +65,7 @@ const { values } = parseArgs({
     slowPct: { type: 'string', default: '0' },
     slowMode: { type: 'string', default: 'stop' },
     hold: { type: 'string', default: '60' },
-    workers: { type: 'string', default: '4' },
+    consumers: { type: 'string', default: '4' },
     listeners: { type: 'string', default: '1' },
     connectPerSec: { type: 'string', default: '1000' },
     maxP99Ms: { type: 'string', default: '1000' },
@@ -85,7 +85,7 @@ const burstEverySec = Number(values.burstEverySec)
 const rate = burst ? burst / burstEverySec : Number(values.rate)
 const msgBytes = Number(values.msgBytes)
 const holdSec = Number(values.hold)
-const workerCount = Number(values.workers)
+const consumerCount = Number(values.consumers)
 const connectPerSec = Number(values.connectPerSec)
 const maxP99Ms = Number(values.maxP99Ms)
 const listeners = Number(values.listeners)
@@ -121,15 +121,15 @@ type Stats = {
 }
 const getStats = async (): Promise<Stats> => (await fetch(`${control}/stats`, { signal: AbortSignal.timeout(30_000) })).json() as Promise<Stats>
 
-/** A worker's replies arrive on one queue, in order. */
-type Worker = { command: (c: WorkerCommand) => void; next: () => Promise<WorkerReply>; kill: () => void }
-function spawnWorker(): Worker {
-  const replies: WorkerReply[] = []
-  const waiting: Array<(r: WorkerReply) => void> = []
-  const proc = Bun.spawn(['bun', 'load/worker.ts'], {
+/** A consumer's replies arrive on one queue, in order. */
+type Consumer = { command: (c: ConsumerCommand) => void; next: () => Promise<ConsumerReply>; kill: () => void }
+function spawnConsumer(): Consumer {
+  const replies: ConsumerReply[] = []
+  const waiting: Array<(r: ConsumerReply) => void> = []
+  const proc = Bun.spawn(['bun', 'load/consumer.ts'], {
     stdout: 'inherit',
     stderr: 'inherit',
-    ipc(message: WorkerReply) {
+    ipc(message: ConsumerReply) {
       const resolve = waiting.shift()
       if (resolve) resolve(message)
       else replies.push(message)
@@ -177,11 +177,11 @@ async function clockOffset(): Promise<number> {
   return best.offset
 }
 
-const workers = Array.from({ length: workerCount }, spawnWorker)
-const all = <T>(fn: (w: Worker, i: number) => Promise<T>) => Promise.all(workers.map(fn))
+const consumers = Array.from({ length: consumerCount }, spawnConsumer)
+const all = <T>(fn: (w: Consumer, i: number) => Promise<T>) => Promise.all(consumers.map(fn))
 
 function stop(code: number): never {
-  for (const w of workers) w.kill()
+  for (const w of consumers) w.kill()
   localServer?.kill()
   process.exit(code)
 }
@@ -228,14 +228,14 @@ console.log(
     slowPct: values.slowPct,
     slowMode: values.slowMode,
     holdSec,
-    workerCount,
+    consumerCount,
     levels,
     baselineRssMb: baseline.rssMb,
     clockOffsetMs: offsetMs,
   }),
 )
 console.log(
-  'clients | conn s | delivered | p50 ms | p99 ms |  max ms | cpu avg% | cpu max% | rss MB | KB/client | srv lag ms | gen lag ms | gen cpu% | dropped | egress MB/s | slow gone | reconnects | recon fails | recon max ms | result',
+  'clients | conn s | delivered | p50 ms | p99 ms |  max ms | cpu avg% | cpu max% | rss MB | KB/client | srv lag ms | consumer lag ms | consumer cpu% | dropped | egress MB/s | slow gone | reconnects | recon fails | recon max ms | result',
 )
 
 let opened = 0
@@ -245,7 +245,7 @@ for (const target of levels) {
   const toOpen = target - opened
   const connectStart = performance.now()
   await all((w, i) => {
-    const count = Math.floor(toOpen / workerCount) + (i < toOpen % workerCount ? 1 : 0)
+    const count = Math.floor(toOpen / consumerCount) + (i < toOpen % consumerCount ? 1 : 0)
     w.command({
       type: 'open',
       host,
@@ -253,9 +253,9 @@ for (const target of levels) {
       tls: isPublic,
       channelIds,
       count,
-      perSec: connectPerSec / workerCount,
-      worker: i,
-      first: Math.floor(opened / workerCount),
+      perSec: connectPerSec / consumerCount,
+      consumer: i,
+      first: Math.floor(opened / consumerCount),
       slowPct: Number(values.slowPct),
       slowMode: values.slowMode as string,
     })
@@ -274,14 +274,14 @@ for (const target of levels) {
   await getStats()
 
   const from = (await getStats()).seq + (burst ? burst * Math.max(1, Math.ceil(2 / burstEverySec)) : Math.ceil(rate * 2))
-  for (const w of workers) w.command({ type: 'window', from, offsetMs })
+  for (const w of consumers) w.command({ type: 'window', from, offsetMs })
   const windowStart = performance.now()
   const churnPerSec = Number(values.churnPerSec)
-  if (churnPerSec) for (const w of workers) w.command({ type: 'churn', perSec: churnPerSec / workerCount })
+  if (churnPerSec) for (const w of consumers) w.command({ type: 'churn', perSec: churnPerSec / consumerCount })
   if (values.storm) {
     setTimeout(
       () => {
-        for (const w of workers) w.command({ type: 'storm', jitterMs: Number(values.stormJitterMs) })
+        for (const w of consumers) w.command({ type: 'storm', jitterMs: Number(values.stormJitterMs) })
       },
       (holdSec * 1000) / 2,
     )
@@ -308,8 +308,8 @@ for (const target of levels) {
   let gaps = 0
   let dups = 0
   let behind = 0
-  let genLag = 0
-  let genCpu = 0
+  let consumerLag = 0
+  let consumerCpu = 0
   let rxBytes = 0
   let slowTotal = 0
   let reconnects = 0
@@ -323,8 +323,8 @@ for (const target of levels) {
     gaps += r.gaps
     dups += r.dups
     behind += r.behind
-    genLag = Math.max(genLag, r.lagMsMax)
-    genCpu += r.cpuPct
+    consumerLag = Math.max(consumerLag, r.lagMsMax)
+    consumerCpu += r.cpuPct
     rxBytes += r.rxBytes
     slowTotal += r.slowTotal
     reconnects += r.reconnects
@@ -361,8 +361,8 @@ for (const target of levels) {
     rssMax,
     kbPerClient,
     lagMax,
-    genLag,
-    genCpu,
+    consumerLag,
+    consumerCpu,
     dropped,
     egressMbPerSec,
     slowTotal,
@@ -394,8 +394,8 @@ for (const target of levels) {
       last.rssMb.toFixed(0).padStart(6),
       kbPerClient.toFixed(1).padStart(9),
       lagMax.toFixed(0).padStart(10),
-      genLag.toFixed(0).padStart(10),
-      genCpu.toFixed(0).padStart(8),
+      consumerLag.toFixed(0).padStart(15),
+      consumerCpu.toFixed(0).padStart(13),
       String(dropped).padStart(7),
       egressMbPerSec.toFixed(2).padStart(11),
       String(slowGone).padStart(9),

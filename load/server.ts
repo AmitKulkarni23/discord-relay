@@ -13,7 +13,7 @@ const channelIds = Array.from({ length: Number(process.env.CHANNELS ?? 1) }, (_,
 
 const hub = createHub(bufferSize)
 
-// One generator IP gets at most about 16k (macOS) or 28k (Linux) connections per destination port.
+// One consumer IP gets at most about 16k (macOS) or 28k (Linux) connections per destination port.
 // Extra listeners at PORT + 2 onwards, sharing the one hub and event loop, lift that limit.
 const listeners = Number(process.env.LISTENERS ?? 1)
 for (let i = 0; i < listeners; i++) {

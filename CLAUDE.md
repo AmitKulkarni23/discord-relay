@@ -56,7 +56,7 @@ discord-relay/
 │   ├── run.ts             # ramps client counts, stops at the first failing level
 │   ├── server.ts          # real hub and server, fake producer, control port
 │   ├── producer.ts        # fake messages and resource stats
-│   └── worker.ts          # one generator process
+│   └── consumer.ts        # one consumer process: many raw /events connections
 ├── docs/
 │   ├── system-specs/      # architecture, failure modes, decisions
 │   └── task-specs/        # one spec per task, TASK_INDEX.md lists them in order

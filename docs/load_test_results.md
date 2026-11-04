@@ -21,7 +21,7 @@ A message held up by a reconnect counts towards p99, so raise `--maxP99Ms` for `
 
 ## Clean run through the public URL (2026-11-03 11:07 PST)
 
-One unattended run with no other load test nearby, against the live `discord-relay` service and its real bot. It used the same temporary build as the runs below, 3 generators in a separate Railway environment, 5 msg/s and a 45 s hold per level. Latency cells show the highest generator.
+One unattended run with no other load test nearby, against the live `discord-relay` service and its real bot. It used the same temporary build as the runs below, 3 consumers in a separate Railway environment, 5 msg/s and a 45 s hold per level. Latency cells show the highest consumer.
 
 | Clients | Delivered | p50 | p99 | Slowest | CPU avg, one core | Memory | Refused | Result |
 |---:|---:|---:|---:|---:|---:|---:|---:|---|
@@ -54,11 +54,11 @@ After restore: streams 1-20 ok: 20, stream 21 status: 429
 
 ## Live service through the public URL (2026-11-03)
 
-This is the `discord-relay` production service with its real Discord bot, reached through Railway's edge as a browser would. The test used a temporary, uncommitted build: the 20-stream-per-IP cap raised, a simulated producer added, and a stats route added. Generators ran as a Railway service in a separate environment. Messages were about 470 bytes, `BUFFER_SIZE` was 100, and each level was held for 45 s.
+This is the `discord-relay` production service with its real Discord bot, reached through Railway's edge as a browser would. The test used a temporary, uncommitted build: the 20-stream-per-IP cap raised, a simulated producer added, and a stats route added. Consumers ran as a Railway service in a separate environment. Messages were about 470 bytes, `BUFFER_SIZE` was 100, and each level was held for 45 s.
 
-These runs happened back to back, so treat CPU and latency as approximate. With several generators, each one also read and reset the server's stats, so their CPU figures are a range across generators, and the memory figure is the highest any of them saw.
+These runs happened back to back, so treat CPU and latency as approximate. With several consumers, each one also read and reset the server's stats, so their CPU figures are a range across consumers, and the memory figure is the highest any of them saw.
 
-| Clients | Generators | Msg/s | Delivered | p50 | p99 | Slowest | CPU (one core) | Memory | Result |
+| Clients | Consumers | Msg/s | Delivered | p50 | p99 | Slowest | CPU (one core) | Memory | Result |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---|
 | 2,500 | 1 | 5 | 100% | 36 ms | 106 ms | 1.6 s | 18-21% | 199 MB | Pass |
 | 3,000 | 1 | 5 | 100% | 41 ms | 118 ms | 0.8 s | 23-26% | 234 MB | Pass |
@@ -98,15 +98,15 @@ Open questions:
 - Why 12,000 passed when Railway documents 10,000 per domain per edge node. Traffic spread across edge nodes is one possibility, not confirmed; every 502 entry retrieved came from edge region `us-west2`.
 - Why `/health` briefly reported 17,686 clients in the 15,000 run, and why about 2,500 established streams were dropped in that run.
 
-### One generator stops at 6,000
+### One consumer stops at 6,000
 
-One generator could not hold more than 6,000 connections through the public URL: at 7,500, 10,000 and 12,000 it stayed at 6,000 and its extra connections failed with no HTTP response. Railway also logged a high ephemeral port warning for the generator. A separate generator on a laptop then held 7,000 clients with 100% delivery (1 msg/s, p99 492 ms, 15 s hold), so 6,000 is a limit of one generator's outbound path, not of the service or the edge. That laptop run is a diagnostic only.
+One consumer could not hold more than 6,000 connections through the public URL: at 7,500, 10,000 and 12,000 it stayed at 6,000 and its extra connections failed with no HTTP response. Railway also logged a high ephemeral port warning for the consumer. A separate consumer on a laptop then held 7,000 clients with 100% delivery (1 msg/s, p99 492 ms, 15 s hold), so 6,000 is a limit of one consumer's outbound path, not of the service or the edge. That laptop run is a diagnostic only.
 
 ## True max of the service over the private network (2026-11-03)
 
-This measures the live `discord-relay` service and its real bot with Railway's edge out of the path. It used the same temporary build, with 5 generators in the production environment connecting over the private network and 8 vCPU and 8 GB limits on the service. The server was restarted with zero clients before each ramp. Each level was held for 45 s. A level passes only if every generator gets 100% delivery with no drops and a p99 of at most 1 s, so "generators passing" counts how many of the 5 met that.
+This measures the live `discord-relay` service and its real bot with Railway's edge out of the path. It used the same temporary build, with 5 consumers in the production environment connecting over the private network and 8 vCPU and 8 GB limits on the service. The server was restarted with zero clients before each ramp. Each level was held for 45 s. A level passes only if every consumer gets 100% delivery with no drops and a p99 of at most 1 s, so "consumers passing" counts how many of the 5 met that.
 
-| Clients | Msg/s | Delivered | p50 (worst generator) | p99 (range across generators) | Slowest | Memory (process) | Generators passing |
+| Clients | Msg/s | Delivered | p50 (worst consumer) | p99 (range across consumers) | Slowest | Memory (process) | Consumers passing |
 |---:|---:|---:|---:|---:|---:|---:|---:|
 | 12,500 | 5 | 100% | 201 ms | 129-417 ms | 0.8 s | 824 MB | 5 of 5 |
 | 15,000 | 5 | 100% | 223 ms | 197-406 ms | 0.5 s | 971 MB | 5 of 5 |
@@ -119,7 +119,7 @@ This measures the live `discord-relay` service and its real bot with Railway's e
 | 50,000 | 1 | 100% | 695 ms | 1,146-1,447 ms | 1.7 s | 2.88 GB | 0 of 5 |
 | 57,500 | 1 | 100% | 728 ms | 1,205-1,518 ms | 1.8 s | 3.12 GB | 0 of 5 |
 
-Railway's own metrics peaked at 1.0 vCPU and 1.64 GB in the 5 msg/s ramp, and 1.0 vCPU and 3.58 GB in the 1 msg/s ramp. Per-level CPU is left out: 5 generators each read and reset the same counter, which made the figures unreliable.
+Railway's own metrics peaked at 1.0 vCPU and 1.64 GB in the 5 msg/s ramp, and 1.0 vCPU and 3.58 GB in the 1 msg/s ramp. Per-level CPU is left out: 5 consumers each read and reset the same counter, which made the figures unreliable.
 
 What this means:
 
@@ -136,13 +136,13 @@ Limits of this result:
 
 ### Dead connections linger
 
-Generators that stop without closing their sockets stay counted on the server. After one ramp ended, `/health` still reported 25,896 clients more than 5 minutes later. An earlier, discarded ramp reached 75,896 subscribers because of this, with about 50,000 of them live, and Railway's memory peaked at 7.04 GB of 8 GB. The process did not crash. Real clients that disappear without closing, such as a phone losing signal, would behave the same way.
+Consumers that stop without closing their sockets stay counted on the server. After one ramp ended, `/health` still reported 25,896 clients more than 5 minutes later. An earlier, discarded ramp reached 75,896 subscribers because of this, with about 50,000 of them live, and Railway's memory peaked at 7.04 GB of 8 GB. The process did not crash. Real clients that disappear without closing, such as a phone losing signal, would behave the same way.
 
 ## Separate server over the private network (2026-11-03)
 
-This earlier run used the same hub and server code with a simulated producer and no Discord bot, on its own Railway service. Generators connected over Railway's private network, which bypasses the edge. It is kept for comparison: it used one generator per run, while the later run with 5 generators on the live service held 25,000 clients at 5 msg/s.
+This earlier run used the same hub and server code with a simulated producer and no Discord bot, on its own Railway service. Consumers connected over Railway's private network, which bypasses the edge. It is kept for comparison: it used one consumer per run, while the later run with 5 consumers on the live service held 25,000 clients at 5 msg/s.
 
-One Railway replica (8 vCPU, 8 GB limit), generator in a second service, messages of about 470 bytes, `BUFFER_SIZE` 100, each level held for 45 s:
+One Railway replica (8 vCPU, 8 GB limit), consumer in a second service, messages of about 470 bytes, `BUFFER_SIZE` 100, each level held for 45 s:
 
 | Clients | Msg/s | Delivered | p50 | p99 | Slowest | CPU (one core) | Memory | Result |
 |---|---|---:|---:|---:|---:|---:|---:|---|
@@ -169,4 +169,4 @@ What this does not cover:
 - **Sustained load:** levels are held for 45 s, so this is not a leak test.
 - **Egress:** 10,000 clients at 5 msg/s is about 24 MB/s of data, and that traffic would be billed on the public domain.
 
-One unexplained result: on a laptop at 50 msg/s, where the server was saturated, the Bun generator saw 995 repeated messages. A separate Python client with stalled reads saw none in 52,065 messages at 300 msg/s, so the source is unknown. Browsers dedupe by message ID, so a repeat would not show on the page.
+One unexplained result: on a laptop at 50 msg/s, where the server was saturated, the Bun consumer saw 995 repeated messages. A separate Python client with stalled reads saw none in 52,065 messages at 300 msg/s, so the source is unknown. Browsers dedupe by message ID, so a repeat would not show on the page.

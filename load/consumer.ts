@@ -1,5 +1,5 @@
 /**
- * One load generator process: holds raw TCP connections to /events and records, for every
+ * One consumer process: holds raw TCP connections to /events and records, for every
  * message in the measured window, its delivery time and whether any were missed. Raw sockets
  * because Bun's fetch allows 256 concurrent requests by default. Driven over IPC by run.ts.
  */
@@ -23,7 +23,7 @@ type Conn = {
 }
 type Socket = Bun.Socket<Conn>
 
-export type WorkerCommand =
+export type ConsumerCommand =
   | {
       type: 'open'
       host: string
@@ -32,7 +32,7 @@ export type WorkerCommand =
       channelIds: string[]
       count: number
       perSec: number
-      worker: number
+      consumer: number
       first: number
       slowPct: number
       slowMode: string
@@ -43,9 +43,9 @@ export type WorkerCommand =
   | { type: 'storm'; jitterMs: number }
   | { type: 'close' }
 
-type OpenCommand = Extract<WorkerCommand, { type: 'open' }>
+type OpenCommand = Extract<ConsumerCommand, { type: 'open' }>
 
-export type WorkerReply =
+export type ConsumerReply =
   | { type: 'opened'; ok: number; failed: number; statuses: Record<string, number> }
   | {
       type: 'report'
@@ -65,7 +65,7 @@ export type WorkerReply =
       reconnectMsMax: number
     }
 
-const send = (reply: WorkerReply) => process.send?.(reply)
+const send = (reply: ConsumerReply) => process.send?.(reply)
 
 // Simulated messages only: on the live service the buffer can also hold real Discord history.
 const ID_PREFIX = '1900000000'
@@ -227,7 +227,7 @@ function dial(conn: Conn): void {
   const request =
     `GET /events?channel=${cmd.channelIds[n % cmd.channelIds.length]}${since} HTTP/1.1\r\nHost: ${cmd.host}\r\nAccept: text/event-stream\r\n` +
     // Unique per connection so the per-IP cap does not apply. Only works without Railway's proxy in the path, which sets this header itself.
-    `X-Real-IP: 10.${cmd.worker}.${(n >> 8) & 255}.${n & 255}\r\nConnection: keep-alive\r\n\r\n`
+    `X-Real-IP: 10.${cmd.consumer}.${(n >> 8) & 255}.${n & 255}\r\nConnection: keep-alive\r\n\r\n`
   Bun.connect<Conn>({
     hostname: cmd.host,
     tls: cmd.tls,
@@ -272,7 +272,7 @@ setInterval(() => {
 let cpuFrom = process.cpuUsage()
 let cpuAt = performance.now()
 
-async function report(cmd: Extract<WorkerCommand, { type: 'end' }>): Promise<void> {
+async function report(cmd: Extract<ConsumerCommand, { type: 'end' }>): Promise<void> {
   to = cmd.to
   clearInterval(churn)
   const deadline = performance.now() + cmd.graceMs
@@ -320,7 +320,7 @@ async function report(cmd: Extract<WorkerCommand, { type: 'end' }>): Promise<voi
   lagMsMax = 0
 }
 
-process.on('message', (cmd: WorkerCommand) => {
+process.on('message', (cmd: ConsumerCommand) => {
   if (cmd.type === 'open') void open(cmd)
   if (cmd.type === 'window') {
     from = cmd.from

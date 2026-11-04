@@ -95,6 +95,28 @@ export function parseConfig(v: unknown): PageConfig {
   return { attachments: v.attachments === true, channels: channels.map(c => ({ id: c.id, name: c.name })) }
 }
 
+/**
+ * Reads GET /config, retrying with the stream's backoff until it answers: a 502 mid-deploy must not
+ * leave the page without tabs, or stuck retrying a `?channel=` the server would answer 404 to.
+ * Returns null once `signal` aborts.
+ */
+export async function fetchConfig(
+  signal: AbortSignal,
+  get: (url: string, init: RequestInit) => Promise<Response> = fetch,
+  wait: (ms: number) => Promise<void> = ms => new Promise(resolve => setTimeout(resolve, ms)),
+): Promise<PageConfig | null> {
+  for (let attempt = 0; !signal.aborted; attempt++) {
+    try {
+      const res = await get('/config', { signal })
+      if (res.ok) return parseConfig(await res.json())
+    } catch {
+      // A network failure or a body that is not JSON: retry like any other failure.
+    }
+    await wait(retryDelay(attempt))
+  }
+  return null
+}
+
 /** Narrows an unknown value to a plain object. */
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null

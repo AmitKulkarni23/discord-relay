@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test'
 import type { Msg } from '../backend/types.ts'
-import { addMsg, buildRows, compareIds, eventsUrl, MAX_MSGS, MAX_RETRY_MS, parseConfig, parseMsg, retryDelay, sortMsgs } from './feed.ts'
+import { addMsg, buildRows, compareIds, eventsUrl, fetchConfig, MAX_MSGS, MAX_RETRY_MS, parseConfig, parseMsg, retryDelay, sortMsgs } from './feed.ts'
 
 const CHANNEL = '1566584977829900002'
 
@@ -216,6 +216,45 @@ describe('eventsUrl', () => {
     it('should send the newest seen ID when one is held', () => {
       expect(eventsUrl(null, '1566588496691400002')).toBe('/events?since=1566588496691400002')
       expect(eventsUrl(CHANNEL, '1566588496691400002')).toBe(`/events?channel=${CHANNEL}&since=1566588496691400002`)
+    })
+  })
+})
+
+describe('fetchConfig', () => {
+  const GOOD = { attachments: true, channels: [{ id: CHANNEL, name: 'general' }] }
+  const noWait = async (): Promise<void> => {}
+
+  describe('when /config fails before it answers', () => {
+    it('should retry until it succeeds when the server returns a 502', async () => {
+      const replies = [new Response('Bad Gateway', { status: 502 }), Response.json(GOOD)]
+      const get = async (): Promise<Response> => replies.shift() as Response
+
+      expect(await fetchConfig(new AbortController().signal, get, noWait)).toEqual(GOOD)
+      expect(replies).toHaveLength(0)
+    })
+
+    it('should retry when the network fails or the body is not JSON', async () => {
+      let calls = 0
+      const get = async (): Promise<Response> => {
+        calls++
+        if (calls === 1) throw new TypeError('Failed to fetch')
+        return calls === 2 ? new Response('<html>') : Response.json(GOOD)
+      }
+
+      expect(await fetchConfig(new AbortController().signal, get, noWait)).toEqual(GOOD)
+      expect(calls).toBe(3)
+    })
+  })
+
+  describe('when the page stops waiting', () => {
+    it('should return null when aborted between retries', async () => {
+      const abort = new AbortController()
+      const get = async (): Promise<Response> => {
+        abort.abort()
+        return new Response('Bad Gateway', { status: 502 })
+      }
+
+      expect(await fetchConfig(abort.signal, get, noWait)).toBeNull()
     })
   })
 })

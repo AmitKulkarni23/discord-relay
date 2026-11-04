@@ -19,7 +19,7 @@ import type { ChannelInfo, Msg } from '../backend/types.ts'
 // Bun's HTML bundler does not code-split, so this ships in the main bundle even with
 // the `attachments` flag off (a few KB). It only renders when the flag is on; split with Bun.build if it grows.
 import Attachments from './attachments.tsx'
-import { addMsg, buildRows, compareIds, eventsUrl, parseConfig, parseMsg, retryDelay, sortMsgs } from './feed.ts'
+import { addMsg, buildRows, compareIds, eventsUrl, fetchConfig, parseMsg, retryDelay, sortMsgs } from './feed.ts'
 import { isDiscordCdn } from './media.ts'
 import { GROUND, theme } from './theme.ts'
 
@@ -408,14 +408,13 @@ function App(): ReactElement {
   }, [streamChannel])
 
   useEffect(() => {
-    fetch('/config')
-      .then(res => res.json())
-      .then((v: unknown) => {
-        const config = parseConfig(v)
-        setChannels(config.channels)
-        setAttachmentsOn(config.attachments)
-      })
-      .catch(() => setChannels([]))
+    const abort = new AbortController()
+    void fetchConfig(abort.signal).then(config => {
+      if (!config) return
+      setChannels(config.channels)
+      setAttachmentsOn(config.attachments)
+    })
+    return () => abort.abort()
   }, [])
 
   const selectChannel = (id: string): void => {

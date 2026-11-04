@@ -19,7 +19,7 @@ Each row lists what can break, what a user would report, how we notice, and what
 
 | # | Failure | User sees | Detection | Handling | Status |
 |---|---|---|---|---|---|
-| 7 | Gateway drops because Discord restarts or the network blips | Nothing, or a short gap | `shardDisconnect` and `shardReconnecting` events | discord.js reconnects and resumes | Mitigated |
+| 7 | Gateway drops because Discord restarts or the network blips | Nothing, or a short gap | `shardDisconnect` and `shardReconnecting` events | discord.js reconnects. A resume replays what was missed; a fresh session reloads the latest `BUFFER_SIZE` messages per channel | Mitigated |
 | 8 | Gateway stays down while the process is alive | The page goes quiet but looks healthy | Watchdog fires after 5 min disconnected; `/health` returns 503; debug panel | `process.exit(1)`, then Railway restarts the process | Mitigated |
 | 9 | MessageContent intent is not enabled | Messages with empty text | Empty content with no attachments | A warning log names the intent. The fix is in the Discord developer portal | Detected |
 | 10 | Token is invalid or revoked | Empty page, and the deploy never goes live | Login error at startup | Exit 1 with a clear log. After 10 restarts Railway marks the deployment `Crashed` and emails project members | Detected |

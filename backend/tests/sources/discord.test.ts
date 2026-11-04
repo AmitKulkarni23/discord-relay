@@ -323,4 +323,42 @@ describe('startDiscord', () => {
       expect(fake.logs).not.toContainEqual(expect.objectContaining({ event: 'history_failed' }))
     })
   })
+
+  describe('when the Gateway starts a fresh session after startup', () => {
+    /** Starts a fake bot and waits for its startup history. */
+    async function startReady(history: MessageLike[]) {
+      const fake = startFakeDiscord(history)
+      stop = fake.discord.stop
+      // discord.js emits these in this order on the first connection.
+      fake.client.emit(Events.ShardReady, 0, undefined)
+      fake.client.emit(Events.ClientReady, fake.client as never)
+      await waitFor(() => fake.logs.some(l => l.event === 'history_loaded'))
+      return fake
+    }
+
+    it('should load history once when the first session starts', async () => {
+      const fake = await startReady([makeDiscordMessage({ id: '1302000000000000001' })])
+
+      expect(fake.fetchChannel).toHaveBeenCalledTimes(1)
+    })
+
+    it('should publish messages posted during the gap when a new session is ready', async () => {
+      const history = [makeDiscordMessage({ id: '1302000000000000001' })]
+      const fake = await startReady(history)
+      history.push(makeDiscordMessage({ id: '1302000000000000002' }))
+
+      fake.client.emit(Events.ShardReady, 0, undefined)
+      await waitFor(() => fake.published.some(m => m.id === '1302000000000000002'))
+
+      expect(fake.fetchChannel).toHaveBeenCalledTimes(2)
+    })
+
+    it('should not reload history when the session resumes because Discord replays what was missed', async () => {
+      const fake = await startReady([makeDiscordMessage({ id: '1302000000000000001' })])
+
+      fake.client.emit(Events.ShardResume, 0, 0)
+
+      expect(fake.fetchChannel).toHaveBeenCalledTimes(1)
+    })
+  })
 })

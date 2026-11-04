@@ -130,7 +130,8 @@ export function createWatchdog(opts: {
 }
 
 /**
- * Logs in to the Discord Gateway, publishes the latest `historyLimit` messages once ready,
+ * Logs in to the Discord Gateway, publishes the latest `historyLimit` messages once ready and
+ * again after any fresh session,
  * then publishes each new message from any of `channelIds`. Returns the login promise
  * (rejects on a bad token), the connection state for /health, the channel
  * names for /config, and `stop`.
@@ -145,6 +146,8 @@ export function startDiscord(deps: DiscordDeps) {
   const wanted = new Set(channelIds)
   /** Channel names, filled in as each channel's history loads. */
   const names = new Map<string, string>()
+  /** True once the first session is ready; each later ready event is a fresh session that may have missed messages. */
+  let started = false
 
   /** Records a Gateway state change for /health and the watchdog. */
   function setConnected(next: boolean, event: string): void {
@@ -195,15 +198,25 @@ export function startDiscord(deps: DiscordDeps) {
     }
   }
 
-  client.on(Events.ShardReady, () => setConnected(true, 'gateway_connected'))
+  /** Publishes every channel's latest messages. Never rejects: publishHistory logs its own failures. */
+  async function loadHistory(): Promise<void> {
+    for (const id of channelIds) await publishHistory(id)
+  }
+
+  client.on(Events.ShardReady, () => {
+    setConnected(true, 'gateway_connected')
+    // A resume replays what was missed, but a fresh session does not. The hub drops what it already holds.
+    if (started) void loadHistory()
+  })
   client.on(Events.ShardResume, () => setConnected(true, 'gateway_resumed'))
   client.on(Events.ShardDisconnect, () => setConnected(false, 'gateway_disconnected'))
   client.on(Events.ShardReconnecting, () => setConnected(false, 'gateway_reconnecting'))
   // Without an 'error' listener, an emitted client error would throw and crash the process.
   client.on(Events.Error, err => log.error('discord_client_error', { error: err.message }))
   client.on(Events.Warn, info => log.warn('discord_client_warning', { info }))
-  client.once(Events.ClientReady, async () => {
-    for (const id of channelIds) await publishHistory(id)
+  client.once(Events.ClientReady, () => {
+    started = true
+    void loadHistory()
   })
   client.on(Events.MessageCreate, m => {
     if (wanted.has(m.channelId)) handle(m)

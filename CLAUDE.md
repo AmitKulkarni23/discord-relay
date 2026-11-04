@@ -120,7 +120,7 @@ railway config apply   # apply them
 
 ## Testing
 
-- **Unit + integration** (`bun test`): no Discord, no network. Integration tests run the real `Bun.serve` with a fake source publishing to the hub.
+- **Unit + integration** (`bun test`): no Discord, no network. Integration tests run the real `Bun.serve` with a fake source publishing to the hub. Component and hook tests use React Testing Library on happy-dom, with a fake `EventSource`.
 - GitHub Actions runs the Prettier check, the hooks lint, typecheck and `bun test --coverage` on every push and PR, and fails the build if any of them fail. `bun audit` runs too but only reports.
 - Dependabot opens weekly grouped PRs for npm packages and GitHub Actions; each runs CI and nothing deploys until merged.
 - Write the test first, see it fail, then implement.

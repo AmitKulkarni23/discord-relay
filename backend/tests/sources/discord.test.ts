@@ -361,4 +361,18 @@ describe('startDiscord', () => {
       expect(fake.fetchChannel).toHaveBeenCalledTimes(1)
     })
   })
+
+  describe('when messages have no text and no attachments', () => {
+    it('should warn once and still publish each one when several arrive', () => {
+      const fake = startFakeDiscord([])
+      stop = fake.discord.stop
+
+      for (const id of ['1302000000000000001', '1302000000000000002']) {
+        fake.client.emit(Events.MessageCreate, makeDiscordMessage({ id, content: '' }) as never)
+      }
+
+      expect(fake.logs.filter(l => l.event === 'message_content_missing')).toHaveLength(1)
+      expect(fake.published).toHaveLength(2)
+    })
+  })
 })

@@ -22,7 +22,7 @@ paths:
 - On startup, and again whenever the Gateway starts a fresh session instead of resuming, the bot MUST fetch the latest `BUFFER_SIZE` messages, in pages of at most 100 (Discord's limit).
 - The hub MUST drop a message whose ID is already in the buffer (dedupe by Discord message ID).
 - The hub buffer MUST stay in ID order, and eviction MUST remove the oldest ID, whatever order messages arrive in.
-- The Discord client MUST request `Guilds`, `GuildMessages` and `MessageContent`. A message with empty content and no attachments MUST log a warning naming the MessageContent intent.
+- The Discord client MUST request `Guilds`, `GuildMessages` and `MessageContent`. The first message with empty content and no attachments MUST log one warning per process naming the MessageContent intent.
 
 ## SSE (`/events`)
 

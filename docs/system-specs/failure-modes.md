@@ -21,7 +21,7 @@ Each row lists what can break, what a user would report, how we notice, and what
 |---|---|---|---|---|---|
 | 7 | Gateway drops because Discord restarts or the network blips | Nothing, or a short gap | `shardDisconnect` and `shardReconnecting` events | discord.js reconnects. A resume replays what was missed; a fresh session reloads the latest `BUFFER_SIZE` messages per channel | Mitigated |
 | 8 | Gateway stays down while the process is alive | The page goes quiet but looks healthy | Watchdog fires after 5 min disconnected; `/health` returns 503; debug panel | `process.exit(1)`, then Railway restarts the process | Mitigated |
-| 9 | MessageContent intent is not enabled | Messages with empty text | Empty content with no attachments | A warning log names the intent. The fix is in the Discord developer portal | Detected |
+| 9 | MessageContent intent is not enabled in the Discord developer portal | Empty page, and the deploy never goes live | The bot requests the intent, so Discord closes the Gateway with 4014 and discord.js reports `Used disallowed intents` | Exit 1 from the login failure or the watchdog. The fix is in the portal. `message_content_missing` logs once per process and only suggests the intent: sticker-only and embed-only messages trigger it too | Detected |
 | 10 | Token is invalid or revoked | Empty page, and the deploy never goes live | Login error at startup | Exit 1 with a clear log. After 10 restarts Railway marks the deployment `Crashed` and emails project members | Detected |
 | 11 | Discord outage, or a rate limit on the history fetch | Empty or partial history | Fetch error in the logs | Start with an empty buffer. Live messages flow once the Gateway is up | Mitigated |
 | 12 | Attachment URLs expire after about 24 h | Broken images in a long-open tab | None | Restarts and page reloads get fresh URLs | Accepted |
@@ -57,7 +57,7 @@ Each row lists what can break, what a user would report, how we notice, and what
 1. Check the Railway deployment status. If it says `Crashed`, read the last logs for a bad token or a missing env var.
 2. Open `/health`. A 503 means the Gateway is down; look in the logs for `gateway_disconnected` and whether the watchdog fired.
 3. Turn on the `debug-panel` flag and look at Gateway status, client count and the last event time.
-4. If messages arrive with no text, the MessageContent intent is off in the Discord developer portal.
+4. If the logs show `Used disallowed intents`, the MessageContent intent is off in the Discord developer portal.
 5. Compare `CHANNEL_ID` with the channel's ID (Discord developer mode, then Copy Channel ID).
 6. Confirm the bot has View Channel and Read Message History in that channel.
 7. If only some users are affected, look at their side: network, browser extensions, or a tab that has been open for days. Filter on `@event:client_dropped` around the time they report. Each `client_*` line has a `requestId` that matches Railway's network logs.

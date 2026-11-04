@@ -63,8 +63,8 @@ export function toMsg(m: MessageLike): Msg {
 }
 
 /**
- * True when a message has no text and no attachments. Discord sends messages
- * like this when the bot lacks the MessageContent intent.
+ * True when a message has no text and no attachments. Discord sends messages like
+ * this without the MessageContent intent, and for sticker-only and embed-only messages.
  */
 export function isMissingContent(msg: Msg): boolean {
   return msg.content === '' && msg.attachments.length === 0
@@ -148,6 +148,7 @@ export function startDiscord(deps: DiscordDeps) {
   const names = new Map<string, string>()
   /** True once the first session is ready; each later ready event is a fresh session that may have missed messages. */
   let started = false
+  let warnedMissingContent = false
 
   /** Records a Gateway state change for /health and the watchdog. */
   function setConnected(next: boolean, event: string): void {
@@ -162,17 +163,19 @@ export function startDiscord(deps: DiscordDeps) {
   }
 
   /**
-   * Converts and publishes one message, warning when its content is missing. A message that
+   * Converts and publishes one message, warning the first time one has no content. A message that
    * cannot be converted is logged and skipped, so it costs one message, not a restart (a throw on
    * the live path is uncaught) or the rest of the channel's history.
    */
   function handle(m: MessageLike): void {
     try {
       const msg = toMsg(m)
-      if (isMissingContent(msg)) {
+      // Once per process: a history load alone can log BUFFER_SIZE of these in one burst, and one line says it all.
+      if (!warnedMissingContent && isMissingContent(msg)) {
+        warnedMissingContent = true
         log.warn('message_content_missing', {
           messageId: msg.id,
-          hint: 'Enable the MessageContent intent for the bot in the Discord developer portal',
+          hint: 'Normal for sticker-only messages. If the page shows many messages without text, check the MessageContent intent in the Discord developer portal',
         })
       }
       publish(msg)

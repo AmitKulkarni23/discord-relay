@@ -87,7 +87,7 @@ They are not in `.railway/railway.ts`, because Railway IaC does not support flag
 - `RAILWAY_TOKEN`: a Railway project token so the server can read feature flags. Secret: sealed Railway variable.
 - `PORT`: injected by Railway.
 
-The MessageContent intent MUST be enabled for the bot in the Discord developer portal, or messages arrive empty.
+The MessageContent intent MUST be enabled for the bot in the Discord developer portal. The bot requests it, so without it Discord closes the Gateway with code 4014.
 
 ## Security Model
 

@@ -35,7 +35,7 @@ Bun.serve({
     const url = new URL(req.url)
     if (url.pathname === '/stats') return control.stats()
     if (url.pathname === '/rate' && req.method === 'POST') {
-      control.setRate(Number(url.searchParams.get('perSec')))
+      control.setRate(Number(url.searchParams.get('perSec')), Number(url.searchParams.get('msgBytes')))
       return new Response('ok')
     }
     return new Response('Not found', { status: 404 })

@@ -7,21 +7,24 @@ import type { Msg } from '../backend/types.ts'
 
 /** Above any real snowflake, so simulated messages sort last. The last 10 digits are the sequence number. */
 const ID_BASE = 1_900_000_000n * 10_000_000_000n
+/** The bytes of an SSE event that are not the message content. */
+const EVENT_OVERHEAD = 296
 const CONTENT = 'Simulated load test message from the DiscordRelay harness, not a real Discord message. '.repeat(2)
 
-export type LoadControl = { stats: () => Response; setRate: (perSec: number) => void }
+export type LoadControl = { stats: () => Response; setRate: (perSec: number, msgBytes: number) => void }
 
 export function createLoadControl(hub: Hub, channelId: string, bufferSize: number): LoadControl {
   let seq = 0
+  let content = CONTENT
 
-  /** A typical text message, about 470 bytes as an SSE event. */
+  /** By default a typical text message, about 470 bytes as an SSE event. */
   function nextMsg(): Msg {
     seq++
     return {
       id: String(ID_BASE + BigInt(seq)),
       channelId,
       author: { id: '1290000000000000042', name: 'load-producer', avatarUrl: null, bot: true },
-      content: CONTENT,
+      content,
       createdAt: new Date().toISOString(),
       editedAt: null,
       attachments: [],
@@ -50,8 +53,9 @@ export function createLoadControl(hub: Hub, channelId: string, bufferSize: numbe
 
   return {
     /** Fills the buffer on first use, so a new client's replay is full size, then publishes at this rate. */
-    setRate(perSec) {
+    setRate(perSec, msgBytes) {
       clearInterval(publisher)
+      if (msgBytes > 0) content = 'x'.repeat(Math.max(0, msgBytes - EVENT_OVERHEAD))
       if (perSec <= 0) return
       if (seq === 0) for (let i = 0; i < bufferSize; i++) hub.publish(nextMsg())
       publisher = setInterval(() => {

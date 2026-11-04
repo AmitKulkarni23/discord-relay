@@ -4,6 +4,9 @@
  * --host names a remote one; add --public for a deploy behind HTTPS with routes under /__load.
  *
  *   bun load/run.ts --levels 1000,5000,10000 --rate 5 --hold 60 --workers 4
+ *
+ * --msgBytes sets the size of each SSE event (default about 470). Discord allows 2,000 characters, or 4,000 with
+ * Nitro, plus up to 10 attachments, so about 10000 is the realistic top.
  */
 import { parseArgs } from 'node:util'
 import type { WorkerCommand, WorkerReply } from './worker.ts'
@@ -17,6 +20,7 @@ const { values } = parseArgs({
     port: { type: 'string', default: '3100' },
     levels: { type: 'string', default: '100,1000,2000,5000,10000' },
     rate: { type: 'string', default: '5' },
+    msgBytes: { type: 'string', default: '0' },
     hold: { type: 'string', default: '60' },
     workers: { type: 'string', default: '4' },
     listeners: { type: 'string', default: '1' },
@@ -29,6 +33,7 @@ const { values } = parseArgs({
 
 const port = Number(values.port)
 const rate = Number(values.rate)
+const msgBytes = Number(values.msgBytes)
 const holdSec = Number(values.hold)
 const workerCount = Number(values.workers)
 const connectPerSec = Number(values.connectPerSec)
@@ -147,13 +152,13 @@ void localServer?.exited.then(code => {
 
 await waitForServer()
 const offsetMs = await clockOffset()
-await fetch(`${control}/rate?perSec=0`, { method: 'POST' })
+await fetch(`${control}/rate?perSec=0&msgBytes=0`, { method: 'POST' })
 await Bun.sleep(1000)
 const baseline = await getStats()
-await fetch(`${control}/rate?perSec=${rate}`, { method: 'POST' })
-console.log(JSON.stringify({ event: 'start', host, rate, holdSec, workerCount, levels, baselineRssMb: baseline.rssMb, clockOffsetMs: offsetMs }))
+await fetch(`${control}/rate?perSec=${rate}&msgBytes=${msgBytes}`, { method: 'POST' })
+console.log(JSON.stringify({ event: 'start', host, rate, msgBytes, holdSec, workerCount, levels, baselineRssMb: baseline.rssMb, clockOffsetMs: offsetMs }))
 console.log(
-  'clients | conn s | delivered | p50 ms | p99 ms |  max ms | cpu avg% | cpu max% | rss MB | KB/client | srv lag ms | gen lag ms | gen cpu% | dropped | result',
+  'clients | conn s | delivered | p50 ms | p99 ms |  max ms | cpu avg% | cpu max% | rss MB | KB/client | srv lag ms | gen lag ms | gen cpu% | dropped | egress MB/s | result',
 )
 
 let opened = 0
@@ -181,6 +186,7 @@ for (const target of levels) {
 
   const from = (await getStats()).seq + Math.ceil(rate * 2)
   for (const w of workers) w.command({ type: 'window', from, offsetMs })
+  const windowStart = performance.now()
   const samples: Stats[] = []
   const holdEnd = performance.now() + holdSec * 1000
   while (performance.now() < holdEnd) {
@@ -195,6 +201,7 @@ for (const target of levels) {
     return w.next()
   })
 
+  const windowSec = (performance.now() - windowStart) / 1000
   const hist = new Map<number, number>()
   let live = 0
   let dropped = 0
@@ -204,6 +211,7 @@ for (const target of levels) {
   let behind = 0
   let genLag = 0
   let genCpu = 0
+  let rxBytes = 0
   for (const r of reports) {
     if (r.type !== 'report') continue
     live += r.live
@@ -214,10 +222,12 @@ for (const target of levels) {
     behind += r.behind
     genLag = Math.max(genLag, r.lagMsMax)
     genCpu += r.cpuPct
+    rxBytes += r.rxBytes
     for (const [ms, n] of Object.entries(r.histMs)) hist.set(Number(ms), (hist.get(Number(ms)) ?? 0) + n)
   }
 
   const expected = target * (to - from)
+  const egressMbPerSec = rxBytes / 2 ** 20 / windowSec
   const deliveredPct = (received / expected) * 100
   const p50 = percentile(hist, received, 0.5)
   const p99 = percentile(hist, received, 0.99)
@@ -244,6 +254,7 @@ for (const target of levels) {
     genLag,
     genCpu,
     dropped,
+    egressMbPerSec,
     gaps,
     dups,
     behind,
@@ -271,6 +282,7 @@ for (const target of levels) {
       genLag.toFixed(0).padStart(10),
       genCpu.toFixed(0).padStart(8),
       String(dropped).padStart(7),
+      egressMbPerSec.toFixed(2).padStart(11),
       passed ? 'PASS' : 'FAIL',
     ].join(' | '),
   )

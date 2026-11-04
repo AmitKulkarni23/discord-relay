@@ -25,6 +25,7 @@ export type WorkerReply =
       histMs: Record<string, number>
       lagMsMax: number
       cpuPct: number
+      rxBytes: number
     }
 
 const send = (reply: WorkerReply) => process.send?.(reply)
@@ -45,6 +46,7 @@ let from = Number.POSITIVE_INFINITY
 let to = Number.POSITIVE_INFINITY
 let offsetMs = 0
 let hist = new Map<number, number>()
+let rxBytes = 0
 /** Date.parse once per message: every socket sees the same one or two messages in turn. */
 let cachedSeq = -1
 let cachedSentAt = 0
@@ -64,6 +66,7 @@ function responded(conn: Conn, status: string): void {
 
 function onData(s: Socket, buf: Buffer): void {
   const conn = s.data
+  rxBytes += buf.length
   const text = conn.tail + buf.toString('latin1')
   if (!conn.responded) {
     if (!text.includes('\r\n')) {
@@ -183,7 +186,7 @@ async function report(cmd: Extract<WorkerCommand, { type: 'end' }>): Promise<voi
   }
   const cpu = process.cpuUsage(cpuFrom)
   const cpuPct = ((cpu.user + cpu.system) / 1000 / (performance.now() - cpuAt)) * 100
-  send({ type: 'report', live: conns.size, closed, received, gaps, dups, behind: lagging(), histMs: Object.fromEntries(hist), lagMsMax, cpuPct })
+  send({ type: 'report', live: conns.size, closed, received, gaps, dups, behind: lagging(), histMs: Object.fromEntries(hist), lagMsMax, cpuPct, rxBytes })
   closed = 0
   hist = new Map()
   from = to = Number.POSITIVE_INFINITY
@@ -199,6 +202,7 @@ process.on('message', (cmd: WorkerCommand) => {
     cpuFrom = process.cpuUsage()
     cpuAt = performance.now()
     lagMsMax = 0
+    rxBytes = 0
   }
   if (cmd.type === 'end') void report(cmd)
   if (cmd.type === 'close') process.exit(0)

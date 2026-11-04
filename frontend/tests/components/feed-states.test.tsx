@@ -74,6 +74,26 @@ describe('NewMessagesPill', () => {
 })
 
 describe('DayDivider', () => {
+  describe('when the page stays open past midnight', () => {
+    afterEach(() => {
+      jest.useRealTimers()
+    })
+
+    it('should stop calling yesterday Today', () => {
+      jest.useFakeTimers()
+      jest.setSystemTime(new Date(2026, 10, 3, 23, 59, 0))
+      const { getByText } = render(<DayDivider date={new Date(2026, 10, 3, 12)} />)
+      expect(getByText('Today')).toBeDefined()
+
+      jest.setSystemTime(new Date(2026, 10, 4, 0, 0, 1))
+      act(() => {
+        jest.advanceTimersByTime(61_000)
+      })
+
+      expect(getByText('Yesterday')).toBeDefined()
+    })
+  })
+
   describe('when the day is recent', () => {
     it('should say Today and Yesterday rather than the date', () => {
       const yesterday = new Date()

@@ -67,12 +67,15 @@ describe('useEventStream', () => {
       expect(result.current.messages).toHaveLength(1)
     })
 
-    it('should ignore a payload that is not a message', () => {
+    it('should ignore a payload that is not a message, and say so in the console', () => {
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {})
       const { result } = renderHook(() => useEventStream(CHANNEL))
 
       act(() => FakeEventSource.latest().sendRaw('{"id":42}'))
 
       expect(result.current.messages).toHaveLength(0)
+      expect(warn).toHaveBeenCalledWith('message_dropped', '{"id":42}')
+      warn.mockRestore()
     })
   })
 

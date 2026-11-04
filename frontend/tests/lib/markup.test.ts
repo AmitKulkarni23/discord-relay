@@ -32,6 +32,10 @@ describe('parseMarkup', () => {
       ])
     })
 
+    it('should not link a scheme with no address after it', () => {
+      for (const text of ['https://...', 'http://)', 'see https://!!! now']) expect(parseMarkup(text)).toEqual([{ kind: 'text', text }])
+    })
+
     it('should never link a script or data URL', () => {
       for (const text of ['javascript:alert(1)', 'data:text/html,x', 'JAVASCRIPT://a.com']) {
         expect(parseMarkup(text)).toEqual([{ kind: 'text', text }])

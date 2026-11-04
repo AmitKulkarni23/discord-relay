@@ -1,5 +1,5 @@
 import { setupDom } from '../dom.ts'
-import { afterEach, describe, expect, it, mock } from 'bun:test'
+import { afterEach, describe, expect, it, mock, spyOn } from 'bun:test'
 import { fireEvent, render } from '@testing-library/react'
 import { MessageRow } from '../../components/message-row.tsx'
 import type { FeedScroll } from '../../hooks/use-stick-to-bottom.ts'
@@ -7,7 +7,7 @@ import { makeAttachment, makeMsg } from '../fixtures.ts'
 
 setupDom()
 
-const makeScroll = () => ({ keepPinned: mock(() => {}), recheck: mock(() => {}) }) satisfies FeedScroll
+const makeScroll = () => ({ recheck: mock(() => {}) }) satisfies FeedScroll
 
 /** happy-dom has no layout, so say how tall the text is and how much of it fits. */
 function pretendTextIs(scrollHeight: number, clientHeight: number): void {
@@ -110,6 +110,14 @@ describe('MessageRow', () => {
     })
   })
 
+  describe('when a message is in a right-to-left language', () => {
+    it('should let the browser work out the direction', () => {
+      const { getByText } = renderRow(makeMsg({ content: 'مرحبا' }))
+
+      expect(getByText('مرحبا').getAttribute('dir')).toBe('auto')
+    })
+  })
+
   describe('when a message fits', () => {
     it('should offer no Show more and keep (edited) with the text', () => {
       pretendTextIs(100, 100)
@@ -121,13 +129,20 @@ describe('MessageRow', () => {
   })
 
   describe('when a message is taller than the limit', () => {
-    it('should offer Show more and stay pinned for the button that just appeared', () => {
+    it('should offer Show more', () => {
       pretendTextIs(1000, 338)
-      const scroll = makeScroll()
-      const { getByRole } = renderRow(makeMsg(), scroll)
+      const { getByRole } = renderRow()
 
       expect(getByRole('button', { name: 'Show more' }).getAttribute('aria-expanded')).toBe('false')
-      expect(scroll.keepPinned).toHaveBeenCalled()
+    })
+
+    it('should share one ResizeObserver between rows, not create one per message', () => {
+      const created = spyOn(globalThis, 'ResizeObserver')
+      renderRow(makeMsg({ id: '1566588496691400001' }))
+      renderRow(makeMsg({ id: '1566588496691400002' }))
+
+      expect(created.mock.calls.length).toBeLessThanOrEqual(1)
+      created.mockRestore()
     })
 
     it('should move (edited) beside the button, out of the clipped text', () => {

@@ -16,8 +16,6 @@ function pinToBottom(): void {
 
 /** What a row tells the feed when it changes height on its own, which fires no scroll event. */
 export type FeedScroll = {
-  /** The row grew because of its own layout: stay pinned if the reader was. */
-  keepPinned: () => void
   /** The reader resized the row: work out afresh whether they are still at the bottom. */
   recheck: () => void
 }
@@ -49,11 +47,17 @@ export function useStickToBottom(newestId: string | null): StickToBottom {
     setSeenId(newestId)
   }, [newestId])
 
+  // An image loading or a Show more appearing grows the page with no new message and no scroll event.
+  useEffect(() => {
+    const observer = new ResizeObserver(() => {
+      if (atBottom.current) pinToBottom()
+    })
+    observer.observe(document.body)
+    return () => observer.disconnect()
+  }, [])
+
   const scroll = useMemo<FeedScroll>(
     () => ({
-      keepPinned() {
-        if (atBottom.current) pinToBottom()
-      },
       recheck() {
         atBottom.current = isAtBottom()
       },

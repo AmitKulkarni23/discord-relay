@@ -107,7 +107,10 @@ export function useEventStream(channel: string | null): EventStream {
       es.onmessage = (e: MessageEvent<unknown>) => {
         heardFromServer()
         const m = parseMsg(String(e.data))
-        if (!m) return
+        if (!m) {
+          console.warn('message_dropped', e.data)
+          return
+        }
         if (since === null || compareIds(m.id, since) > 0) {
           since = m.id
           if (Date.now() < catchUpUntil) setRecovered(n => (n ?? 0) + 1)

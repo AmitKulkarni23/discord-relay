@@ -23,6 +23,15 @@ function dayLabel(date: Date): string {
 
 /** A centred date line between messages from different days. */
 export function DayDivider({ date }: { date: Date }): ReactElement {
+  // "Today" turns into "Yesterday" at midnight, even on a page with no new messages.
+  const [, refresh] = useState(0)
+  useEffect(() => {
+    const now = new Date()
+    const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1)
+    const timer = setTimeout(() => refresh(n => n + 1), midnight.getTime() - now.getTime())
+    return () => clearTimeout(timer)
+  })
+
   return (
     <Divider sx={{ my: 2 }}>
       <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600 }}>

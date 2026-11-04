@@ -21,6 +21,23 @@ const FRESH_MS = 15_000
 /** A message taller than this many lines, wrapping included, collapses behind Show more. */
 const COLLAPSE_LINES = 15
 
+/** One observer for every row: a page can hold 500 messages. */
+let rowObserver: ResizeObserver | undefined
+const rowWatchers = new WeakMap<Element, () => void>()
+
+/** Calls `onResize` when `el` changes size. Returns a function that stops watching. */
+function watchSize(el: Element, onResize: () => void): () => void {
+  rowObserver ??= new ResizeObserver(entries => {
+    for (const entry of entries) rowWatchers.get(entry.target)?.()
+  })
+  rowWatchers.set(el, onResize)
+  rowObserver.observe(el)
+  return () => {
+    rowObserver?.unobserve(el)
+    rowWatchers.delete(el)
+  }
+}
+
 /** The honest note for a message with no text to show. */
 function placeholder(msg: Msg): string {
   return msg.attachments.length > 0 ? 'Attachment' : 'Message text unavailable'
@@ -74,15 +91,8 @@ function MessageBody({ msg, attachmentsOn, scroll }: MessageBodyProps): ReactEle
     if (!el || expanded) return
     const measure = (): void => setClipped(el.scrollHeight - el.clientHeight > 1)
     measure()
-    const observer = new ResizeObserver(measure)
-    observer.observe(el)
-    return () => observer.disconnect()
+    return watchSize(el, measure)
   }, [expanded, msg.content])
-
-  // The button appears after App has pinned the page, so pin again or the button lands below the fold.
-  useLayoutEffect(() => {
-    if (clipped) scroll.keepPinned()
-  }, [clipped, scroll])
 
   const toggle = (): void => {
     flushSync(() => setExpanded(v => !v))
@@ -113,6 +123,7 @@ function MessageBody({ msg, attachmentsOn, scroll }: MessageBodyProps): ReactEle
       <Typography
         ref={text}
         component="div"
+        dir="auto"
         variant="body1"
         sx={{
           m: 0,

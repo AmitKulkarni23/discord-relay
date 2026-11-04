@@ -79,22 +79,52 @@ describe('useStickToBottom', () => {
     })
   })
 
-  describe('when a row changes height on its own', () => {
+  describe('when the page changes height on its own, as an image loads or a Show more appears', () => {
+    /** Stands in for the browser's ResizeObserver, whose callback happy-dom never fires without layout. */
+    let resized = (): void => {}
+    let realObserver: typeof ResizeObserver
+    afterEach(() => {
+      globalThis.ResizeObserver = realObserver
+    })
+    beforeEach(() => {
+      realObserver = globalThis.ResizeObserver
+      globalThis.ResizeObserver = class {
+        constructor(callback: () => void) {
+          resized = callback
+        }
+        observe(): void {}
+        unobserve(): void {}
+        disconnect(): void {
+          resized = () => {}
+        }
+      } as unknown as typeof ResizeObserver
+    })
+
     it('should keep a pinned reader pinned', () => {
-      const { result } = start()
+      start()
       scrollTo.mockClear()
 
-      result.current.scroll.keepPinned()
+      resized()
 
       expect(scrollTo).toHaveBeenCalledTimes(1)
     })
 
     it('should not move a reader who has scrolled up', () => {
-      const { result } = start()
+      start()
       scrollWithGap(500)
       scrollTo.mockClear()
 
-      result.current.scroll.keepPinned()
+      resized()
+
+      expect(scrollTo).not.toHaveBeenCalled()
+    })
+
+    it('should stop watching when the feed goes away', () => {
+      const { unmount } = start()
+      unmount()
+      scrollTo.mockClear()
+
+      resized()
 
       expect(scrollTo).not.toHaveBeenCalled()
     })

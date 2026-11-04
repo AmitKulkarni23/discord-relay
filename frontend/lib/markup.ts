@@ -59,8 +59,13 @@ export function parseMarkup(text: string): Part[] {
     else if (g.code !== undefined) parts.push({ kind: 'code', text: g.code })
     else if (g.wrapped !== undefined) parts.push({ kind: 'link', href: g.wrapped })
     else if (g.url !== undefined) {
-      at = match.index + linkLength(g.url)
-      parts.push({ kind: 'link', href: text.slice(match.index, at) })
+      const href = g.url.slice(0, linkLength(g.url))
+      // Trimming punctuation can leave only the scheme, which is not an address.
+      if (href.endsWith('://')) addText(g.url)
+      else {
+        at = match.index + href.length
+        parts.push({ kind: 'link', href })
+      }
     } else if (g.time !== undefined) parts.push({ kind: 'time', iso: new Date(Number(g.time) * 1000).toISOString() })
     else if (g.bold !== undefined) parts.push({ kind: 'bold', parts: parseMarkup(g.bold) })
     else if (g.underline !== undefined) parts.push({ kind: 'underline', parts: parseMarkup(g.underline) })

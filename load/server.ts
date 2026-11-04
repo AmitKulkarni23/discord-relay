@@ -1,6 +1,6 @@
 /**
  * The real hub and HTTP server with a simulated producer instead of Discord, plus a control port
- * (PORT + 1) for the load runner: GET /stats, POST /rate?perSec=n.
+ * (PORT + 1) for the load runner: GET /stats, GET /clock, POST /rate?perSec=n.
  */
 import { DEFAULT_FLAGS } from '../backend/flags.ts'
 import { createHub } from '../backend/hub.ts'
@@ -35,6 +35,8 @@ Bun.serve({
   fetch(req) {
     const url = new URL(req.url)
     if (url.pathname === '/stats') return control.stats()
+    // Separate from /stats, because reading that resets its counters.
+    if (url.pathname === '/clock') return Response.json({ now: Date.now() })
     if (url.pathname === '/rate' && req.method === 'POST') {
       const q = url.searchParams
       control.setRate(Number(q.get('perSec')), Number(q.get('msgBytes')), Number(q.get('burst')), Number(q.get('everySec')))

@@ -1,6 +1,8 @@
 /** Ramps /events consumers until a step fails; `bun load/run.ts --help` lists every knob. */
 import { parseArgs } from 'node:util'
+import { clockOffset, spawnProcess, type ConsumerProcess } from './consumer-process.ts'
 import type { ConsumerCommand, ConsumerReply } from './consumer.ts'
+import { classifyStep, summarizeRamp, type Verdict } from './verdict.ts'
 
 const HELP = `Finds how many consumers (open /events connections, each standing in for one browser) the server holds: tries each
 count in turn and stops at the first step that fails. Exits 1 if any step failed. Local only unless you mean otherwise: never point it at production.
@@ -26,11 +28,14 @@ Traffic shape
 
 Pass or fail
   --maxP99Ms <ms>        latency limit for a step (default 1000)
+  --maxSlowestMs <ms>    limit on the single slowest delivery (default 5000)
+  --findHardMax          keep going through SLOW steps, stopping at the first BROKEN one
   --keepGoing            run every step even after one fails
   --maxSec <sec>         abort the whole run after this long (default 900)
 
 Consumers
-  --processes <n>        processes running the consumers, split evenly. Test rig only: the server is unaffected (default 4)
+  --processes <n>        processes per machine running the consumers, split evenly. Test rig only: the server is unaffected (default 4)
+  --machines <url,url>   load/agent.ts on other machines, which then hold the consumers instead of this one
   --connectPerSec <n>    how fast consumers connect (default 1000)
   --listeners <n>        ports the server listens on (default 1)
 
@@ -40,6 +45,9 @@ Target
   --public               the host is a deploy behind HTTPS, with its control routes under --controlPath
   --controlPath <path>   control route prefix with --public (default /__load)
   --controlUrl <url>     full control URL, overriding the above
+
+A step is PASS, SLOW (nothing lost, too late), BROKEN (messages lost, consumers dropped or refused), or INVALID (did not pass
+and a process was overloaded, so add processes or machines). Each step prints its window, for load/railway-metrics.ts.
 
 Reconnects use ?since=, so a missed message counts as a gap, and a message held up by a reconnect counts towards p99.
 A storm keeps the server up, so its buffer survives, unlike a real restart.
@@ -66,9 +74,12 @@ const { values } = parseArgs({
     slowMode: { type: 'string', default: 'stop' },
     hold: { type: 'string', default: '60' },
     processes: { type: 'string', default: '4' },
+    machines: { type: 'string', default: '' },
     listeners: { type: 'string', default: '1' },
     connectPerSec: { type: 'string', default: '1000' },
     maxP99Ms: { type: 'string', default: '1000' },
+    maxSlowestMs: { type: 'string', default: '5000' },
+    findHardMax: { type: 'boolean', default: false },
     keepGoing: { type: 'boolean', default: false },
     maxSec: { type: 'string', default: '900' },
   },
@@ -85,14 +96,18 @@ const burstEverySec = Number(values.burstEverySec)
 const rate = burst ? burst / burstEverySec : Number(values.rate)
 const msgBytes = Number(values.msgBytes)
 const holdSec = Number(values.hold)
-const processCount = Number(values.processes)
+const machines = (values.machines as string).split(',').filter(Boolean)
+const processesPerMachine = Number(values.processes)
+const processCount = processesPerMachine * Math.max(1, machines.length)
 const connectPerSec = Number(values.connectPerSec)
-const maxP99Ms = Number(values.maxP99Ms)
+const limits = { maxP99Ms: Number(values.maxP99Ms), maxSlowestMs: Number(values.maxSlowestMs) }
 const listeners = Number(values.listeners)
 const isPublic = values.public as boolean
 const ports = isPublic ? [443] : Array.from({ length: listeners }, (_, i) => (i === 0 ? port : port + 1 + i))
 const consumerLevels = (values.consumers as string).split(',').map(Number)
 const GRACE_MS = 10_000
+/** Longer than any step takes, even at the highest counts. */
+const MACHINE_TIMEOUT_MS = 30 * 60_000
 // The window skips at least one burst and needs a few more to measure.
 if (burst && holdSec < burstEverySec * 3) throw new Error('--hold must be at least 3 times --burstEverySec')
 
@@ -121,27 +136,15 @@ type Stats = {
 }
 const getStats = async (): Promise<Stats> => (await fetch(`${control}/stats`, { signal: AbortSignal.timeout(30_000) })).json() as Promise<Stats>
 
-/** A consumer's replies arrive on one queue, in order. */
-type ConsumerProcess = { command: (c: ConsumerCommand) => void; next: () => Promise<ConsumerReply>; kill: () => void }
-function spawnProcess(): ConsumerProcess {
-  const replies: ConsumerReply[] = []
-  const waiting: Array<(r: ConsumerReply) => void> = []
-  const proc = Bun.spawn(['bun', 'load/consumer.ts'], {
-    stdout: 'inherit',
-    stderr: 'inherit',
-    ipc(message: ConsumerReply) {
-      const resolve = waiting.shift()
-      if (resolve) resolve(message)
-      else replies.push(message)
-    },
-  })
+/** A process on another machine, driven through its load/agent.ts. Commands stay in order, as they do over IPC. */
+function remoteProcess(machine: string, i: number): ConsumerProcess {
+  let sent: Promise<unknown> = Promise.resolve()
   return {
-    command: c => proc.send(c),
-    next: () => {
-      const queued = replies.shift()
-      return queued ? Promise.resolve(queued) : new Promise(resolve => waiting.push(resolve))
+    command: c => {
+      sent = sent.then(() => fetch(`${machine}/command?i=${i}`, { method: 'POST', body: JSON.stringify(c) }))
     },
-    kill: () => proc.kill(),
+    next: async () => (await (await fetch(`${machine}/next?i=${i}`, { signal: AbortSignal.timeout(MACHINE_TIMEOUT_MS) })).json()) as ConsumerReply,
+    kill: () => {},
   }
 }
 
@@ -165,23 +168,16 @@ async function waitForServer(): Promise<Stats> {
   throw new Error(`no load server at ${control}`)
 }
 
-/** The server's clock minus ours, so delivery times hold across machines. */
-async function clockOffset(): Promise<number> {
-  let best = { rtt: Number.POSITIVE_INFINITY, offset: 0 }
-  for (let i = 0; i < 5; i++) {
-    const t0 = Date.now()
-    const s = await getStats()
-    const t1 = Date.now()
-    if (t1 - t0 < best.rtt) best = { rtt: t1 - t0, offset: s.now - (t0 + t1) / 2 }
-  }
-  return best.offset
-}
-
-const processes = Array.from({ length: processCount }, spawnProcess)
+for (const machine of machines) await fetch(`${machine}/start?count=${processesPerMachine}`, { method: 'POST' })
+const processes = machines.length
+  ? machines.flatMap(machine => Array.from({ length: processesPerMachine }, (_, i) => remoteProcess(machine, i)))
+  : Array.from({ length: processCount }, spawnProcess)
 const all = <T>(fn: (w: ConsumerProcess, i: number) => Promise<T>) => Promise.all(processes.map(fn))
 
-function stop(code: number): never {
+/** Stops every process, here and on other machines, so no connection outlives the run. */
+async function stop(code: number): Promise<never> {
   for (const w of processes) w.kill()
+  await Promise.allSettled(machines.map(machine => fetch(`${machine}/stop`, { method: 'POST', signal: AbortSignal.timeout(5000) })))
   localServer?.kill()
   process.exit(code)
 }
@@ -190,27 +186,39 @@ function stop(code: number): never {
 setTimeout(
   () => {
     console.error(JSON.stringify({ event: 'deadline_exceeded', maxSec: values.maxSec }))
-    stop(1)
+    void stop(1)
   },
   Number(values.maxSec) * 1000,
 )
 process.on('uncaughtException', err => {
   console.error(err)
-  stop(1)
+  void stop(1)
 })
 process.on('unhandledRejection', err => {
   console.error(err)
-  stop(1)
+  void stop(1)
 })
 void localServer?.exited.then(code => {
   console.error(JSON.stringify({ event: 'load_server_exited', code }))
-  stop(1)
+  void stop(1)
 })
 
 const { channelIds } = await waitForServer()
-const offsetMs = await clockOffset()
+// Each machine has its own clock, and delivery times are measured on the machine that receives them.
+const localOffset = machines.length ? 0 : await clockOffset(control)
+const machineOffsets = await Promise.all(
+  machines.map(async machine => ((await (await fetch(`${machine}/offset?control=${encodeURIComponent(control)}`)).json()) as { offsetMs: number }).offsetMs),
+)
+const offsets = machines.length
+  ? machines.flatMap((_, m) => Array.from({ length: processesPerMachine }, () => machineOffsets[m] ?? 0))
+  : processes.map(() => localOffset)
 await fetch(`${control}/rate?perSec=0`, { method: 'POST' })
 await Bun.sleep(1000)
+// A leftover connection would be counted as a consumer it is not, and it costs the server work.
+for (let i = 0; (await getStats()).clients > 0; i++) {
+  if (i === 60) throw new Error('the load server still has open connections: restart it, or wait for them to close')
+  await Bun.sleep(1000)
+}
 const baseline = await getStats()
 await fetch(`${control}/rate?perSec=${rate}&msgBytes=${msgBytes}&burst=${burst}&everySec=${burstEverySec}`, { method: 'POST' })
 console.log(
@@ -231,7 +239,8 @@ console.log(
     processCount,
     consumers: consumerLevels,
     baselineRssMb: baseline.rssMb,
-    clockOffsetMs: offsetMs,
+    clockOffsetsMs: offsets,
+    machines: machines.length,
   }),
 )
 console.log(
@@ -274,8 +283,9 @@ for (const target of consumerLevels) {
   await getStats()
 
   const from = (await getStats()).seq + (burst ? burst * Math.max(1, Math.ceil(2 / burstEverySec)) : Math.ceil(rate * 2))
-  for (const w of processes) w.command({ type: 'window', from, offsetMs })
+  processes.forEach((w, i) => w.command({ type: 'window', from, offsetMs: offsets[i] ?? 0 }))
   const windowStart = performance.now()
+  const windowStartIso = new Date().toISOString()
   const churnPerSec = Number(values.churnPerSec)
   if (churnPerSec) for (const w of processes) w.command({ type: 'churn', perSec: churnPerSec / processCount })
   if (values.storm) {
@@ -294,6 +304,7 @@ for (const target of consumerLevels) {
   }
   const last = await getStats()
   samples.push(last)
+  const windowEndIso = new Date().toISOString()
   const to = last.seq
   const reports = await all(w => {
     w.command({ type: 'end', to, graceMs: GRACE_MS })
@@ -309,7 +320,7 @@ for (const target of consumerLevels) {
   let dups = 0
   let behind = 0
   let processLag = 0
-  let processCpu = 0
+  let busiestProcessCpu = 0
   let rxBytes = 0
   let slowTotal = 0
   let reconnects = 0
@@ -324,7 +335,7 @@ for (const target of consumerLevels) {
     dups += r.dups
     behind += r.behind
     processLag = Math.max(processLag, r.lagMsMax)
-    processCpu += r.cpuPct
+    busiestProcessCpu = Math.max(busiestProcessCpu, r.cpuPct)
     rxBytes += r.rxBytes
     slowTotal += r.slowTotal
     reconnects += r.reconnects
@@ -347,9 +358,14 @@ for (const target of consumerLevels) {
   const rssMax = Math.max(...samples.map(s => s.rssMaxMb))
   const lagMax = Math.max(...samples.map(s => s.lagMsMax))
   const kbPerClient = ((last.rssMb - baseline.rssMb) * 1024) / target
-  const passed = received === expected && dropped === 0 && gaps === 0 && p99 <= maxP99Ms && live === healthy
+  const verdict: Verdict = classifyStep(
+    { received, expected, dropped, gaps, live, healthy, p99, slowest: max, busiestProcessCpu, processLagMs: processLag },
+    limits,
+  )
   const row = {
-    clients: target,
+    consumers: target,
+    windowStartIso,
+    windowEndIso,
     connectSec,
     deliveredPct,
     p50,
@@ -362,7 +378,7 @@ for (const target of consumerLevels) {
     kbPerClient,
     lagMax,
     processLag,
-    processCpu,
+    busiestProcessCpu,
     dropped,
     egressMbPerSec,
     slowTotal,
@@ -377,7 +393,7 @@ for (const target of consumerLevels) {
     serverClients: last.clients,
     publishMsAvg: last.publishMsAvg,
     publishMsMax: Math.max(...samples.map(s => s.publishMsMax)),
-    passed,
+    verdict,
   }
   results.push(row)
 
@@ -395,20 +411,20 @@ for (const target of consumerLevels) {
       kbPerClient.toFixed(1).padStart(9),
       lagMax.toFixed(0).padStart(10),
       processLag.toFixed(0).padStart(14),
-      processCpu.toFixed(0).padStart(12),
+      busiestProcessCpu.toFixed(0).padStart(12),
       String(dropped).padStart(7),
       egressMbPerSec.toFixed(2).padStart(11),
       String(slowGone).padStart(9),
       String(reconnects).padStart(10),
       String(reconnectFailed).padStart(11),
       reconnectMsMax.toFixed(0).padStart(12),
-      passed ? 'PASS' : 'FAIL',
+      verdict,
     ].join(' | '),
   )
   console.log(JSON.stringify({ event: 'step', ...row }))
 
-  if (!passed && !values.keepGoing) break
+  if (!values.keepGoing && verdict !== 'PASS' && !(verdict === 'SLOW' && values.findHardMax)) break
 }
 
-console.log(JSON.stringify({ event: 'done', maxPassing: results.filter(r => r.passed).at(-1)?.clients ?? 0 }))
-stop(results.every(r => r.passed) ? 0 : 1)
+console.log(JSON.stringify({ event: 'done', ...summarizeRamp(results) }))
+await stop(results.every(r => r.verdict === 'PASS') ? 0 : 1)

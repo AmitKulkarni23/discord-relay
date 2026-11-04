@@ -2,7 +2,7 @@ import type { ChannelInfo } from '../../backend/types.ts'
 import { isRecord } from './messages.ts'
 
 /** The browser's view of the /events stream and, once it is open, of the bot's Discord connection. */
-export type Status = 'connecting' | 'live' | 'reconnecting' | 'discord' | 'full'
+export type Status = 'connecting' | 'live' | 'reconnecting' | 'discord' | 'channel' | 'full'
 
 /** How long to wait after a 429 that does not say; matches what the server sends. */
 const LIMIT_WAIT_MS = 30_000

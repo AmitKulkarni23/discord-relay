@@ -39,6 +39,8 @@ function emptyCopy(status: Status, where: string): [string, string] {
       return ['No messages yet', `Post in ${where} and it shows up here, live.`]
     case 'discord':
       return ['Waiting for Discord', 'The relay is reconnecting to Discord. Messages appear as soon as it is back.']
+    case 'channel':
+      return ['Channel unavailable', 'The relay cannot read this channel right now. It keeps trying.']
     case 'full':
       return ['Connection limit reached', 'This network has too many streams open to this page. Close a tab or wait; it retries on its own.']
     case 'connecting':

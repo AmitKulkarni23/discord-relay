@@ -130,9 +130,9 @@ sequenceDiagram
 | `GET /` | The React page. Bun bundles `frontend/` from the HTML import; `NODE_ENV=production` makes it a minified build with no hot reload. |
 | `GET /events?channel=<id>` | `text/event-stream` for one channel. Opens with a `discord` event, then sends its buffer and live events, with `event: ping` every 25 s. `since=<id>` limits both to messages newer than that ID; an invalid value is ignored. No `channel` means the first configured channel; an ID that is not configured returns 404. Past 20 open streams from one IP it returns 429 with `Retry-After: 30`. A client more than 1 MiB behind on live writes is dropped. |
 | `GET /config` | `{ "attachments": bool, "editsDeletes": bool, "debugPanel": bool, "channels": [{ "id": string, "name": string \| null }] }`. A `name` is null until the bot has loaded that channel at startup. |
-| `GET /health` | `200` when the Gateway is connected, `503` otherwise. Body: `{ "discord": "connected" \| "disconnected", "clients": n, "buffered": n, "lastEventAt": iso \| null, "uptimeSec": n }` |
+| `GET /health` | `200` when the Gateway is connected, `503` otherwise. Body: `{ "discord": "connected" \| "disconnected", "clients": n, "buffered": n, "lastEventAt": iso \| null, "unavailableChannels": [id], "uptimeSec": n }` |
 
-The stream opens with a `: connected` comment so headers reach the browser even when the buffer is empty. A named `discord` event (`data: connected` or `disconnected`) follows it, and repeats within about a second whenever the Gateway state changes, so the page's chip reflects the bot and not only the browser's stream.
+The stream opens with a `: connected` comment so headers reach the browser even when the buffer is empty. A named `discord` event (`data: connected`, `disconnected`, or `unavailable` when the bot cannot read this channel) follows it, and repeats within about a second whenever the Gateway state changes, so the page's chip reflects the bot and not only the browser's stream.
 
 SSE events:
 
@@ -200,7 +200,7 @@ Feature flags are Railway Feature Flags, not variables: `attachments`, `edits-de
 | Queued bytes per stream | 1 MiB, then the client is dropped | Stops a client that stopped reading from growing server memory. A replay may exceed it, since the buffer bounds it. |
 | Reconnect delay | Random, up to 1 s, doubling per attempt to 30 s | Spreads browsers dropped together. Starts over once a stream has stayed open 30 s. |
 | SSE heartbeat | 25 s | Railway closes requests that send no data for 5 min. |
-| Gateway watchdog | Exit 1 after 5 min disconnected | Railway runs healthchecks only at deploy time. |
+| Gateway watchdog | Fresh client every 5 min while disconnected | Railway runs healthchecks only at deploy time. Exiting would lose the buffer and use up restarts. |
 | Debug panel refresh | `/health` every 10 s | Diagnostics only. Messages are never polled. |
 
 ## Railway deployment

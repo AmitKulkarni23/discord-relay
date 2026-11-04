@@ -69,13 +69,14 @@ afterEach(() => {
 })
 
 /** Starts a server on a random port with test defaults. */
-function start(hub: Hub, overrides: { connected?: boolean; pingMs?: number; channelName?: string | null; flags?: () => Flags } = {}) {
+function start(hub: Hub, overrides: { connected?: boolean; available?: boolean; pingMs?: number; channelName?: string | null; flags?: () => Flags } = {}) {
   const server = startServer({
     port: 0,
     hub,
     channelIds: [CHANNEL, CHANNEL_2],
     flags: overrides.flags ?? (() => ({ attachments: true, editsDeletes: false, debugPanel: false })),
     isDiscordConnected: () => overrides.connected ?? true,
+    isChannelAvailable: () => overrides.available ?? true,
     channels: () => [
       { id: CHANNEL, name: overrides.channelName === undefined ? 'relay-test' : overrides.channelName },
       { id: CHANNEL_2, name: 'announcements' },
@@ -155,6 +156,34 @@ describe('the discord status event', () => {
     const { url } = start(createHub(10), { connected: false })
     const stream = await openEvents(url)
     expect(await stream.readUntil(t => t.includes('event: discord'))).toContain('event: discord\ndata: disconnected\n\n')
+    stream.abort()
+  })
+
+  it('should say a channel the bot cannot read is unavailable', async () => {
+    const { url } = start(createHub(10), { available: false })
+    const stream = await openEvents(url)
+
+    expect(await stream.readUntil(t => t.includes('event: discord'))).toContain('event: discord\ndata: unavailable\n\n')
+    stream.abort()
+  })
+
+  it('should say Discord is disconnected when both are true, because that is the cause to fix first', async () => {
+    const { url } = start(createHub(10), { connected: false, available: false })
+    const stream = await openEvents(url)
+
+    expect(await stream.readUntil(t => t.includes('event: discord'))).toContain('event: discord\ndata: disconnected\n\n')
+    stream.abort()
+  })
+
+  it('should push a channel becoming available to an open stream', async () => {
+    const overrides = { available: false }
+    const { url } = start(createHub(10), overrides)
+    const stream = await openEvents(url)
+    await stream.readUntil(t => t.includes('data: unavailable'))
+
+    overrides.available = true
+
+    expect(await stream.readUntil(t => t.includes('data: connected'))).toContain('event: discord\ndata: connected\n\n')
     stream.abort()
   })
 
@@ -485,6 +514,18 @@ describe('server', () => {
 
       await events.readUntil(t => t.includes('after the replay'))
       expect(hub.subscriberCount()).toBe(1)
+    })
+  })
+
+  describe('when a channel cannot be read', () => {
+    it('should stay healthy, since a restart would not help, and name the channel in /health', async () => {
+      const { url } = start(createHub(), { available: false })
+
+      const res = await fetch(new URL('/health', url))
+      const body = (await res.json()) as { unavailableChannels: string[] }
+
+      expect(res.status).toBe(200)
+      expect(body.unavailableChannels).toEqual([CHANNEL, CHANNEL_2])
     })
   })
 

@@ -31,6 +31,7 @@ const STATUS_DOT: Record<Status, string> = {
   reconnecting: 'warning.main',
   discord: 'warning.main',
   full: 'warning.main',
+  channel: 'warning.main',
 }
 const STATUS_LABEL: Record<Status, string> = {
   connecting: 'Connecting',
@@ -38,6 +39,7 @@ const STATUS_LABEL: Record<Status, string> = {
   reconnecting: 'Reconnecting',
   discord: 'Waiting for Discord',
   full: 'Connection limit',
+  channel: 'Channel unavailable',
 }
 
 type StatusChipProps = { status: Status; newestId: string | null; recovered: number | null }

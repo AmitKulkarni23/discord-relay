@@ -49,9 +49,12 @@ export type DiscordDeps = {
   deletesEnabled: () => boolean
   /** How many recent messages to load at startup; matches the hub's buffer size. */
   historyLimit?: number
-  /** Called when the Gateway stays disconnected longer than `watchdogMs`. */
-  onWatchdogExpired?: () => void
+  /** Called when logging in cannot work however often it is retried: a bad token or a disallowed intent. */
+  onFatal: (err: unknown) => void
+  /** How long the Gateway may stay disconnected before reconnecting with a fresh client. */
   watchdogMs?: number
+  /** First wait before retrying a channel whose history failed to load; doubles per attempt up to 5 minutes. */
+  historyRetryMs?: number
 }
 
 /** The title and description of a message's first embed that has either, as text. */
@@ -108,6 +111,16 @@ export function isMissingContent(msg: Msg): boolean {
   return msg.content === '' && msg.attachments.length === 0 && msg.note === null
 }
 
+/** The longest wait between attempts to load a channel's history. */
+const MAX_HISTORY_RETRY_MS = 5 * 60_000
+
+/** True when a login failure needs a person, so retrying is pointless. */
+function isFatalLogin(err: unknown): boolean {
+  if (!(err instanceof Error)) return false
+  const code = 'code' in err ? err.code : undefined
+  return code === 'TokenInvalid' || code === 'DisallowedIntents' || /disallowed intents/i.test(err.message)
+}
+
 /** Discord returns at most this many messages per history request. */
 const PAGE_SIZE = 100
 
@@ -137,7 +150,7 @@ export async function collectHistory<T extends { id: string }>(
 /**
  * Calls `onExpire` if `disconnected()` is not followed by `connected()` within
  * `limitMs`. Railway only healthchecks at deploy time, so this is how a stalled
- * Gateway connection gets the process restarted. Timers are injectable for tests.
+ * Gateway connection gets noticed. Timers are injectable for tests.
  */
 export function createWatchdog(opts: {
   limitMs: number
@@ -169,19 +182,13 @@ export function createWatchdog(opts: {
 
 /**
  * Logs in to the Discord Gateway, publishes the latest `historyLimit` messages once ready and
- * again after any fresh session,
- * then publishes each new message from any of `channelIds`. Returns the login promise
- * (rejects on a bad token), the connection state for /health, the channel
- * names for /config, and `stop`.
+ * again after any fresh session, then publishes each new message from any of `channelIds`.
+ * Returns the login promise, the connection and channel state for /health, the channel names
+ * for /config, and `stop`.
  */
 export function startDiscord(deps: DiscordDeps) {
-  const { token, channelIds, publish, remove, buffered, deletesEnabled, historyLimit = 100, onWatchdogExpired = () => {}, watchdogMs = 5 * 60_000 } = deps
-  const client = new Client({
-    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
-    // Without this, deleting a message outside discord.js's cache fires no event, and it would stay on the page.
-    partials: [Partials.Message],
-  })
-  const watchdog = createWatchdog({ limitMs: watchdogMs, onExpire: onWatchdogExpired })
+  const { token, channelIds, publish, remove, buffered, deletesEnabled, historyLimit = 100, onFatal, watchdogMs = 5 * 60_000, historyRetryMs = 5_000 } = deps
+  const watchdog = createWatchdog({ limitMs: watchdogMs, onExpire: () => void reconnect() })
   let connected = false
   const wanted = new Set(channelIds)
   /** Channel names, filled in as each channel's history loads. */
@@ -189,6 +196,11 @@ export function startDiscord(deps: DiscordDeps) {
   /** True once the first session is ready; each later ready event is a fresh session that may have missed messages. */
   let started = false
   let warnedMissingContent = false
+  let stopped = false
+  /** Channels whose latest history load failed. */
+  const unavailable = new Set<string>()
+  /** Failed loads in a row and the pending retry, per channel. */
+  const retries = new Map<string, { attempts: number; timer?: ReturnType<typeof setTimeout> }>()
 
   /** Records a Gateway state change for /health and the watchdog. */
   function setConnected(next: boolean, event: string): void {
@@ -238,12 +250,25 @@ export function startDiscord(deps: DiscordDeps) {
     }
   }
 
-  /** Publishes one channel's latest `historyLimit` messages, oldest first. Logs and continues on failure. */
+  /** Marks a channel unavailable and tries again later: access may be granted, or an outage may end. */
+  function retryHistory(channelId: string): void {
+    unavailable.add(channelId)
+    if (stopped) return
+    const retry = retries.get(channelId) ?? { attempts: 0 }
+    clearTimeout(retry.timer)
+    retry.timer = setTimeout(() => void publishHistory(channelId), Math.min(historyRetryMs * 2 ** retry.attempts, MAX_HISTORY_RETRY_MS))
+    retry.attempts++
+    retries.set(channelId, retry)
+  }
+
+  /** Publishes one channel's latest `historyLimit` messages, oldest first. Logs and retries on failure. */
   async function publishHistory(channelId: string): Promise<void> {
+    clearTimeout(retries.get(channelId)?.timer)
     try {
       const channel = await client.channels.fetch(channelId)
       if (!channel?.isTextBased()) {
         log.error('history_failed', { channelId, reason: 'channel not found or not a text channel' })
+        retryHistory(channelId)
         return
       }
       if ('name' in channel && typeof channel.name === 'string') names.set(channelId, channel.name)
@@ -252,9 +277,12 @@ export function startDiscord(deps: DiscordDeps) {
       const messages = await collectHistory(async (before, limit) => [...(await channel.messages.fetch({ limit, before })).values()], historyLimit)
       removeMissing(channelId, held, messages)
       for (const m of messages) handle(m)
+      unavailable.delete(channelId)
+      retries.delete(channelId)
       log.info('history_loaded', { channelId, count: messages.length })
     } catch (err) {
       log.error('history_failed', { channelId, error: err instanceof Error ? err.message : String(err) })
+      retryHistory(channelId)
     }
   }
 
@@ -263,44 +291,94 @@ export function startDiscord(deps: DiscordDeps) {
     for (const id of channelIds) await publishHistory(id)
   }
 
-  client.on(Events.ShardReady, () => {
-    setConnected(true, 'gateway_connected')
-    // A resume replays what was missed, but a fresh session does not. The hub drops what it already holds.
-    if (started) void loadHistory()
-  })
-  client.on(Events.ShardResume, () => setConnected(true, 'gateway_resumed'))
-  client.on(Events.ShardDisconnect, () => setConnected(false, 'gateway_disconnected'))
-  client.on(Events.ShardReconnecting, () => setConnected(false, 'gateway_reconnecting'))
-  // Without an 'error' listener, an emitted client error would throw and crash the process.
-  client.on(Events.Error, err => log.error('discord_client_error', { error: err.message }))
-  client.on(Events.Warn, info => log.warn('discord_client_warning', { info }))
-  client.once(Events.ClientReady, () => {
-    started = true
-    void loadHistory()
-  })
-  client.on(Events.MessageCreate, m => {
-    if (wanted.has(m.channelId)) handle(m)
-  })
-  client.on(Events.MessageDelete, m => {
-    if (deletesEnabled() && wanted.has(m.channelId)) remove(m.channelId, m.id)
-  })
-  client.on(Events.MessageBulkDelete, (messages, channel) => {
-    if (deletesEnabled() && wanted.has(channel.id)) for (const id of messages.keys()) remove(channel.id, id)
-  })
+  /** Builds a client with every listener attached. */
+  function createClient(): Client {
+    const client = new Client({
+      intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
+      // Without this, deleting a message outside discord.js's cache fires no event, and it would stay on the page.
+      partials: [Partials.Message],
+    })
+    client.on(Events.ShardReady, () => {
+      setConnected(true, 'gateway_connected')
+      // A resume replays what was missed, but a fresh session does not. The hub drops what it already holds.
+      if (started) void loadHistory()
+    })
+    client.on(Events.ShardResume, () => setConnected(true, 'gateway_resumed'))
+    client.on(Events.ShardDisconnect, () => setConnected(false, 'gateway_disconnected'))
+    client.on(Events.ShardReconnecting, () => setConnected(false, 'gateway_reconnecting'))
+    // Without an 'error' listener, an emitted client error would throw and crash the process.
+    client.on(Events.Error, err => log.error('discord_client_error', { error: err.message }))
+    client.on(Events.Warn, info => log.warn('discord_client_warning', { info }))
+    client.once(Events.ClientReady, () => {
+      if (started) return
+      started = true
+      void loadHistory()
+    })
+    client.on(Events.MessageCreate, m => {
+      if (wanted.has(m.channelId)) handle(m)
+    })
+    client.on(Events.MessageDelete, m => {
+      if (deletesEnabled() && wanted.has(m.channelId)) remove(m.channelId, m.id)
+    })
+    client.on(Events.ChannelUpdate, (_, channel) => {
+      if (wanted.has(channel.id) && 'name' in channel && typeof channel.name === 'string') names.set(channel.id, channel.name)
+    })
+    client.on(Events.MessageBulkDelete, (messages, channel) => {
+      if (deletesEnabled() && wanted.has(channel.id)) for (const id of messages.keys()) remove(channel.id, id)
+    })
+    return client
+  }
+
+  /** Logs in. A failure a retry could fix is only logged, and the watchdog tries again. */
+  async function login(next: Client): Promise<void> {
+    try {
+      await next.login(token)
+    } catch (err) {
+      if (isFatalLogin(err)) onFatal(err)
+      else log.error('discord_login_failed', { error: err instanceof Error ? err.message : String(err) })
+    }
+  }
+
+  /**
+   * Replaces a Gateway connection that has stayed down, inside the process. Exiting would lose the
+   * buffer, which can't be reloaded while Discord is down, and use up Railway's limited restarts.
+   */
+  async function reconnect(): Promise<void> {
+    if (stopped) return
+    log.error('watchdog_expired', { reason: 'Gateway disconnected past the watchdog limit; reconnecting with a fresh client' })
+    const old = client
+    client = createClient()
+    // Nothing from the old connection may count from here on. Without an 'error' listener, an emitted error would crash.
+    old.removeAllListeners()
+    old.on(Events.Error, () => {})
+    setConnected(false, 'gateway_reconnecting')
+    try {
+      await old.destroy()
+    } catch (err) {
+      log.warn('discord_client_destroy_failed', { error: err instanceof Error ? err.message : String(err) })
+    }
+    await login(client)
+  }
+
+  let client = createClient()
 
   // Start the countdown now so a login that never becomes ready also restarts the process.
   watchdog.disconnected()
 
   return {
-    /** Resolves once logged in; rejects on an invalid token. */
-    login: client.login(token),
+    /** Settles once the first login attempt has finished; a failure goes to `onFatal` or the log, never here. */
+    login: login(client),
     /** True while the Gateway connection is up. */
     isConnected: (): boolean => connected,
+    /** False while a channel's history cannot be loaded, usually because the bot cannot read it. */
+    isChannelAvailable: (channelId: string): boolean => !unavailable.has(channelId),
     /** Every relayed channel, with its name once its history has loaded. */
     channels: (): ChannelInfo[] => channelIds.map(id => ({ id, name: names.get(id) ?? null })),
-    /** Cancels the watchdog and closes the Gateway connection. */
+    /** Cancels the watchdog and any retries, and closes the Gateway connection. */
     async stop(): Promise<void> {
+      stopped = true
       watchdog.connected()
+      for (const retry of retries.values()) clearTimeout(retry.timer)
       await client.destroy()
     },
   }

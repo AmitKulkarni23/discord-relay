@@ -176,6 +176,18 @@ describe('useEventStream', () => {
       expect(result.current.status).toBe('live')
     })
 
+    it('should say so when the bot cannot read this channel', () => {
+      const { result } = renderHook(() => useEventStream(CHANNEL))
+      const es = FakeEventSource.latest()
+      open(es)
+
+      act(() => es.sendDiscord('unavailable'))
+      expect(result.current.status).toBe('channel')
+
+      act(() => es.sendDiscord('connected'))
+      expect(result.current.status).toBe('live')
+    })
+
     it('should say the stream is reconnecting, not Discord, when both are down', () => {
       const { result } = renderHook(() => useEventStream(CHANNEL))
       const es = FakeEventSource.latest()

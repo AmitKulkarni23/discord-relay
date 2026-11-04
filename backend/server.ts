@@ -15,6 +15,8 @@ export type ServerDeps = {
   /** Current feature flags; read on every /config request so a change in Railway applies without a redeploy. */
   flags: () => Flags
   isDiscordConnected: () => boolean
+  /** False while the bot cannot load a channel, usually for lack of access. */
+  isChannelAvailable: (channelId: string) => boolean
   /** Every relayed channel with its display name once loaded. */
   channels: () => ChannelInfo[]
   /** Heartbeat interval for /events. Railway closes streams idle for 5 minutes. */
@@ -36,9 +38,13 @@ const encoder = new TextEncoder()
 const CONNECTED = encoder.encode(': connected\n\n')
 // A named event, not a comment: EventSource hides comments, and the page needs to see these to notice a dead stream.
 const PING = encoder.encode('event: ping\ndata: 1\n\n')
-const DISCORD_UP = encoder.encode('event: discord\ndata: connected\n\n')
-const DISCORD_DOWN = encoder.encode('event: discord\ndata: disconnected\n\n')
-/** How often the server checks the Gateway, to tell open pages when it changes. */
+type DiscordState = 'connected' | 'disconnected' | 'unavailable'
+const DISCORD_EVENTS: Record<DiscordState, Uint8Array> = {
+  connected: encoder.encode('event: discord\ndata: connected\n\n'),
+  disconnected: encoder.encode('event: discord\ndata: disconnected\n\n'),
+  unavailable: encoder.encode('event: discord\ndata: unavailable\n\n'),
+}
+/** How often the server checks the Gateway and each channel, to tell open pages when one changes. */
 const DISCORD_CHECK_MS = 1000
 /** Keyed by object, so a message's bytes are freed once it leaves the buffer and every queue. */
 const encodedEvents = new WeakMap<Msg, Uint8Array>()
@@ -82,24 +88,29 @@ function clientIp(req: Request, server: Bun.Server<undefined>): string {
  * closes every open stream and stops listening.
  */
 export function startServer(deps: ServerDeps): { url: URL; stop: () => void } {
-  const { hub, channelIds, flags, isDiscordConnected, channels, pingMs = 25_000 } = deps
+  const { hub, channelIds, flags, isDiscordConnected, isChannelAvailable, channels, pingMs = 25_000 } = deps
   const first = channelIds[0]
   if (first === undefined) throw new Error('startServer needs at least one channel')
   const defaultChannel: string = first
   const startedAt = Date.now()
   /** Every open /events stream: pinged by the one timer below, closed by `stop`. */
-  const openStreams = new Set<{ write: (bytes: Uint8Array) => void; close: () => void }>()
+  const openStreams = new Set<{ channelId: string; write: (bytes: Uint8Array) => void; close: () => void }>()
   /** Open /events streams per client IP. An entry is removed at zero, so this stays bounded by open streams. */
   const connectionsByIp = new Map<string, number>()
   const pingTimer = setInterval(() => {
     for (const stream of openStreams) stream.write(PING)
   }, pingMs)
-  const discordBytes = (up: boolean): Uint8Array => (up ? DISCORD_UP : DISCORD_DOWN)
-  let discordUp = isDiscordConnected()
+  /** What a page on this channel should say. A lost Gateway comes first, because it explains everything else. */
+  const discordState = (channelId: string): DiscordState =>
+    !isDiscordConnected() ? 'disconnected' : isChannelAvailable(channelId) ? 'connected' : 'unavailable'
+  const lastState = new Map(channelIds.map(id => [id, discordState(id)]))
   const discordTimer = setInterval(() => {
-    if (isDiscordConnected() === discordUp) return
-    discordUp = !discordUp
-    for (const stream of openStreams) stream.write(discordBytes(discordUp))
+    for (const id of channelIds) {
+      const state = discordState(id)
+      if (state === lastState.get(id)) continue
+      lastState.set(id, state)
+      for (const stream of openStreams) if (stream.channelId === id) stream.write(DISCORD_EVENTS[state])
+    }
   }, DISCORD_CHECK_MS)
 
   /**
@@ -152,7 +163,7 @@ export function startServer(deps: ServerDeps): { url: URL; stop: () => void } {
           }
           // Send something at once so headers flush even when the buffer is empty.
           send(CONNECTED)
-          send(discordBytes(isDiscordConnected()))
+          send(DISCORD_EVENTS[discordState(channelId)])
           // A reconnecting browser may hold messages deleted while it was away. A new one holds nothing.
           if (since > 0n) for (const id of hub.removed(channelId)) send(deleteEvent(id, channelId))
           for (const m of hub.recent(channelId).filter(isNew)) send(encodeEvent(m))
@@ -181,7 +192,7 @@ export function startServer(deps: ServerDeps): { url: URL; stop: () => void } {
             controller.close()
           }
 
-          const open = { write, close }
+          const open = { channelId, write, close }
           openStreams.add(open)
           req.signal.addEventListener('abort', cleanup)
           log.debug('client_connected', { requestId, clients: hub.subscriberCount() })
@@ -209,6 +220,7 @@ export function startServer(deps: ServerDeps): { url: URL; stop: () => void } {
         clients: hub.subscriberCount(),
         buffered: buffered.length,
         lastEventAt,
+        unavailableChannels: channelIds.filter(id => !isChannelAvailable(id)),
         uptimeSec: Math.round((Date.now() - startedAt) / 1000),
       },
       { status: connected ? 200 : 503 },
@@ -241,8 +253,8 @@ export function startServer(deps: ServerDeps): { url: URL; stop: () => void } {
 /**
  * Entry point and the only place dependencies are wired: validates config,
  * creates the hub, starts the HTTP server and the Discord source, and shuts
- * down cleanly on SIGTERM. Exits with code 1 on invalid config, a failed
- * login, or a Gateway that stays down past the watchdog limit.
+ * down cleanly on SIGTERM. Exits with code 1 on invalid config or a login
+ * that cannot work, such as a bad token.
  */
 export function main(): void {
   let config: Config
@@ -267,8 +279,8 @@ export function main(): void {
     remove: hub.remove,
     buffered: channelId => hub.recent(channelId).map(m => m.id),
     deletesEnabled: () => readFlags().editsDeletes,
-    onWatchdogExpired: () => {
-      log.error('watchdog_expired', { reason: 'Gateway disconnected for more than 5 minutes; exiting so Railway restarts us' })
+    onFatal: err => {
+      log.error('discord_login_failed', { error: errorMessage(err) })
       process.exit(1)
     },
   })
@@ -279,14 +291,10 @@ export function main(): void {
     // Flags start at their defaults and switch to Railway's values once the SDK syncs, so startup never waits on it.
     flags: () => readFlags(),
     isDiscordConnected: discord.isConnected,
+    isChannelAvailable: discord.isChannelAvailable,
     channels: discord.channels,
   })
   log.info('server_started', { url: server.url.href })
-
-  discord.login.catch(err => {
-    log.error('discord_login_failed', { error: errorMessage(err) })
-    process.exit(1)
-  })
 
   process.on('SIGTERM', async () => {
     log.info('shutdown', { signal: 'SIGTERM' })

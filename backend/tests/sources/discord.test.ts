@@ -352,17 +352,36 @@ const CHANNEL = '1301000000000000001'
 /** A message discord.js could hand over that toMsg cannot convert. */
 const MALFORMED = { author: null } as unknown as Partial<MessageLike>
 
+const restoreClient: Array<() => void> = []
+afterEach(() => {
+  for (const restore of restoreClient.splice(0)) restore()
+})
+
 /** Runs the real startDiscord and discord.js Client with login and the channel faked, so nothing touches the network. */
-function startFakeDiscord(history: MessageLike[], options: { deletesOn?: boolean; historyLimit?: number } = {}) {
+function startFakeDiscord(
+  history: MessageLike[],
+  options: { deletesOn?: boolean; historyLimit?: number; watchdogMs?: number; historyRetryMs?: number; loginError?: Error } = {},
+) {
   const logs: Array<Record<string, unknown>> = []
   spyOn(console, 'log').mockImplementation((line: string) => {
     logs.push(JSON.parse(line) as Record<string, unknown>)
   })
-  let client: Client | undefined
+  // Every client the code logs in, newest last: a reconnect builds a fresh one.
+  const clients: Client[] = []
+  const destroyed: Client[] = []
   const login = spyOn(Client.prototype, 'login').mockImplementation(async function (this: Client) {
-    client = this
+    clients.push(this)
+    if (options.loginError) throw options.loginError
     return 'token'
   })
+  const destroy = spyOn(Client.prototype, 'destroy').mockImplementation(async function (this: Client) {
+    destroyed.push(this)
+  })
+  restoreClient.push(() => {
+    login.mockRestore()
+    destroy.mockRestore()
+  })
+  const fatal: unknown[] = []
   const published: Msg[] = []
   const removed: Array<[string, string]> = []
   /** IDs the hub would report as buffered; set by a test that needs them. */
@@ -377,8 +396,11 @@ function startFakeDiscord(history: MessageLike[], options: { deletesOn?: boolean
     buffered: () => buffered.ids,
     deletesEnabled: () => options.deletesOn ?? true,
     historyLimit: options.historyLimit,
+    watchdogMs: options.watchdogMs,
+    historyRetryMs: options.historyRetryMs,
+    onFatal: err => fatal.push(err),
   })
-  login.mockRestore()
+  const client = clients[0]
   if (!client) throw new Error('login was not called')
   const channel = {
     isTextBased: () => true,
@@ -392,7 +414,7 @@ function startFakeDiscord(history: MessageLike[], options: { deletesOn?: boolean
     },
   }
   const fetchChannel = spyOn(client.channels, 'fetch').mockResolvedValue(channel as never)
-  return { client, discord, published, removed, buffered, fetching, logs, fetchChannel }
+  return { client, channel, clients, destroyed, fatal, discord, published, removed, buffered, fetching, logs, fetchChannel }
 }
 
 /** Polls until `cond` holds, failing after a second. */
@@ -614,6 +636,181 @@ describe('startDiscord', () => {
       await waitFor(() => fake.logs.some(l => l.event === 'history_loaded'))
 
       expect(fake.removed).toEqual([[CHANNEL, GONE]])
+    })
+  })
+
+  describe('when the Gateway stays down past the watchdog limit', () => {
+    it('should reconnect with a fresh client inside the process, keeping the buffer', async () => {
+      const fake = startFakeDiscord([], { watchdogMs: 5 })
+      stop = fake.discord.stop
+
+      await waitFor(() => fake.clients.length >= 2)
+
+      expect(fake.destroyed).toContain(fake.client)
+      expect(fake.fatal).toEqual([])
+      expect(fake.discord.isConnected()).toBe(false)
+      expect(fake.logs.some(l => l.event === 'watchdog_expired')).toBe(true)
+    })
+
+    it('should keep trying until one attempt connects', async () => {
+      const fake = startFakeDiscord([], { watchdogMs: 5 })
+      stop = fake.discord.stop
+
+      await waitFor(() => fake.clients.length >= 3)
+      const latest = fake.clients.at(-1) as Client
+      latest.emit(Events.ShardReady, 0, undefined)
+
+      expect(fake.discord.isConnected()).toBe(true)
+    })
+
+    it('should stop reconnecting once told to stop', async () => {
+      const fake = startFakeDiscord([], { watchdogMs: 5 })
+
+      await fake.discord.stop()
+      const count = fake.clients.length
+      await Bun.sleep(20)
+
+      expect(fake.clients).toHaveLength(count)
+      stop = async () => {}
+    })
+
+    it('should ignore events from the client it replaced', async () => {
+      const fake = startFakeDiscord([], { watchdogMs: 5 })
+      stop = fake.discord.stop
+
+      await waitFor(() => fake.clients.length >= 2)
+      fake.client.emit(Events.ShardReady, 0, undefined)
+
+      expect(fake.discord.isConnected()).toBe(false)
+    })
+  })
+
+  describe('when logging in fails', () => {
+    const coded = (code: string): Error => Object.assign(new Error('login failed'), { code })
+
+    it('should give up on an invalid token, which a retry cannot fix', async () => {
+      const error = coded('TokenInvalid')
+      const fake = startFakeDiscord([], { loginError: error })
+      stop = fake.discord.stop
+
+      await waitFor(() => fake.fatal.length > 0)
+
+      expect(fake.fatal).toEqual([error])
+    })
+
+    it('should give up when the MessageContent intent is not allowed', async () => {
+      const error = new Error('Used disallowed intents')
+      const fake = startFakeDiscord([], { loginError: error })
+      stop = fake.discord.stop
+
+      await waitFor(() => fake.fatal.length > 0)
+
+      expect(fake.fatal).toEqual([error])
+    })
+
+    it('should keep going through a network failure, so a Discord outage at startup uses up no restarts', async () => {
+      const fake = startFakeDiscord([], { loginError: new Error('getaddrinfo ENOTFOUND discord.com') })
+      stop = fake.discord.stop
+
+      await waitFor(() => fake.logs.some(l => l.event === 'discord_login_failed'))
+
+      expect(fake.fatal).toEqual([])
+    })
+  })
+
+  describe('when a channel cannot be read', () => {
+    const start = async (options: { historyRetryMs?: number } = {}) => {
+      const fake = startFakeDiscord([makeDiscordMessage({ id: '1302000000000000001' })], options)
+      stop = fake.discord.stop
+      return fake
+    }
+    const denied = async (): Promise<never> => {
+      throw new Error('Missing Access')
+    }
+
+    it('should count a channel as available until a load fails', async () => {
+      const fake = await start()
+
+      expect(fake.discord.isChannelAvailable(CHANNEL)).toBe(true)
+    })
+
+    it('should report it as unavailable when loading fails', async () => {
+      const fake = await start({ historyRetryMs: 60_000 })
+      fake.fetchChannel.mockImplementation(denied)
+
+      fake.client.emit(Events.ClientReady, fake.client as never)
+      await waitFor(() => fake.logs.some(l => l.event === 'history_failed'))
+
+      expect(fake.discord.isChannelAvailable(CHANNEL)).toBe(false)
+    })
+
+    it('should report it as unavailable when it is not a text channel', async () => {
+      const fake = await start({ historyRetryMs: 60_000 })
+      fake.fetchChannel.mockResolvedValue({ isTextBased: () => false } as never)
+
+      fake.client.emit(Events.ClientReady, fake.client as never)
+      await waitFor(() => fake.logs.some(l => l.event === 'history_failed'))
+
+      expect(fake.discord.isChannelAvailable(CHANNEL)).toBe(false)
+    })
+
+    it('should retry until it loads, then report it as available', async () => {
+      const fake = await start({ historyRetryMs: 1 })
+      fake.fetchChannel.mockImplementation(denied)
+
+      fake.client.emit(Events.ClientReady, fake.client as never)
+      await waitFor(() => fake.logs.filter(l => l.event === 'history_failed').length >= 2)
+      fake.fetchChannel.mockResolvedValue(fake.channel as never)
+      await waitFor(() => fake.logs.some(l => l.event === 'history_loaded'))
+
+      expect(fake.discord.isChannelAvailable(CHANNEL)).toBe(true)
+      expect(fake.published.map(m => m.id)).toEqual(['1302000000000000001'])
+    })
+
+    it('should wait longer between retries, not hammer Discord', async () => {
+      const fake = await start({ historyRetryMs: 20 })
+      fake.fetchChannel.mockImplementation(denied)
+
+      fake.client.emit(Events.ClientReady, fake.client as never)
+      await Bun.sleep(90)
+
+      // Attempts at about 0, 20 and 60 ms, then 140: doubling, not one every 20 ms.
+      expect(fake.fetchChannel.mock.calls.length).toBeLessThanOrEqual(4)
+      expect(fake.fetchChannel.mock.calls.length).toBeGreaterThanOrEqual(2)
+    })
+
+    it('should stop retrying once told to stop', async () => {
+      const fake = await start({ historyRetryMs: 1 })
+      fake.fetchChannel.mockImplementation(denied)
+      fake.client.emit(Events.ClientReady, fake.client as never)
+      await waitFor(() => fake.logs.some(l => l.event === 'history_failed'))
+
+      await fake.discord.stop()
+      const calls = fake.fetchChannel.mock.calls.length
+      await Bun.sleep(20)
+
+      expect(fake.fetchChannel.mock.calls.length).toBe(calls)
+      stop = async () => {}
+    })
+  })
+
+  describe('when a relayed channel is renamed', () => {
+    it('should report the new name', () => {
+      const fake = startFakeDiscord([])
+      stop = fake.discord.stop
+
+      fake.client.emit(Events.ChannelUpdate, {} as never, { id: CHANNEL, name: 'relay-renamed' } as never)
+
+      expect(fake.discord.channels()).toEqual([{ id: CHANNEL, name: 'relay-renamed' }])
+    })
+
+    it('should ignore other channels', () => {
+      const fake = startFakeDiscord([])
+      stop = fake.discord.stop
+
+      fake.client.emit(Events.ChannelUpdate, {} as never, { id: '1301000000000000099', name: 'elsewhere' } as never)
+
+      expect(fake.discord.channels()).toEqual([{ id: CHANNEL, name: null }])
     })
   })
 

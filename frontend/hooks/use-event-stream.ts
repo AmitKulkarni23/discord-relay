@@ -29,7 +29,8 @@ type EventStream = {
 export function useEventStream(channel: string | null): EventStream {
   const [msgs, setMsgs] = useState<Map<string, Msg>>(() => new Map())
   const [connection, setConnection] = useState<Connection>('connecting')
-  const [discordUp, setDiscordUp] = useState(true)
+  /** What the server last said about Discord and this channel; only meaningful while the stream is open. */
+  const [discord, setDiscord] = useState<unknown>('connected')
   const [recovered, setRecovered] = useState<number | null>(null)
 
   // Reset during render, so a switch never paints the old channel's messages under the new tab.
@@ -38,7 +39,7 @@ export function useEventStream(channel: string | null): EventStream {
     setShownChannel(channel)
     setMsgs(new Map())
     setConnection('connecting')
-    setDiscordUp(true)
+    setDiscord('connected')
     setRecovered(null)
   }
 
@@ -96,7 +97,7 @@ export function useEventStream(channel: string | null): EventStream {
       es.addEventListener('ping', heardFromServer)
       es.addEventListener('discord', (e: MessageEvent<unknown>) => {
         heardFromServer()
-        setDiscordUp(e.data !== 'disconnected')
+        setDiscord(e.data)
       })
       es.addEventListener('delete', (e: MessageEvent<unknown>) => {
         heardFromServer()
@@ -142,6 +143,6 @@ export function useEventStream(channel: string | null): EventStream {
   }, [channel])
 
   const messages = useMemo(() => sortMsgs(msgs), [msgs])
-  const status: Status = connection === 'live' && !discordUp ? 'discord' : connection
+  const status: Status = connection !== 'live' ? connection : discord === 'disconnected' ? 'discord' : discord === 'unavailable' ? 'channel' : 'live'
   return { messages, status, recovered }
 }

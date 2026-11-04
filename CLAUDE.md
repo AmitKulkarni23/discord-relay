@@ -60,6 +60,7 @@ discord-relay/
 │   ├── verdict.ts         # judges a step: PASS, SLOW, BROKEN or INVALID
 │   ├── agent.ts           # runs on each consumer machine, driven by run.ts
 │   ├── railway-metrics.ts # adds Railway's CPU and memory to a run's results
+│   ├── metrics-summary.ts # reduces Railway's samples to a step's figures
 │   ├── consumer-process.ts # a running copy of consumer.ts
 │   ├── consumer.ts        # one consumer process: many raw /events connections
 │   └── tests/             # the pure logic: verdicts, search and metrics

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { summarizeMetrics } from '../railway-metrics.ts'
+import { summarizeMetrics } from '../metrics-summary.ts'
 
 describe('summarizeMetrics', () => {
   describe('when Railway returned samples for the window', () => {

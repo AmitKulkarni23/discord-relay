@@ -30,7 +30,7 @@ describe('hub', () => {
       hub.publish(makeMsg(LIVE))
       for (const id of OLD) hub.publish(makeMsg(id))
 
-      expect(hub.recent(CHANNEL).map(m => m.id)).toEqual([...OLD, LIVE])
+      expect(hub.recent(GENERAL).map(m => m.id)).toEqual([...OLD, LIVE])
     })
 
     it('should keep the newest message when history overflows the buffer', () => {
@@ -39,7 +39,7 @@ describe('hub', () => {
       hub.publish(makeMsg(LIVE))
       for (const id of OLD) hub.publish(makeMsg(id))
 
-      expect(hub.recent(CHANNEL).map(m => m.id)).toEqual([OLD[1], OLD[2], LIVE])
+      expect(hub.recent(GENERAL).map(m => m.id)).toEqual([OLD[1], OLD[2], LIVE])
     })
 
     it('should not store or send a message older than a full buffer', () => {
@@ -47,12 +47,12 @@ describe('hub', () => {
       hub.publish(makeMsg(OLD[1]))
       hub.publish(makeMsg(OLD[2]))
       const fn = mock(() => {})
-      hub.subscribe(CHANNEL, fn)
+      hub.subscribe(GENERAL, fn)
 
       hub.publish(makeMsg(OLD[0]))
 
       expect(fn).not.toHaveBeenCalled()
-      expect(hub.recent(CHANNEL).map(m => m.id)).toEqual([OLD[1], OLD[2]])
+      expect(hub.recent(GENERAL).map(m => m.id)).toEqual([OLD[1], OLD[2]])
     })
   })
 

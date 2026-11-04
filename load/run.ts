@@ -1,28 +1,53 @@
-/**
- * Finds how many concurrent /events clients the server holds: ramps through client counts and
- * stops at the first level that fails. Exits 1 if any level failed. Spawns load/server.ts unless
- * --host names a remote one; add --public for a deploy behind HTTPS with routes under /__load.
- *
- *   bun load/run.ts --levels 1000,5000,10000 --rate 5 --hold 60 --workers 4
- *
- * --msgBytes sets the size of each SSE event (default about 470). Discord allows 2,000 characters, or 4,000 with
- * Nitro, plus up to 10 attachments, so about 10000 is the realistic top. --channels spreads clients evenly across
- * that many channels, and --rate is per channel; a remote server sets it with CHANNELS instead.
- *
- * --slowPct makes that share of clients read slowly: --slowMode stop never reads after the headers, crawl takes one
- * read per second. They are left out of the delivery figures, so a level passes only if everyone else is unaffected.
- * --burst publishes that many messages in one go every --burstEverySec, instead of --rate, and silence between.
- * --churnPerSec closes and reconnects that many clients every second; a 15 minute cut of N clients is N / 900.
- * --storm closes every client at once halfway through the hold, as a deploy does, and they return over --stormJitterMs.
- * Reconnects use ?since=, so a missed message counts as a gap, and a message held up by a reconnect counts towards
- * p99: raise --maxP99Ms to about --stormJitterMs for a storm. The server stays up, so its buffer survives, unlike a real restart.
- * Filling the 1 MiB limit takes about (1 MiB + socket buffers) / (rate x msgBytes), so hold long enough to see drops.
- */
+/** Ramps /events clients until a level fails; `bun load/run.ts --help` lists every knob. */
 import { parseArgs } from 'node:util'
 import type { WorkerCommand, WorkerReply } from './worker.ts'
 
+const HELP = `Finds how many concurrent /events clients the server holds: ramps through client counts and stops at the
+first level that fails. Exits 1 if any level failed. Local only unless you mean otherwise: never point it at production.
+
+  bun load/run.ts --levels 1000,5000,10000 --rate 5 --hold 60 --workers 4
+
+Load
+  --levels <n,n>         client counts to ramp through (default 100,1000,2000,5000,10000)
+  --rate <n>             messages per second, per channel (default 5)
+  --hold <sec>           how long each level holds (default 60)
+  --msgBytes <n>         size of each SSE event; 0 keeps about 470 (default 0). About 10000 is the realistic top
+  --channels <n>         spread clients evenly across this many channels (default 1). A remote server sets CHANNELS instead
+
+Traffic shape
+  --burst <n>            publish this many at once every --burstEverySec, instead of --rate (default 0, off)
+  --burstEverySec <sec>  time between bursts (default 10). --hold must be at least 3 times this
+  --slowPct <n>          percent of clients that read slowly (default 0). Left out of delivery figures, so a level
+                         passes only if everyone else is unaffected
+  --slowMode <mode>      stop never reads after the headers, crawl takes one read per second (default stop)
+  --churnPerSec <n>      close and reconnect this many clients every second (default 0). A 15 minute cut of N clients is N / 900
+  --storm                close every client at once halfway through the hold, as a deploy does
+  --stormJitterMs <ms>   clients return over this window (default 1000). Raise --maxP99Ms to about this for a storm
+
+Pass or fail
+  --maxP99Ms <ms>        latency limit for a level (default 1000)
+  --keepGoing            run every level even after one fails
+  --maxSec <sec>         abort the whole run after this long (default 900)
+
+Generators
+  --workers <n>          generator processes (default 4)
+  --connectPerSec <n>    how fast clients connect (default 1000)
+  --listeners <n>        ports the server listens on (default 1)
+
+Target
+  --port <n>             local server port; control runs on port + 1 (default 3100)
+  --host <host>          use this server instead of spawning load/server.ts
+  --public               the host is a deploy behind HTTPS, with its control routes under --controlPath
+  --controlPath <path>   control route prefix with --public (default /__load)
+  --controlUrl <url>     full control URL, overriding the above
+
+Reconnects use ?since=, so a missed message counts as a gap, and a message held up by a reconnect counts towards p99.
+A storm keeps the server up, so its buffer survives, unlike a real restart.
+Filling the 1 MiB limit takes about (1 MiB + socket buffers) / (rate x msgBytes), so hold long enough to see drops.`
+
 const { values } = parseArgs({
   options: {
+    help: { type: 'boolean', short: 'h', default: false },
     host: { type: 'string' },
     public: { type: 'boolean', default: false },
     controlPath: { type: 'string', default: '/__load' },
@@ -48,6 +73,11 @@ const { values } = parseArgs({
     maxSec: { type: 'string', default: '900' },
   },
 })
+
+if (values.help) {
+  console.log(HELP)
+  process.exit(0)
+}
 
 const port = Number(values.port)
 const burst = Number(values.burst)

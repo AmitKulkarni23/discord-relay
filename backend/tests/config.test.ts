@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { loadConfig } from './config.ts'
+import { loadConfig } from '../config.ts'
 
 const CHANNEL = '1301000000000000001'
 const CHANNEL_2 = '1301000000000000002'

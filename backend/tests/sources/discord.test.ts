@@ -1,5 +1,5 @@
 import { describe, expect, it, mock } from 'bun:test'
-import { collectHistory, createWatchdog, isMissingContent, toMsg, type MessageLike } from './discord.ts'
+import { collectHistory, createWatchdog, isMissingContent, toMsg, type MessageLike } from '../../sources/discord.ts'
 
 /** Builds a realistic discord.js-shaped message; override any field per test. */
 function makeDiscordMessage(overrides: Partial<MessageLike> = {}): MessageLike {

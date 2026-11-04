@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, spyOn } from 'bun:test'
-import { log } from './log.ts'
+import { log } from '../log.ts'
 
 const out = spyOn(console, 'log').mockImplementation(() => {})
 afterEach(() => out.mockClear())

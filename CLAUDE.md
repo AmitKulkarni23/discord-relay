@@ -37,8 +37,9 @@ discord-relay/
 │   ├── log.ts             # structured JSON logs: log.debug/info/warn/error
 │   ├── hub.ts             # Observer: ring buffer + publish/subscribe, keyed by channelId
 │   ├── types.ts           # Msg type shared with the frontend
-│   └── sources/
-│       └── discord.ts     # discord.js client → normalized messages
+│   ├── sources/
+│   │   └── discord.ts     # discord.js client → normalized messages
+│   └── tests/             # mirrors backend/: tests/hub.test.ts, tests/sources/discord.test.ts
 ├── frontend/
 │   ├── index.html
 │   ├── feed.ts            # pure message logic: dedupe, cap, grouping, /config parsing (tested)

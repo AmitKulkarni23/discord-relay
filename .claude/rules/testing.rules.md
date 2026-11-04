@@ -8,7 +8,8 @@ paths:
 ## Runner and location
 
 - Tests MUST use `bun:test`. Vitest and Jest MUST NOT be added.
-- Test files MUST sit next to the source: `hub.test.ts` beside `hub.ts`.
+- Backend tests MUST live in `backend/tests/`, mirroring the source tree: `backend/hub.ts` is tested by `backend/tests/hub.test.ts`, and `backend/sources/discord.ts` by `backend/tests/sources/discord.test.ts`.
+- Frontend tests MUST sit next to the source: `feed.test.ts` beside `feed.ts`.
 - Tests MUST NOT call Discord or any network service. Integration tests MUST replace the bot with a fake source that calls `hub.publish`.
 
 ## Structure and naming

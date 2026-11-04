@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, spyOn } from 'bun:test'
 import net from 'node:net'
-import { createHub, type Hub } from './hub.ts'
-import type { Flags } from './flags.ts'
-import { encodeEvent, formatEvent, MAX_CONNECTIONS_PER_IP, startServer } from './server.ts'
-import type { Msg } from './types.ts'
+import { createHub, type Hub } from '../hub.ts'
+import type { Flags } from '../flags.ts'
+import { encodeEvent, formatEvent, MAX_CONNECTIONS_PER_IP, startServer } from '../server.ts'
+import type { Msg } from '../types.ts'
 
 const CHANNEL = '1301000000000000001'
 const CHANNEL_2 = '1301000000000000002'

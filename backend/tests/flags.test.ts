@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { DEFAULT_FLAGS, startFlags } from './flags.ts'
+import { DEFAULT_FLAGS, startFlags } from '../flags.ts'
 
 describe('startFlags', () => {
   describe('when there is no Railway token', () => {

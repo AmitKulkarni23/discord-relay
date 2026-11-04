@@ -2,7 +2,7 @@ import index from '../frontend/index.html'
 import { loadConfig, type Config } from './config.ts'
 import { DEFAULT_FLAGS, startFlags, type Flags } from './flags.ts'
 import { createHub, type Hub } from './hub.ts'
-import { log } from './log.ts'
+import { errorMessage, log } from './log.ts'
 import { startDiscord } from './sources/discord.ts'
 import type { ChannelInfo, Msg } from './types.ts'
 
@@ -25,6 +25,9 @@ export type ServerDeps = {
 
 /** Open /events streams allowed per client IP; past this, /events returns 429. */
 export const MAX_CONNECTIONS_PER_IP = 20
+
+/** How long a refused client should wait before trying again. */
+const RETRY_AFTER_SEC = 30
 
 /** Bytes a stream may have queued before its client counts as stalled and is dropped. */
 const MAX_QUEUED_BYTES = 1024 * 1024
@@ -89,9 +92,8 @@ function clientIp(req: Request, server: Bun.Server<undefined>): string {
  */
 export function startServer(deps: ServerDeps): { url: URL; stop: () => void } {
   const { hub, channelIds, flags, isDiscordConnected, isChannelAvailable, channels, pingMs = 25_000 } = deps
-  const first = channelIds[0]
-  if (first === undefined) throw new Error('startServer needs at least one channel')
-  const defaultChannel: string = first
+  const defaultChannel = channelIds[0]
+  if (defaultChannel === undefined) throw new Error('startServer needs at least one channel')
   const startedAt = Date.now()
   /** Every open /events stream: pinged by the one timer below, closed by `stop`. */
   const openStreams = new Set<{ channelId: string; write: (bytes: Uint8Array) => void; close: () => void }>()
@@ -101,8 +103,10 @@ export function startServer(deps: ServerDeps): { url: URL; stop: () => void } {
     for (const stream of openStreams) stream.write(PING)
   }, pingMs)
   /** What a page on this channel should say. A lost Gateway comes first, because it explains everything else. */
-  const discordState = (channelId: string): DiscordState =>
-    !isDiscordConnected() ? 'disconnected' : isChannelAvailable(channelId) ? 'connected' : 'unavailable'
+  const discordState = (channelId: string): DiscordState => {
+    if (!isDiscordConnected()) return 'disconnected'
+    return isChannelAvailable(channelId) ? 'connected' : 'unavailable'
+  }
   const lastState = new Map(channelIds.map(id => [id, discordState(id)]))
   const discordTimer = setInterval(() => {
     for (const id of channelIds) {
@@ -121,7 +125,7 @@ export function startServer(deps: ServerDeps): { url: URL; stop: () => void } {
    * Unsubscribes when the browser disconnects or the server stops. Returns 429
    * past the per-IP cap, and drops a client that stops reading.
    */
-  function events(req: Request, server: Bun.Server<undefined>): Response {
+  const events = (req: Request, server: Bun.Server<undefined>): Response => {
     // Railway's ID for this request, also in its network logs. Null on local runs.
     const requestId = req.headers.get('x-railway-request-id')
     const params = new URL(req.url).searchParams
@@ -133,7 +137,7 @@ export function startServer(deps: ServerDeps): { url: URL; stop: () => void } {
     const connections = connectionsByIp.get(ip) ?? 0
     if (connections >= MAX_CONNECTIONS_PER_IP) {
       log.debug('client_rejected', { requestId, reason: 'too many connections from one IP' })
-      return new Response('Too many connections', { status: 429, headers: { 'Retry-After': '30' } })
+      return new Response('Too many connections', { status: 429, headers: { 'Retry-After': String(RETRY_AFTER_SEC) } })
     }
     connectionsByIp.set(ip, connections + 1)
     // Bun closes connections idle for 10 s by default; this stream must stay open.
@@ -314,11 +318,6 @@ export function main(): void {
   }
   process.on('uncaughtException', crash('uncaughtException'))
   process.on('unhandledRejection', crash('unhandledRejection'))
-}
-
-/** Returns an error's message, or the value as a string. */
-function errorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err)
 }
 
 if (import.meta.main) main()

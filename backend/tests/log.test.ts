@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, spyOn } from 'bun:test'
-import { log } from '../log.ts'
+import { errorMessage, log } from '../log.ts'
 
 const out = spyOn(console, 'log').mockImplementation(() => {})
 afterEach(() => out.mockClear())
@@ -73,6 +73,21 @@ describe('log', () => {
       log.info('history_loaded', { time: 'spoofed' })
 
       expect(lastLine().time).not.toBe('spoofed')
+    })
+  })
+})
+
+describe('errorMessage', () => {
+  describe('when given an Error', () => {
+    it('should return its message alone', () => {
+      expect(errorMessage(new Error('Missing Access'))).toBe('Missing Access')
+    })
+  })
+
+  describe('when given anything else', () => {
+    it('should return it as a string', () => {
+      expect(errorMessage('Missing Access')).toBe('Missing Access')
+      expect(errorMessage(50001)).toBe('50001')
     })
   })
 })

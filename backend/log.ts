@@ -1,3 +1,8 @@
+/** Returns an error's message, or the value as a string. */
+export function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err)
+}
+
 /** Railway reads this field to colour and filter log lines (`@level:error`). */
 type Level = 'debug' | 'info' | 'warn' | 'error'
 

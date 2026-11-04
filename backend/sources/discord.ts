@@ -1,5 +1,5 @@
 import { Client, Events, GatewayIntentBits, Partials } from 'discord.js'
-import { log } from '../log.ts'
+import { errorMessage, log } from '../log.ts'
 import { compareIds, type ChannelInfo, type Msg } from '../types.ts'
 
 type AttachmentsLike = {
@@ -147,6 +147,14 @@ export async function collectHistory<T extends { id: string }>(
   return out.reverse()
 }
 
+/** Counts down while the Gateway is disconnected. */
+export type Watchdog = {
+  /** Starts the countdown, unless one is already running. */
+  disconnected(): void
+  /** Cancels the countdown. */
+  connected(): void
+}
+
 /**
  * Calls `onExpire` if `disconnected()` is not followed by `connected()` within
  * `limitMs`. Railway only healthchecks at deploy time, so this is how a stalled
@@ -157,13 +165,12 @@ export function createWatchdog(opts: {
   onExpire: () => void
   setTimer?: (fn: () => void, ms: number) => unknown
   clearTimer?: (handle: unknown) => void
-}) {
+}): Watchdog {
   const setTimer = opts.setTimer ?? ((fn: () => void, ms: number) => setTimeout(fn, ms))
   const clearTimer = opts.clearTimer ?? ((handle: unknown) => clearTimeout(handle as Timer))
   let pending: unknown
 
   return {
-    /** Starts the countdown, unless one is already running. */
     disconnected(): void {
       if (pending !== undefined) return
       pending = setTimer(() => {
@@ -171,7 +178,6 @@ export function createWatchdog(opts: {
         opts.onExpire()
       }, opts.limitMs)
     },
-    /** Cancels the countdown. */
     connected(): void {
       if (pending === undefined) return
       clearTimer(pending)
@@ -180,13 +186,27 @@ export function createWatchdog(opts: {
   }
 }
 
+/** The running bot, as `startDiscord` returns it. */
+export type DiscordSource = {
+  /** Settles once the first login attempt has finished; a failure goes to `onFatal` or the log, never here. */
+  login: Promise<void>
+  /** True while the Gateway connection is up. */
+  isConnected(): boolean
+  /** False while a channel's history cannot be loaded, usually because the bot cannot read it. */
+  isChannelAvailable(channelId: string): boolean
+  /** Every relayed channel, with its name once its history has loaded. */
+  channels(): ChannelInfo[]
+  /** Cancels the watchdog and any retries, and closes the Gateway connection. */
+  stop(): Promise<void>
+}
+
 /**
  * Logs in to the Discord Gateway, publishes the latest `historyLimit` messages once ready and
  * again after any fresh session, then publishes each new message from any of `channelIds`.
  * Returns the login promise, the connection and channel state for /health, the channel names
  * for /config, and `stop`.
  */
-export function startDiscord(deps: DiscordDeps) {
+export function startDiscord(deps: DiscordDeps): DiscordSource {
   const { token, channelIds, publish, remove, buffered, deletesEnabled, historyLimit = 100, onFatal, watchdogMs = 5 * 60_000, historyRetryMs = 5_000 } = deps
   const watchdog = createWatchdog({ limitMs: watchdogMs, onExpire: () => void reconnect() })
   let connected = false
@@ -233,7 +253,7 @@ export function startDiscord(deps: DiscordDeps) {
       }
       publish(msg)
     } catch (err) {
-      log.error('message_skipped', { channelId: m.channelId, messageId: m.id, error: err instanceof Error ? err.message : String(err) })
+      log.error('message_skipped', { channelId: m.channelId, messageId: m.id, error: errorMessage(err) })
     }
   }
 
@@ -281,7 +301,7 @@ export function startDiscord(deps: DiscordDeps) {
       retries.delete(channelId)
       log.info('history_loaded', { channelId, count: messages.length })
     } catch (err) {
-      log.error('history_failed', { channelId, error: err instanceof Error ? err.message : String(err) })
+      log.error('history_failed', { channelId, error: errorMessage(err) })
       retryHistory(channelId)
     }
   }
@@ -335,7 +355,7 @@ export function startDiscord(deps: DiscordDeps) {
       await next.login(token)
     } catch (err) {
       if (isFatalLogin(err)) onFatal(err)
-      else log.error('discord_login_failed', { error: err instanceof Error ? err.message : String(err) })
+      else log.error('discord_login_failed', { error: errorMessage(err) })
     }
   }
 
@@ -356,7 +376,7 @@ export function startDiscord(deps: DiscordDeps) {
     try {
       await old.destroy()
     } catch (err) {
-      log.warn('discord_client_destroy_failed', { error: err instanceof Error ? err.message : String(err) })
+      log.warn('discord_client_destroy_failed', { error: errorMessage(err) })
     }
     // Closing can outlast the next attempt, which replaces `next`, or a stop.
     if (!stopped && client === next) await login(next)
@@ -368,16 +388,11 @@ export function startDiscord(deps: DiscordDeps) {
   watchdog.disconnected()
 
   return {
-    /** Settles once the first login attempt has finished; a failure goes to `onFatal` or the log, never here. */
     login: login(client),
-    /** True while the Gateway connection is up. */
-    isConnected: (): boolean => connected,
-    /** False while a channel's history cannot be loaded, usually because the bot cannot read it. */
-    isChannelAvailable: (channelId: string): boolean => !unavailable.has(channelId),
-    /** Every relayed channel, with its name once its history has loaded. */
-    channels: (): ChannelInfo[] => channelIds.map(id => ({ id, name: names.get(id) ?? null })),
-    /** Cancels the watchdog and any retries, and closes the Gateway connection. */
-    async stop(): Promise<void> {
+    isConnected: () => connected,
+    isChannelAvailable: channelId => !unavailable.has(channelId),
+    channels: () => channelIds.map(id => ({ id, name: names.get(id) ?? null })),
+    async stop() {
       stopped = true
       watchdog.connected()
       for (const retry of retries.values()) clearTimeout(retry.timer)

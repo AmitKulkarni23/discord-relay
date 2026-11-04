@@ -1,5 +1,5 @@
 import { flags } from 'railway'
-import { log } from './log.ts'
+import { errorMessage, log } from './log.ts'
 
 /** Feature flags, exposed to the browser through GET /config. */
 export type Flags = { attachments: boolean; editsDeletes: boolean; debugPanel: boolean }
@@ -26,7 +26,7 @@ export async function startFlags(env: Record<string, string | undefined>): Promi
     await flags.init({ token, authType: 'project-token', timeoutMs: 5_000 })
     log.info('flags_loaded', { names: flags.list() })
   } catch (err) {
-    log.warn('flags_unavailable', { reason: err instanceof Error ? err.message : String(err) })
+    log.warn('flags_unavailable', { reason: errorMessage(err) })
     return () => DEFAULT_FLAGS
   }
 

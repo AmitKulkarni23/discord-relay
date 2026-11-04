@@ -2,6 +2,9 @@
   "name": "discord-relay",
   "private": true,
   "type": "module",
+  "engines": {
+    "bun": "1.4.2"
+  },
   "scripts": {
     "dev": "bun --hot backend/server.ts",
     "start": "bun run backend/server.ts",
@@ -9,7 +12,7 @@
     "format:check": "prettier --check \"{backend,frontend,load,.railway}/**/*.{ts,tsx}\"",
     "lint": "eslint frontend",
     "typecheck": "tsc --noEmit",
-    "test": "bun test --pass-with-no-tests"
+    "test": "bun test"
   },
   "devDependencies": {
     "@babel/core": "^8.1.0",
@@ -34,5 +37,8 @@
     "railway": "^3.16.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"
+  },
+  "overrides": {
+    "minimatch": "^11.0.1"
   }
 }

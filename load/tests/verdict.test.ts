@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { classifyStep, nextProbe, summarizeRamp, type StepOutcome } from '../verdict.ts'
+import { classifyStep, findUsableMax, nextProbe, summarizeRamp, type StepOutcome, type Verdict } from '../verdict.ts'
 
 const LIMITS = { maxP99Ms: 1000, maxSlowestMs: 5000 }
 const clean: StepOutcome = {
@@ -139,6 +139,78 @@ describe('nextProbe', () => {
   describe('when even the lowest count failed', () => {
     it('should search down from zero', () => {
       expect(nextProbe(0, 1000, 10)).toBe(500)
+    })
+  })
+})
+
+describe('findUsableMax', () => {
+  const OPTIONS = { precisionPct: 10, repeats: 3, maxTries: 30 }
+  /** A server that passes up to `capacity`, recording what was tried. */
+  const serverWith = (capacity: number) => {
+    const tried: number[] = []
+    return {
+      tried,
+      tryCount: async (consumers: number): Promise<Verdict> => {
+        tried.push(consumers)
+        return consumers <= capacity ? 'PASS' : 'BROKEN'
+      },
+    }
+  }
+
+  describe('when the ramp found a pass and a failure', () => {
+    it('should narrow down, then confirm the result the set number of times', async () => {
+      const server = serverWith(27_000)
+
+      const result = await findUsableMax({ usableMax: 20_000, firstNotPassing: 40_000 }, server.tryCount, OPTIONS)
+
+      expect(result).toEqual({ usableMax: 25_000, confirmed: true, invalidAt: null })
+      expect(server.tried.filter(n => n === 25_000).length).toBeGreaterThanOrEqual(3)
+    })
+  })
+
+  describe('when a limit passes once but not on repeat', () => {
+    it('should lower it until it holds every time', async () => {
+      let calls = 0
+      const flaky = async (consumers: number): Promise<Verdict> => {
+        calls++
+        if (consumers > 10_000) return 'SLOW'
+        if (consumers === 10_000) return calls % 2 === 0 ? 'SLOW' : 'PASS'
+        return 'PASS'
+      }
+
+      const result = await findUsableMax({ usableMax: 10_000, firstNotPassing: 10_500 }, flaky, OPTIONS)
+
+      expect(result.confirmed).toBe(true)
+      expect(result.usableMax).toBeLessThan(10_000)
+    })
+  })
+
+  describe('when the ramp never failed', () => {
+    it('should say the limit was not found rather than claim one', async () => {
+      const server = serverWith(100_000)
+
+      expect(await findUsableMax({ usableMax: 60_000, firstNotPassing: null }, server.tryCount, OPTIONS)).toEqual({
+        usableMax: 60_000,
+        confirmed: false,
+        invalidAt: null,
+      })
+      expect(server.tried).toEqual([])
+    })
+  })
+
+  describe('when a try cannot be trusted', () => {
+    it('should stop and name the count', async () => {
+      const result = await findUsableMax({ usableMax: 1000, firstNotPassing: 2000 }, async () => 'INVALID', OPTIONS)
+
+      expect(result).toEqual({ usableMax: 1000, confirmed: false, invalidAt: 1500 })
+    })
+  })
+
+  describe('when it runs out of tries', () => {
+    it('should stop without claiming a confirmed result', async () => {
+      const result = await findUsableMax({ usableMax: 1000, firstNotPassing: 100_000 }, async () => 'PASS', { ...OPTIONS, maxTries: 2 })
+
+      expect(result.confirmed).toBe(false)
     })
   })
 })

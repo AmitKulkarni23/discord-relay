@@ -64,3 +64,52 @@ export function nextProbe(passed: number, failed: number, precisionPct: number):
   const middle = Math.round((passed + failed) / 200) * 100
   return middle > passed && middle < failed ? middle : null
 }
+
+export type SearchResult = {
+  usableMax: number | null
+  /** True only when `usableMax` passed every repeat and a higher count was seen to fail. */
+  confirmed: boolean
+  invalidAt: number | null
+}
+
+/**
+ * Narrows the gap a ramp left between its last pass and first failure, then repeats the result, because
+ * runs vary. A count that fails a repeat counts as a failure and the search continues below it.
+ */
+export async function findUsableMax(
+  ramp: Pick<RampSummary, 'usableMax' | 'firstNotPassing'>,
+  tryCount: (consumers: number) => Promise<Verdict>,
+  options: { precisionPct: number; repeats: number; maxTries: number },
+): Promise<SearchResult> {
+  let passed = ramp.usableMax ?? 0
+  let failed = ramp.firstNotPassing
+  const found = (confirmed: boolean, invalidAt: number | null = null): SearchResult => ({ usableMax: passed || null, confirmed, invalidAt })
+  if (failed === null) return found(false)
+
+  let tries = 0
+  while (tries < options.maxTries) {
+    const probe = nextProbe(passed, failed, options.precisionPct)
+    if (probe !== null) {
+      tries++
+      const verdict = await tryCount(probe)
+      if (verdict === 'INVALID') return found(false, probe)
+      if (verdict === 'PASS') passed = probe
+      else failed = probe
+      continue
+    }
+    if (passed === 0) return found(false)
+    let held = true
+    for (let i = 0; i < options.repeats && held; i++) {
+      if (tries >= options.maxTries) return found(false)
+      tries++
+      const verdict = await tryCount(passed)
+      if (verdict === 'INVALID') return found(false, passed)
+      held = verdict === 'PASS'
+    }
+    if (held) return found(true)
+    // It did not hold, so it is the new failure, and nothing below it has been shown to pass yet.
+    failed = passed
+    passed = Math.floor((passed * (1 - (options.precisionPct * 2) / 100)) / 100) * 100
+  }
+  return found(false)
+}

@@ -7,7 +7,7 @@ type Conn = { tail: string; responded: boolean; live: boolean; last: number; inW
 type Socket = Bun.Socket<Conn>
 
 export type WorkerCommand =
-  | { type: 'open'; host: string; ports: number[]; tls: boolean; count: number; perSec: number; worker: number; first: number }
+  | { type: 'open'; host: string; ports: number[]; tls: boolean; channelIds: string[]; count: number; perSec: number; worker: number; first: number }
   | { type: 'window'; from: number; offsetMs: number }
   | { type: 'end'; to: number; graceMs: number }
   | { type: 'close' }
@@ -123,7 +123,7 @@ async function open(cmd: Extract<WorkerCommand, { type: 'open' }>): Promise<void
   for (let i = 0; i < cmd.count; i++) {
     const n = cmd.first + i
     const request =
-      `GET /events HTTP/1.1\r\nHost: ${cmd.host}\r\nAccept: text/event-stream\r\n` +
+      `GET /events?channel=${cmd.channelIds[n % cmd.channelIds.length]} HTTP/1.1\r\nHost: ${cmd.host}\r\nAccept: text/event-stream\r\n` +
       // Unique per connection so the per-IP cap does not apply. Only works without Railway's proxy in the path, which sets this header itself.
       `X-Real-IP: 10.${cmd.worker}.${(n >> 8) & 255}.${n & 255}\r\nConnection: keep-alive\r\n\r\n`
     awaitingResponse++

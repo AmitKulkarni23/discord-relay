@@ -9,7 +9,7 @@ import { createLoadControl } from './producer.ts'
 
 const port = Number(process.env.PORT ?? 3100)
 const bufferSize = Number(process.env.BUFFER_SIZE ?? 100)
-const CHANNEL = '1301000000000000001'
+const channelIds = Array.from({ length: Number(process.env.CHANNELS ?? 1) }, (_, i) => String(1301000000000000001n + BigInt(i)))
 
 const hub = createHub(bufferSize)
 
@@ -20,14 +20,14 @@ for (let i = 0; i < listeners; i++) {
   startServer({
     port: i === 0 ? port : port + 1 + i,
     hub,
-    channelIds: [CHANNEL],
+    channelIds,
     flags: () => DEFAULT_FLAGS,
     isDiscordConnected: () => true,
-    channels: () => [{ id: CHANNEL, name: 'load-test' }],
+    channels: () => channelIds.map((id, i) => ({ id, name: `load-test-${i}` })),
   })
 }
 
-const control = createLoadControl(hub, CHANNEL, bufferSize)
+const control = createLoadControl(hub, channelIds, bufferSize)
 
 Bun.serve({
   port: port + 1,

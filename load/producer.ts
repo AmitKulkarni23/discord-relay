@@ -13,13 +13,12 @@ const CONTENT = 'Simulated load test message from the DiscordRelay harness, not 
 
 export type LoadControl = { stats: () => Response; setRate: (perSec: number, msgBytes: number) => void }
 
-export function createLoadControl(hub: Hub, channelId: string, bufferSize: number): LoadControl {
+export function createLoadControl(hub: Hub, channelIds: string[], bufferSize: number): LoadControl {
   let seq = 0
   let content = CONTENT
 
   /** By default a typical text message, about 470 bytes as an SSE event. */
-  function nextMsg(): Msg {
-    seq++
+  function makeMsg(channelId: string): Msg {
     return {
       id: String(ID_BASE + BigInt(seq)),
       channelId,
@@ -29,6 +28,12 @@ export function createLoadControl(hub: Hub, channelId: string, bufferSize: numbe
       editedAt: null,
       attachments: [],
     }
+  }
+
+  /** One message per channel under one sequence number, so a client's gap check works in any channel. */
+  function publishToAll(): void {
+    seq++
+    for (const channelId of channelIds) hub.publish(makeMsg(channelId))
   }
 
   // Everything below resets when stats() reads it, so each sample covers one window.
@@ -57,10 +62,10 @@ export function createLoadControl(hub: Hub, channelId: string, bufferSize: numbe
       clearInterval(publisher)
       if (msgBytes > 0) content = 'x'.repeat(Math.max(0, msgBytes - EVENT_OVERHEAD))
       if (perSec <= 0) return
-      if (seq === 0) for (let i = 0; i < bufferSize; i++) hub.publish(nextMsg())
+      if (seq === 0) for (let i = 0; i < bufferSize; i++) publishToAll()
       publisher = setInterval(() => {
         const start = performance.now()
-        hub.publish(nextMsg())
+        publishToAll()
         const ms = performance.now() - start
         publishes++
         publishMsTotal += ms
@@ -74,6 +79,7 @@ export function createLoadControl(hub: Hub, channelId: string, bufferSize: numbe
       const body = {
         now: Date.now(),
         seq,
+        channelIds,
         clients: hub.subscriberCount(),
         /** Percent of one core since the last read; may pass 100 on several cores. */
         cpuPct: ((cpu.user + cpu.system) / 1000 / (now - lastAt)) * 100,

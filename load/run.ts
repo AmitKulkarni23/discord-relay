@@ -6,7 +6,8 @@
  *   bun load/run.ts --levels 1000,5000,10000 --rate 5 --hold 60 --workers 4
  *
  * --msgBytes sets the size of each SSE event (default about 470). Discord allows 2,000 characters, or 4,000 with
- * Nitro, plus up to 10 attachments, so about 10000 is the realistic top.
+ * Nitro, plus up to 10 attachments, so about 10000 is the realistic top. --channels spreads clients evenly across
+ * that many channels, and --rate is per channel; a remote server sets it with CHANNELS instead.
  */
 import { parseArgs } from 'node:util'
 import type { WorkerCommand, WorkerReply } from './worker.ts'
@@ -21,6 +22,7 @@ const { values } = parseArgs({
     levels: { type: 'string', default: '100,1000,2000,5000,10000' },
     rate: { type: 'string', default: '5' },
     msgBytes: { type: 'string', default: '0' },
+    channels: { type: 'string', default: '1' },
     hold: { type: 'string', default: '60' },
     workers: { type: 'string', default: '4' },
     listeners: { type: 'string', default: '1' },
@@ -46,13 +48,18 @@ const GRACE_MS = 10_000
 
 const localServer = values.host
   ? null
-  : Bun.spawn(['bun', 'load/server.ts'], { env: { ...process.env, PORT: String(port), LISTENERS: String(listeners) }, stdout: 'ignore', stderr: 'inherit' })
+  : Bun.spawn(['bun', 'load/server.ts'], {
+      env: { ...process.env, PORT: String(port), LISTENERS: String(listeners), CHANNELS: values.channels },
+      stdout: 'ignore',
+      stderr: 'inherit',
+    })
 const host = values.host ?? '127.0.0.1'
 const control = values.controlUrl ?? (isPublic ? `https://${host}${values.controlPath}` : `http://${host.includes(':') ? `[${host}]` : host}:${port + 1}`)
 
 type Stats = {
   now: number
   seq: number
+  channelIds: string[]
   clients: number
   cpuPct: number
   rssMb: number
@@ -150,13 +157,26 @@ void localServer?.exited.then(code => {
   stop(1)
 })
 
-await waitForServer()
+const { channelIds } = await waitForServer()
 const offsetMs = await clockOffset()
 await fetch(`${control}/rate?perSec=0&msgBytes=0`, { method: 'POST' })
 await Bun.sleep(1000)
 const baseline = await getStats()
 await fetch(`${control}/rate?perSec=${rate}&msgBytes=${msgBytes}`, { method: 'POST' })
-console.log(JSON.stringify({ event: 'start', host, rate, msgBytes, holdSec, workerCount, levels, baselineRssMb: baseline.rssMb, clockOffsetMs: offsetMs }))
+console.log(
+  JSON.stringify({
+    event: 'start',
+    host,
+    rate,
+    msgBytes,
+    channels: channelIds.length,
+    holdSec,
+    workerCount,
+    levels,
+    baselineRssMb: baseline.rssMb,
+    clockOffsetMs: offsetMs,
+  }),
+)
 console.log(
   'clients | conn s | delivered | p50 ms | p99 ms |  max ms | cpu avg% | cpu max% | rss MB | KB/client | srv lag ms | gen lag ms | gen cpu% | dropped | egress MB/s | result',
 )
@@ -169,7 +189,17 @@ for (const target of levels) {
   const connectStart = performance.now()
   await all((w, i) => {
     const count = Math.floor(toOpen / workerCount) + (i < toOpen % workerCount ? 1 : 0)
-    w.command({ type: 'open', host, ports, tls: isPublic, count, perSec: connectPerSec / workerCount, worker: i, first: Math.floor(opened / workerCount) })
+    w.command({
+      type: 'open',
+      host,
+      ports,
+      tls: isPublic,
+      channelIds,
+      count,
+      perSec: connectPerSec / workerCount,
+      worker: i,
+      first: Math.floor(opened / workerCount),
+    })
     return w.next()
   }).then(replies => {
     const failed = replies.reduce((n, r) => n + (r.type === 'opened' ? r.failed : 0), 0)

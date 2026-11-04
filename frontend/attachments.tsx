@@ -38,13 +38,19 @@ function AttachmentItem({ a }: { a: Attachment }): ReactElement {
   const sized = { width: box?.width ?? MAX_W, maxWidth: '100%', height: 'auto', aspectRatio: box ? `${box.width} / ${box.height}` : undefined }
   const onError = (): void => setFailed(true)
 
-  if (kind === 'audio') {
-    return <Box component="audio" controls preload="metadata" src={a.url} onError={onError} aria-label={a.name} sx={{ width: MAX_W, maxWidth: '100%' }} />
-  }
-
   return (
     <Spoiler hidden={a.name.startsWith('SPOILER_')}>
-      {kind === 'image' ? (
+      {kind === 'audio' ? (
+        <Box
+          component="audio"
+          controls
+          preload="metadata"
+          src={a.url}
+          onError={onError}
+          aria-label={a.name}
+          sx={{ display: 'block', width: MAX_W, maxWidth: '100%' }}
+        />
+      ) : kind === 'image' ? (
         <Link href={a.url} target="_blank" rel="noopener noreferrer" sx={{ display: 'block', borderRadius: 1 }}>
           <Box
             component="img"

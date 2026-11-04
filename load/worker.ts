@@ -3,11 +3,23 @@
  * message in the measured window, its delivery time and whether any were missed. Raw sockets
  * because Bun's fetch allows 256 concurrent requests by default. Driven over IPC by run.ts.
  */
-type Conn = { tail: string; responded: boolean; live: boolean; last: number; inWindow: number; gaps: number; dups: number }
+type Conn = { tail: string; responded: boolean; live: boolean; last: number; inWindow: number; gaps: number; dups: number; slow: boolean }
 type Socket = Bun.Socket<Conn>
 
 export type WorkerCommand =
-  | { type: 'open'; host: string; ports: number[]; tls: boolean; channelIds: string[]; count: number; perSec: number; worker: number; first: number }
+  | {
+      type: 'open'
+      host: string
+      ports: number[]
+      tls: boolean
+      channelIds: string[]
+      count: number
+      perSec: number
+      worker: number
+      first: number
+      slowPct: number
+      slowMode: string
+    }
   | { type: 'window'; from: number; offsetMs: number }
   | { type: 'end'; to: number; graceMs: number }
   | { type: 'close' }
@@ -26,6 +38,7 @@ export type WorkerReply =
       lagMsMax: number
       cpuPct: number
       rxBytes: number
+      slowTotal: number
     }
 
 const send = (reply: WorkerReply) => process.send?.(reply)
@@ -37,6 +50,9 @@ const CHUNK_FRAMING = /\r\n[0-9a-f]+\r\n/g
 
 const conns = new Set<Socket>()
 let closed = 0
+/** Slow clients opened so far. They are left out of every delivery figure. */
+let slowTotal = 0
+let crawler: ReturnType<typeof setInterval> | undefined
 let statuses: Record<string, number> = {}
 let awaitingResponse = 0
 let failedOpen = 0
@@ -80,6 +96,12 @@ function onData(s: Socket, buf: Buffer): void {
       return
     }
   }
+  if (conn.slow) {
+    // Stay paused after each read: a stopped client never resumes, and a crawling one gets one read per crawl tick.
+    conn.tail = ''
+    s.pause()
+    return
+  }
 
   const body = text.replace(CHUNK_FRAMING, '')
   const now = Date.now()
@@ -110,7 +132,7 @@ function onGone(s: Socket): void {
     failedOpen++
     awaitingResponse--
   }
-  if (conns.delete(s)) closed++
+  if (conns.delete(s) && !s.data.slow) closed++
   maybeOpened()
 }
 
@@ -118,6 +140,12 @@ async function open(cmd: Extract<WorkerCommand, { type: 'open' }>): Promise<void
   statuses = {}
   failedOpen = 0
   opening = true
+  if (cmd.slowMode === 'crawl') {
+    clearInterval(crawler)
+    crawler = setInterval(() => {
+      for (const s of conns) if (s.data.slow) s.resume()
+    }, 1000)
+  }
   const pause = 1000 / cmd.perSec
   const started = performance.now()
   for (let i = 0; i < cmd.count; i++) {
@@ -126,12 +154,14 @@ async function open(cmd: Extract<WorkerCommand, { type: 'open' }>): Promise<void
       `GET /events?channel=${cmd.channelIds[n % cmd.channelIds.length]} HTTP/1.1\r\nHost: ${cmd.host}\r\nAccept: text/event-stream\r\n` +
       // Unique per connection so the per-IP cap does not apply. Only works without Railway's proxy in the path, which sets this header itself.
       `X-Real-IP: 10.${cmd.worker}.${(n >> 8) & 255}.${n & 255}\r\nConnection: keep-alive\r\n\r\n`
+    const slow = n % 100 < cmd.slowPct
+    if (slow) slowTotal++
     awaitingResponse++
     Bun.connect<Conn>({
       hostname: cmd.host,
       tls: cmd.tls,
       port: cmd.ports[n % cmd.ports.length] as number,
-      data: { tail: '', responded: false, live: false, last: 0, inWindow: 0, gaps: 0, dups: 0 },
+      data: { tail: '', responded: false, live: false, last: 0, inWindow: 0, gaps: 0, dups: 0, slow },
       socket: {
         open(s) {
           conns.add(s)
@@ -170,7 +200,7 @@ async function report(cmd: Extract<WorkerCommand, { type: 'end' }>): Promise<voi
   const deadline = performance.now() + cmd.graceMs
   const lagging = () => {
     let n = 0
-    for (const s of conns) if (s.data.last < to) n++
+    for (const s of conns) if (!s.data.slow && s.data.last < to) n++
     return n
   }
   while (lagging() > 0 && performance.now() < deadline) await Bun.sleep(100)
@@ -178,7 +208,10 @@ async function report(cmd: Extract<WorkerCommand, { type: 'end' }>): Promise<voi
   let received = 0
   let gaps = 0
   let dups = 0
+  let live = 0
   for (const s of conns) {
+    if (s.data.slow) continue
+    live++
     received += s.data.inWindow
     gaps += s.data.gaps
     dups += s.data.dups
@@ -186,7 +219,7 @@ async function report(cmd: Extract<WorkerCommand, { type: 'end' }>): Promise<voi
   }
   const cpu = process.cpuUsage(cpuFrom)
   const cpuPct = ((cpu.user + cpu.system) / 1000 / (performance.now() - cpuAt)) * 100
-  send({ type: 'report', live: conns.size, closed, received, gaps, dups, behind: lagging(), histMs: Object.fromEntries(hist), lagMsMax, cpuPct, rxBytes })
+  send({ type: 'report', live, closed, received, gaps, dups, behind: lagging(), histMs: Object.fromEntries(hist), lagMsMax, cpuPct, rxBytes, slowTotal })
   closed = 0
   hist = new Map()
   from = to = Number.POSITIVE_INFINITY

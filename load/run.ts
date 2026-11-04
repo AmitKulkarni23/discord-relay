@@ -8,6 +8,10 @@
  * --msgBytes sets the size of each SSE event (default about 470). Discord allows 2,000 characters, or 4,000 with
  * Nitro, plus up to 10 attachments, so about 10000 is the realistic top. --channels spreads clients evenly across
  * that many channels, and --rate is per channel; a remote server sets it with CHANNELS instead.
+ *
+ * --slowPct makes that share of clients read slowly: --slowMode stop never reads after the headers, crawl takes one
+ * read per second. They are left out of the delivery figures, so a level passes only if everyone else is unaffected.
+ * Filling the 1 MiB limit takes about (1 MiB + socket buffers) / (rate x msgBytes), so hold long enough to see drops.
  */
 import { parseArgs } from 'node:util'
 import type { WorkerCommand, WorkerReply } from './worker.ts'
@@ -23,6 +27,8 @@ const { values } = parseArgs({
     rate: { type: 'string', default: '5' },
     msgBytes: { type: 'string', default: '0' },
     channels: { type: 'string', default: '1' },
+    slowPct: { type: 'string', default: '0' },
+    slowMode: { type: 'string', default: 'stop' },
     hold: { type: 'string', default: '60' },
     workers: { type: 'string', default: '4' },
     listeners: { type: 'string', default: '1' },
@@ -170,6 +176,8 @@ console.log(
     rate,
     msgBytes,
     channels: channelIds.length,
+    slowPct: values.slowPct,
+    slowMode: values.slowMode,
     holdSec,
     workerCount,
     levels,
@@ -178,7 +186,7 @@ console.log(
   }),
 )
 console.log(
-  'clients | conn s | delivered | p50 ms | p99 ms |  max ms | cpu avg% | cpu max% | rss MB | KB/client | srv lag ms | gen lag ms | gen cpu% | dropped | egress MB/s | result',
+  'clients | conn s | delivered | p50 ms | p99 ms |  max ms | cpu avg% | cpu max% | rss MB | KB/client | srv lag ms | gen lag ms | gen cpu% | dropped | egress MB/s | slow gone | result',
 )
 
 let opened = 0
@@ -199,6 +207,8 @@ for (const target of levels) {
       perSec: connectPerSec / workerCount,
       worker: i,
       first: Math.floor(opened / workerCount),
+      slowPct: Number(values.slowPct),
+      slowMode: values.slowMode as string,
     })
     return w.next()
   }).then(replies => {
@@ -242,6 +252,7 @@ for (const target of levels) {
   let genLag = 0
   let genCpu = 0
   let rxBytes = 0
+  let slowTotal = 0
   for (const r of reports) {
     if (r.type !== 'report') continue
     live += r.live
@@ -253,10 +264,14 @@ for (const target of levels) {
     genLag = Math.max(genLag, r.lagMsMax)
     genCpu += r.cpuPct
     rxBytes += r.rxBytes
+    slowTotal += r.slowTotal
     for (const [ms, n] of Object.entries(r.histMs)) hist.set(Number(ms), (hist.get(Number(ms)) ?? 0) + n)
   }
 
-  const expected = target * (to - from)
+  const healthy = target - slowTotal
+  const expected = healthy * (to - from)
+  // A paused socket may never see its close, so the server's count is what shows the drops.
+  const slowGone = Math.max(0, target - (await getStats()).clients)
   const egressMbPerSec = rxBytes / 2 ** 20 / windowSec
   const deliveredPct = (received / expected) * 100
   const p50 = percentile(hist, received, 0.5)
@@ -267,7 +282,7 @@ for (const target of levels) {
   const rssMax = Math.max(...samples.map(s => s.rssMaxMb))
   const lagMax = Math.max(...samples.map(s => s.lagMsMax))
   const kbPerClient = ((last.rssMb - baseline.rssMb) * 1024) / target
-  const passed = received === expected && dropped === 0 && gaps === 0 && p99 <= maxP99Ms && live === target
+  const passed = received === expected && dropped === 0 && gaps === 0 && p99 <= maxP99Ms && live === healthy
   const row = {
     clients: target,
     connectSec,
@@ -285,6 +300,8 @@ for (const target of levels) {
     genCpu,
     dropped,
     egressMbPerSec,
+    slowTotal,
+    slowGone,
     gaps,
     dups,
     behind,
@@ -313,6 +330,7 @@ for (const target of levels) {
       genCpu.toFixed(0).padStart(8),
       String(dropped).padStart(7),
       egressMbPerSec.toFixed(2).padStart(11),
+      String(slowGone).padStart(9),
       passed ? 'PASS' : 'FAIL',
     ].join(' | '),
   )

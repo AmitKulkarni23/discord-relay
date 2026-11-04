@@ -1,5 +1,5 @@
 import { setupDom } from '../dom.ts'
-import { afterEach, beforeEach, describe, expect, it, jest } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, it, jest, mock } from 'bun:test'
 import { act, renderHook } from '@testing-library/react'
 import { useEventStream } from '../../hooks/use-event-stream.ts'
 import { FakeEventSource, makeMsg } from '../fixtures.ts'
@@ -157,6 +157,101 @@ describe('useEventStream', () => {
 
       expect(FakeEventSource.opened).toHaveLength(3)
       random.mockRestore()
+    })
+  })
+
+  describe('when the connection limit is reached', () => {
+    /** Answers the probe, and lets the promise chain behind it settle. */
+    const serve = (status: number, retryAfter?: string): ReturnType<typeof mock> => {
+      const headers = retryAfter ? { 'Retry-After': retryAfter } : undefined
+      const fetchMock = mock(async () => new globalThis.Response(null, { status, headers }))
+      globalThis.fetch = fetchMock as unknown as typeof fetch
+      return fetchMock
+    }
+    const flush = (ms: number): Promise<void> =>
+      act(async () => {
+        jest.advanceTimersByTime(ms)
+        await Promise.resolve()
+        await Promise.resolve()
+        await Promise.resolve()
+      })
+    /** Fails enough times in a row for the next retry to ask the server why. */
+    const failUntilProbing = async (): Promise<void> => {
+      for (let i = 0; i < 3; i++) {
+        fail(FakeEventSource.latest())
+        await flush(i === 2 ? 0 : 30_000)
+      }
+    }
+
+    it('should not spend a request asking why until retries have failed a few times', async () => {
+      const fetchMock = serve(429, '30')
+      renderHook(() => useEventStream(CHANNEL))
+
+      fail(FakeEventSource.latest())
+      await flush(30_000)
+      fail(FakeEventSource.latest())
+      await flush(30_000)
+
+      expect(fetchMock).not.toHaveBeenCalled()
+    })
+
+    it('should say the limit is reached and wait as long as the server asks', async () => {
+      const fetchMock = serve(429, '60')
+      const { result } = renderHook(() => useEventStream(CHANNEL))
+      await failUntilProbing()
+      const opened = FakeEventSource.opened.length
+
+      await flush(30_000)
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      expect(result.current.status).toBe('full')
+      expect(FakeEventSource.opened).toHaveLength(opened)
+
+      await flush(59_999)
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      await flush(1)
+      expect(fetchMock).toHaveBeenCalledTimes(2)
+    })
+
+    it('should reconnect and go live once there is room again', async () => {
+      serve(429, '30')
+      const { result } = renderHook(() => useEventStream(CHANNEL))
+      await failUntilProbing()
+      await flush(30_000)
+      expect(result.current.status).toBe('full')
+
+      serve(200)
+      const opened = FakeEventSource.opened.length
+      await flush(30_000)
+      expect(FakeEventSource.opened).toHaveLength(opened + 1)
+
+      open(FakeEventSource.latest())
+      expect(result.current.status).toBe('live')
+    })
+
+    it('should reconnect as usual when something else is wrong', async () => {
+      globalThis.fetch = mock(async () => {
+        throw new Error('network down')
+      }) as unknown as typeof fetch
+      const { result } = renderHook(() => useEventStream(CHANNEL))
+      await failUntilProbing()
+      const opened = FakeEventSource.opened.length
+
+      await flush(30_000)
+
+      expect(FakeEventSource.opened).toHaveLength(opened + 1)
+      expect(result.current.status).toBe('reconnecting')
+    })
+
+    it('should not connect after the page has gone', async () => {
+      serve(200)
+      const { unmount } = renderHook(() => useEventStream(CHANNEL))
+      await failUntilProbing()
+      const opened = FakeEventSource.opened.length
+
+      unmount()
+      await flush(30_000)
+
+      expect(FakeEventSource.opened).toHaveLength(opened)
     })
   })
 

@@ -2,7 +2,10 @@ import type { ChannelInfo } from '../../backend/types.ts'
 import { isRecord } from './messages.ts'
 
 /** The browser's view of the /events stream and, once it is open, of the bot's Discord connection. */
-export type Status = 'connecting' | 'live' | 'reconnecting' | 'discord'
+export type Status = 'connecting' | 'live' | 'reconnecting' | 'discord' | 'full'
+
+/** How long to wait after a 429 that does not say; matches what the server sends. */
+const LIMIT_WAIT_MS = 30_000
 
 /** Longest wait between reconnects. */
 export const MAX_RETRY_MS = 30_000
@@ -18,6 +21,28 @@ export function retryDelay(attempt: number, random: () => number = Math.random):
 /** What the status chip says just after a reconnect: that the stream is back, and what `?since=` recovered. */
 export function recoveredLabel(caughtUp: number): string {
   return caughtUp === 0 ? 'Back live' : `Back · ${caughtUp} caught up`
+}
+
+/**
+ * Asks /events why a stream keeps failing, because EventSource hides the status code. Returns how long
+ * to wait if the server is refusing this client's connection, or null for any other answer or failure.
+ * A successful answer has opened a stream, so it is closed straight away.
+ */
+export async function limitWaitMs(
+  url: string,
+  signal: AbortSignal,
+  get: (url: string, init: RequestInit) => Promise<Response> = fetch,
+): Promise<number | null> {
+  const probe = new AbortController()
+  try {
+    const res = await get(url, { signal: AbortSignal.any([signal, probe.signal]) })
+    if (res.status !== 429) return null
+    return Number(res.headers.get('Retry-After')) * 1000 || LIMIT_WAIT_MS
+  } catch {
+    return null
+  } finally {
+    probe.abort()
+  }
 }
 
 /** Builds the /events URL. `since` is the newest ID held, so a reconnect gets only newer messages. */

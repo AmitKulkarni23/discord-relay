@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { eventsUrl, fetchConfig, MAX_RETRY_MS, parseConfig, recoveredLabel, retryDelay } from '../../lib/stream.ts'
+import { eventsUrl, fetchConfig, MAX_RETRY_MS, limitWaitMs, parseConfig, recoveredLabel, retryDelay } from '../../lib/stream.ts'
 
 const CHANNEL = '1566584977829900002'
 
@@ -124,6 +124,61 @@ describe('fetchConfig', () => {
       }
 
       expect(await fetchConfig(abort.signal, get, noWait)).toBeNull()
+    })
+  })
+})
+
+describe('limitWaitMs', () => {
+  const answer =
+    (status: number, retryAfter?: string, seen: Array<AbortSignal | null | undefined> = []) =>
+    async (_url: string, init: RequestInit): Promise<Response> => {
+      seen.push(init.signal)
+      return new Response(null, { status, headers: retryAfter ? { 'Retry-After': retryAfter } : undefined })
+    }
+  const live = new AbortController().signal
+
+  describe('when the server refuses with 429', () => {
+    it('should wait as long as Retry-After says', async () => {
+      expect(await limitWaitMs('/events', live, answer(429, '45'))).toBe(45_000)
+    })
+
+    it('should wait 30 seconds when Retry-After is missing or unreadable', async () => {
+      expect(await limitWaitMs('/events', live, answer(429))).toBe(30_000)
+      expect(await limitWaitMs('/events', live, answer(429, 'soon'))).toBe(30_000)
+    })
+  })
+
+  describe('when the server answers anything else', () => {
+    it('should report no limit and close the stream it just opened', async () => {
+      const seen: Array<AbortSignal | null | undefined> = []
+
+      expect(await limitWaitMs('/events', live, answer(200, undefined, seen))).toBeNull()
+      expect(seen[0]?.aborted).toBe(true)
+    })
+
+    it('should report no limit when the request fails', async () => {
+      const failing = async (): Promise<Response> => {
+        throw new Error('network down')
+      }
+
+      expect(await limitWaitMs('/events', live, failing)).toBeNull()
+    })
+  })
+
+  describe('when the caller gives up first', () => {
+    it('should pass that on to the request', async () => {
+      const page = new AbortController()
+      const seen: Array<AbortSignal | null | undefined> = []
+      const hanging = async (_url: string, init: RequestInit): Promise<Response> => {
+        seen.push(init.signal)
+        page.abort()
+        expect(init.signal?.aborted).toBe(true)
+        return new Response(null, { status: 200 })
+      }
+
+      await limitWaitMs('/events', page.signal, hanging)
+
+      expect(seen).toHaveLength(1)
     })
   })
 })

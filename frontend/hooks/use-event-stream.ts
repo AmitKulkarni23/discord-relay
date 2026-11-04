@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { compareIds, type Msg } from '../../backend/types.ts'
 import { addMsg, parseMsg, sortMsgs } from '../lib/messages.ts'
-import { eventsUrl, retryDelay, type Status } from '../lib/stream.ts'
+import { eventsUrl, limitWaitMs, retryDelay, type Status } from '../lib/stream.ts'
 
 /** How long a stream must stay open before reconnect backoff starts over. */
 const STABLE_MS = 30_000
@@ -10,7 +10,10 @@ const CATCH_UP_MS = 1_000
 /** How long the chip says what a reconnect recovered before returning to Live. */
 const RECOVERED_MS = 5_000
 
-type Connection = 'connecting' | 'live' | 'reconnecting'
+/** Failed attempts in a row before spending a request on asking the server why. */
+const PROBE_AFTER = 3
+
+type Connection = 'connecting' | 'live' | 'reconnecting' | 'full'
 
 type EventStream = {
   /** The held messages, oldest first. */
@@ -38,6 +41,7 @@ export function useEventStream(channel: string | null): EventStream {
   }
 
   useEffect(() => {
+    const abort = new AbortController()
     let es: EventSource | undefined
     let retry: ReturnType<typeof setTimeout> | undefined
     let stable: ReturnType<typeof setTimeout> | undefined
@@ -85,12 +89,27 @@ export function useEventStream(channel: string | null): EventStream {
         catchUpUntil = 0
         setRecovered(null)
         setConnection('reconnecting')
-        retry = setTimeout(connect, retryDelay(attempt++))
+        retry = setTimeout(() => void reconnect(), retryDelay(attempt++))
       }
+    }
+
+    // A refused client keeps its reason and waits as told, instead of reconnecting forever with no explanation.
+    const reconnect = async (): Promise<void> => {
+      if (attempt >= PROBE_AFTER) {
+        const wait = await limitWaitMs(eventsUrl(channel, since), abort.signal)
+        if (abort.signal.aborted) return
+        if (wait !== null) {
+          setConnection('full')
+          retry = setTimeout(() => void reconnect(), wait)
+          return
+        }
+      }
+      connect()
     }
 
     connect()
     return () => {
+      abort.abort()
       clearTimeout(retry)
       clearTimeout(stable)
       clearTimeout(recoveredNote)

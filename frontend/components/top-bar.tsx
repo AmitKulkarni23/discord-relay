@@ -25,8 +25,20 @@ function channelLabel(c: ChannelInfo): string {
   return `# ${c.name ?? c.id}`
 }
 
-const STATUS_DOT: Record<Status, string> = { connecting: 'text.secondary', live: 'success.main', reconnecting: 'warning.main', discord: 'warning.main' }
-const STATUS_LABEL: Record<Status, string> = { connecting: 'Connecting', live: 'Live', reconnecting: 'Reconnecting', discord: 'Waiting for Discord' }
+const STATUS_DOT: Record<Status, string> = {
+  connecting: 'text.secondary',
+  live: 'success.main',
+  reconnecting: 'warning.main',
+  discord: 'warning.main',
+  full: 'warning.main',
+}
+const STATUS_LABEL: Record<Status, string> = {
+  connecting: 'Connecting',
+  live: 'Live',
+  reconnecting: 'Reconnecting',
+  discord: 'Waiting for Discord',
+  full: 'Connection limit',
+}
 
 type StatusChipProps = { status: Status; newestId: string | null; recovered: number | null }
 

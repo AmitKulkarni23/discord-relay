@@ -347,7 +347,8 @@ export function startDiscord(deps: DiscordDeps) {
     if (stopped) return
     log.error('watchdog_expired', { reason: 'Gateway disconnected past the watchdog limit; reconnecting with a fresh client' })
     const old = client
-    client = createClient()
+    const next = createClient()
+    client = next
     // Nothing from the old connection may count from here on. Without an 'error' listener, an emitted error would crash.
     old.removeAllListeners()
     old.on(Events.Error, () => {})
@@ -357,12 +358,13 @@ export function startDiscord(deps: DiscordDeps) {
     } catch (err) {
       log.warn('discord_client_destroy_failed', { error: err instanceof Error ? err.message : String(err) })
     }
-    await login(client)
+    // Closing can outlast the next attempt, which replaces `next`, or a stop.
+    if (!stopped && client === next) await login(next)
   }
 
   let client = createClient()
 
-  // Start the countdown now so a login that never becomes ready also restarts the process.
+  // Start the countdown now so a login that never becomes ready is retried too.
   watchdog.disconnected()
 
   return {

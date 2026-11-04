@@ -360,7 +360,7 @@ afterEach(() => {
 /** Runs the real startDiscord and discord.js Client with login and the channel faked, so nothing touches the network. */
 function startFakeDiscord(
   history: MessageLike[],
-  options: { deletesOn?: boolean; historyLimit?: number; watchdogMs?: number; historyRetryMs?: number; loginError?: Error } = {},
+  options: { deletesOn?: boolean; historyLimit?: number; watchdogMs?: number; historyRetryMs?: number; loginError?: Error; holdFirstDestroy?: boolean } = {},
 ) {
   const logs: Array<Record<string, unknown>> = []
   spyOn(console, 'log').mockImplementation((line: string) => {
@@ -374,8 +374,10 @@ function startFakeDiscord(
     if (options.loginError) throw options.loginError
     return 'token'
   })
+  let releaseDestroy = (): void => {}
   const destroy = spyOn(Client.prototype, 'destroy').mockImplementation(async function (this: Client) {
     destroyed.push(this)
+    if (options.holdFirstDestroy && destroyed.length === 1) await new Promise<void>(resolve => (releaseDestroy = resolve))
   })
   restoreClient.push(() => {
     login.mockRestore()
@@ -414,7 +416,21 @@ function startFakeDiscord(
     },
   }
   const fetchChannel = spyOn(client.channels, 'fetch').mockResolvedValue(channel as never)
-  return { client, channel, clients, destroyed, fatal, discord, published, removed, buffered, fetching, logs, fetchChannel }
+  return {
+    client,
+    channel,
+    clients,
+    destroyed,
+    releaseDestroy: () => releaseDestroy(),
+    fatal,
+    discord,
+    published,
+    removed,
+    buffered,
+    fetching,
+    logs,
+    fetchChannel,
+  }
 }
 
 /** Polls until `cond` holds, failing after a second. */
@@ -672,6 +688,30 @@ describe('startDiscord', () => {
 
       expect(fake.clients).toHaveLength(count)
       stop = async () => {}
+    })
+
+    it('should not log in after being told to stop while the old client was closing', async () => {
+      const fake = startFakeDiscord([], { watchdogMs: 5, holdFirstDestroy: true })
+      await waitFor(() => fake.destroyed.length === 1)
+
+      await fake.discord.stop()
+      const logins = fake.clients.length
+      fake.releaseDestroy()
+      await Bun.sleep(5)
+
+      expect(fake.clients).toHaveLength(logins)
+      stop = async () => {}
+    })
+
+    it('should log in only the newest client when closing the old one outlasts the next attempt', async () => {
+      const fake = startFakeDiscord([], { watchdogMs: 5, holdFirstDestroy: true })
+      stop = fake.discord.stop
+      await waitFor(() => fake.clients.length >= 2)
+
+      fake.releaseDestroy()
+      await Bun.sleep(5)
+
+      expect(new Set(fake.clients).size).toBe(fake.clients.length)
     })
 
     it('should ignore events from the client it replaced', async () => {

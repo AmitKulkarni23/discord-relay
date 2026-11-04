@@ -30,9 +30,16 @@ export async function startFlags(env: Record<string, string | undefined>): Promi
     return () => DEFAULT_FLAGS
   }
 
-  return () => ({
-    attachments: flags.getBoolean('attachments', undefined, DEFAULT_FLAGS.attachments),
-    editsDeletes: flags.getBoolean('edits-deletes', undefined, DEFAULT_FLAGS.editsDeletes),
-    debugPanel: flags.getBoolean('debug-panel', undefined, DEFAULT_FLAGS.debugPanel),
-  })
+  return () => {
+    // Event listeners read flags, where a throw would take the process down.
+    try {
+      return {
+        attachments: flags.getBoolean('attachments', undefined, DEFAULT_FLAGS.attachments),
+        editsDeletes: flags.getBoolean('edits-deletes', undefined, DEFAULT_FLAGS.editsDeletes),
+        debugPanel: flags.getBoolean('debug-panel', undefined, DEFAULT_FLAGS.debugPanel),
+      }
+    } catch {
+      return DEFAULT_FLAGS
+    }
+  }
 }

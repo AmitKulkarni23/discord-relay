@@ -4,8 +4,8 @@ import ButtonBase from '@mui/material/ButtonBase'
 import Link from '@mui/material/Link'
 import SvgIcon from '@mui/material/SvgIcon'
 import Typography from '@mui/material/Typography'
-import type { Attachment } from '../backend/types.ts'
-import { attachmentKind, fitBox, formatBytes, isDiscordCdn } from './media.ts'
+import type { Attachment } from '../../backend/types.ts'
+import { attachmentKind, fitBox, formatBytes, isDiscordCdn } from '../lib/media.ts'
 
 /** Largest box an inline image or video takes in the feed. */
 const MAX_W = 400

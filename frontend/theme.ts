@@ -13,6 +13,16 @@ export const GROUND = { dark: '#0D0E11', light: '#F7F8FA' }
 /** Code text. A named stack, because a bare `monospace` makes browsers shrink the text. */
 export const MONO = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace'
 
+/** Height of the top bar's toolbar; the bar is one pixel taller with its border. */
+export const BAR_HEIGHT = 56
+
+/** Fingers need bigger targets than a mouse does. */
+export const COARSE = '@media (pointer: coarse)'
+/** Below this width the top bar cannot hold the product name, the channel and the longest status. */
+export const NARROW = '@media (max-width: 359px)'
+/** Out of sight on a narrow screen, still read by screen readers. */
+export const VISUALLY_HIDDEN = { position: 'absolute', width: '1px', height: '1px', overflow: 'hidden', clip: 'rect(0 0 0 0)' }
+
 export const theme = createTheme({
   cssVariables: { colorSchemeSelector: 'data-color-scheme' },
   colorSchemes: {
@@ -44,6 +54,7 @@ export const theme = createTheme({
     body1: { fontSize: 15, lineHeight: 1.5 },
     body2: { fontSize: 14, lineHeight: 1.45 },
     caption: { fontSize: 12, lineHeight: 1.4, fontVariantNumeric: 'tabular-nums' },
+    subtitle1: { fontSize: 15, fontWeight: 600, lineHeight: 1.3 },
     subtitle2: { fontSize: 14, fontWeight: 600, lineHeight: 1.3 },
   },
   components: {

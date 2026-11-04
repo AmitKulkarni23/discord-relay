@@ -26,7 +26,7 @@ flowchart LR
 | Flags | `backend/flags.ts` | Reads Railway Feature Flags through the `railway` SDK; every flag falls back to off. |
 | HTTP server | `backend/server.ts` | The entry point. Runs `Bun.serve` for the page, `/events`, `/health` and `/config`, and handles SIGTERM. It is the only place dependencies are wired: it creates the hub and passes it, the config and the publish function to the bot and the routes. |
 | Types | `backend/types.ts` | `Msg` and `Attachment`, shared with the frontend. |
-| Frontend | `frontend/app.tsx` | React + MUI page. Opens one `EventSource`, keeps up to 500 messages keyed by ID, and shows connection status. |
+| Frontend | `frontend/` | React + MUI page, wired in `app.tsx`. `hooks/use-event-stream.ts` opens one `EventSource`, keeps up to 500 messages keyed by ID, and shows connection status. |
 
 ## Patterns
 

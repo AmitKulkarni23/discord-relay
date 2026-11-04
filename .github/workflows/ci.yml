@@ -1,4 +1,4 @@
-# Checks formatting, typechecks and tests every push and pull request.
+# Checks formatting and the rules of React hooks, typechecks and tests every push and pull request.
 # Railway's "Wait for CI" holds each deploy until this workflow passes.
 name: CI
 
@@ -16,6 +16,7 @@ jobs:
           bun-version: 1.4.2
       - run: bun install --frozen-lockfile
       - run: bun run format:check
+      - run: bun run lint
       - run: bun run typecheck
       # Fails if any file drops below the per-file floor in bunfig.toml.
       - run: bun run test --coverage

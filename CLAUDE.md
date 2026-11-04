@@ -42,11 +42,13 @@ discord-relay/
 │   └── tests/             # mirrors backend/: tests/hub.test.ts, tests/sources/discord.test.ts
 ├── frontend/
 │   ├── index.html
-│   ├── feed.ts            # pure message logic: dedupe, cap, grouping, /config parsing (tested)
-│   ├── media.ts           # pure attachment helpers: type, size, fit, CDN check (tested)
-│   ├── attachments.tsx    # images, video, audio, file cards
-│   ├── theme.ts           # MUI theme
-│   └── app.tsx            # React + MUI
+│   ├── main.tsx           # entry point: root, StrictMode, theme provider
+│   ├── app.tsx            # wires the selected channel to its stream, feed and top bar
+│   ├── theme.ts           # MUI theme and shared tokens: all colours, bar height, media queries
+│   ├── components/        # top-bar, feed, feed-states, message-row, message-text, attachments
+│   ├── hooks/             # use-event-stream, use-page-config, use-stick-to-bottom
+│   ├── lib/               # pure, tested logic: messages, markup, stream, media
+│   └── tests/             # mirrors frontend/: tests/lib/markup.test.ts
 ├── load/                  # load test: fake producer + raw-socket clients (not deployed, results in docs/load_test_results.md)
 │   ├── run.ts             # ramps client counts, stops at the first failing level
 │   ├── server.ts          # real hub and server, fake producer, control port
@@ -102,6 +104,7 @@ bun install
 bun run dev        # local server with hot reload
 bun run format     # Prettier: format in place
 bun run format:check  # Prettier: fail if anything is unformatted
+bun run lint       # ESLint: the rules of React hooks only
 bun run typecheck
 bun test           # unit + integration, no network
 bun test --coverage  # per-file floor in bunfig.toml
@@ -118,7 +121,7 @@ railway config apply   # apply them
 ## Testing
 
 - **Unit + integration** (`bun test`): no Discord, no network. Integration tests run the real `Bun.serve` with a fake source publishing to the hub.
-- GitHub Actions runs the Prettier check, typecheck and `bun test --coverage` on every push and PR, and fails the build if any of them fail. `bun audit` runs too but only reports.
+- GitHub Actions runs the Prettier check, the hooks lint, typecheck and `bun test --coverage` on every push and PR, and fails the build if any of them fail. `bun audit` runs too but only reports.
 - Dependabot opens weekly grouped PRs for npm packages and GitHub Actions; each runs CI and nothing deploys until merged.
 - Write the test first, see it fail, then implement.
 

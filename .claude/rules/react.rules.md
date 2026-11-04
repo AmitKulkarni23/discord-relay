@@ -14,7 +14,8 @@ Rule names in parentheses are from Vercel's react-best-practices. Next.js, serve
 - Messages MUST be stored keyed by Discord message ID so a resent message replaces, never duplicates.
 - The list MUST hold at most 500 messages; the oldest are removed.
 - Derived values (sorted list, counts) MUST be computed during render, not in an effect (`rerender-derived-state-no-effect`).
-- Message logic (dedupe, cap) SHOULD live in a pure function so it can be unit-tested without React.
+- Message logic (dedupe, cap) SHOULD live in a pure function in `frontend/lib/` so it can be unit-tested without React.
+- Effects and subscriptions SHOULD live in a hook in `frontend/hooks/`, and a component MUST NOT write to a ref it was handed.
 
 ## Components
 
@@ -33,6 +34,6 @@ Rule names in parentheses are from Vercel's react-best-practices. Next.js, serve
 ## MUI
 
 - Styling MUST use MUI components with `sx` props. CSS files, CSS Modules and Tailwind MUST NOT be used.
-- Colors MUST come from the theme in `frontend/theme.ts`. Hex values MUST NOT appear in components.
+- Colors and sizes shared across components MUST come from `frontend/theme.ts`. Hex values MUST NOT appear in components.
 - MUI MUST be imported per component (`@mui/material/Button`), not from the `@mui/material` barrel (`bundle-barrel-imports`).
 - MUI components MUST be preferred over hand-built equivalents.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { attachmentKind, fitBox, formatBytes, isDiscordCdn } from './media.ts'
+import { attachmentKind, fitBox, formatBytes, isDiscordCdn } from '../../lib/media.ts'
 
 describe('isDiscordCdn', () => {
   describe('when the URL is on a Discord CDN host', () => {

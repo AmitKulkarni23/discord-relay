@@ -135,7 +135,7 @@ function TopBar({ channels, activeId, onSelect, status }: TopBarProps): ReactEle
         <Typography component="h1" variant="subtitle2" sx={{ fontSize: 15, color: 'text.primary', flexShrink: 0 }}>
           DiscordRelay
         </Typography>
-        <Divider orientation="vertical" flexItem sx={{ my: 2, display: channels.length > 1 || active ? { xs: 'none', sm: 'block' } : 'none' }} />
+        <Divider orientation="vertical" flexItem sx={{ my: 2, display: channels.length > 1 ? { xs: 'none', sm: 'block' } : active ? 'block' : 'none' }} />
         {channels.length > 1 ? (
           <Tabs
             value={activeId ?? false}
@@ -165,7 +165,7 @@ function TopBar({ channels, activeId, onSelect, status }: TopBarProps): ReactEle
             ))}
           </Tabs>
         ) : active ? (
-          <Typography variant="body2" noWrap sx={{ color: 'text.secondary', display: { xs: 'none', sm: 'block' } }}>
+          <Typography variant="body2" noWrap sx={{ color: 'text.secondary' }}>
             {channelLabel(active)}
           </Typography>
         ) : null}

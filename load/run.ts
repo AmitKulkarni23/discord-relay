@@ -12,6 +12,10 @@
  * --slowPct makes that share of clients read slowly: --slowMode stop never reads after the headers, crawl takes one
  * read per second. They are left out of the delivery figures, so a level passes only if everyone else is unaffected.
  * --burst publishes that many messages in one go every --burstEverySec, instead of --rate, and silence between.
+ * --churnPerSec closes and reconnects that many clients every second; a 15 minute cut of N clients is N / 900.
+ * --storm closes every client at once halfway through the hold, as a deploy does, and they return over --stormJitterMs.
+ * Reconnects use ?since=, so a missed message counts as a gap, and a message held up by a reconnect counts towards
+ * p99: raise --maxP99Ms to about --stormJitterMs for a storm. The server stays up, so its buffer survives, unlike a real restart.
  * Filling the 1 MiB limit takes about (1 MiB + socket buffers) / (rate x msgBytes), so hold long enough to see drops.
  */
 import { parseArgs } from 'node:util'
@@ -30,6 +34,9 @@ const { values } = parseArgs({
     channels: { type: 'string', default: '1' },
     burst: { type: 'string', default: '0' },
     burstEverySec: { type: 'string', default: '10' },
+    churnPerSec: { type: 'string', default: '0' },
+    storm: { type: 'boolean', default: false },
+    stormJitterMs: { type: 'string', default: '1000' },
     slowPct: { type: 'string', default: '0' },
     slowMode: { type: 'string', default: 'stop' },
     hold: { type: 'string', default: '60' },
@@ -184,6 +191,9 @@ console.log(
     msgBytes,
     burst,
     burstEverySec,
+    churnPerSec: values.churnPerSec,
+    storm: values.storm,
+    stormJitterMs: values.stormJitterMs,
     channels: channelIds.length,
     slowPct: values.slowPct,
     slowMode: values.slowMode,
@@ -195,7 +205,7 @@ console.log(
   }),
 )
 console.log(
-  'clients | conn s | delivered | p50 ms | p99 ms |  max ms | cpu avg% | cpu max% | rss MB | KB/client | srv lag ms | gen lag ms | gen cpu% | dropped | egress MB/s | slow gone | result',
+  'clients | conn s | delivered | p50 ms | p99 ms |  max ms | cpu avg% | cpu max% | rss MB | KB/client | srv lag ms | gen lag ms | gen cpu% | dropped | egress MB/s | slow gone | reconnects | recon fails | recon max ms | result',
 )
 
 let opened = 0
@@ -236,6 +246,16 @@ for (const target of levels) {
   const from = (await getStats()).seq + (burst ? burst * Math.max(1, Math.ceil(2 / burstEverySec)) : Math.ceil(rate * 2))
   for (const w of workers) w.command({ type: 'window', from, offsetMs })
   const windowStart = performance.now()
+  const churnPerSec = Number(values.churnPerSec)
+  if (churnPerSec) for (const w of workers) w.command({ type: 'churn', perSec: churnPerSec / workerCount })
+  if (values.storm) {
+    setTimeout(
+      () => {
+        for (const w of workers) w.command({ type: 'storm', jitterMs: Number(values.stormJitterMs) })
+      },
+      (holdSec * 1000) / 2,
+    )
+  }
   const samples: Stats[] = []
   const holdEnd = performance.now() + holdSec * 1000
   while (performance.now() < holdEnd) {
@@ -262,6 +282,9 @@ for (const target of levels) {
   let genCpu = 0
   let rxBytes = 0
   let slowTotal = 0
+  let reconnects = 0
+  let reconnectFailed = 0
+  let reconnectMsMax = 0
   for (const r of reports) {
     if (r.type !== 'report') continue
     live += r.live
@@ -274,6 +297,9 @@ for (const target of levels) {
     genCpu += r.cpuPct
     rxBytes += r.rxBytes
     slowTotal += r.slowTotal
+    reconnects += r.reconnects
+    reconnectFailed += r.reconnectFailed
+    reconnectMsMax = Math.max(reconnectMsMax, r.reconnectMsMax)
     for (const [ms, n] of Object.entries(r.histMs)) hist.set(Number(ms), (hist.get(Number(ms)) ?? 0) + n)
   }
 
@@ -311,6 +337,9 @@ for (const target of levels) {
     egressMbPerSec,
     slowTotal,
     slowGone,
+    reconnects,
+    reconnectFailed,
+    reconnectMsMax,
     gaps,
     dups,
     behind,
@@ -340,6 +369,9 @@ for (const target of levels) {
       String(dropped).padStart(7),
       egressMbPerSec.toFixed(2).padStart(11),
       String(slowGone).padStart(9),
+      String(reconnects).padStart(10),
+      String(reconnectFailed).padStart(11),
+      reconnectMsMax.toFixed(0).padStart(12),
       passed ? 'PASS' : 'FAIL',
     ].join(' | '),
   )

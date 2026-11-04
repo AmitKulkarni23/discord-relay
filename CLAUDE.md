@@ -50,6 +50,7 @@ discord-relay/
 ├── load/                  # load test: fake producer + raw-socket clients (not deployed, results in docs/load_test_results.md)
 │   ├── run.ts             # ramps client counts, stops at the first failing level
 │   ├── server.ts          # real hub and server, fake producer, control port
+│   ├── producer.ts        # fake messages and resource stats
 │   └── worker.ts          # one generator process
 ├── docs/
 │   ├── system-specs/      # architecture, failure modes, decisions
@@ -105,7 +106,7 @@ bun run typecheck
 bun test           # unit + integration, no network
 bun test --coverage  # per-file floor in bunfig.toml
 bun audit          # known vulnerabilities
-bun load/run.ts --levels 1000,5000 --rate 5   # local load test, never against production
+bun load/run.ts --levels 1000,5000 --rate 5   # local load test, never against production. Knobs in docs/load_test_results.md
 ```
 
 ```bash

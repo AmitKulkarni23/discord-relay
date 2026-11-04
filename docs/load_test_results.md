@@ -6,6 +6,19 @@
 bun load/run.ts --levels 1000,5000,10000 --rate 5 --hold 45
 ```
 
+Knobs, which can be combined. The results below predate them and used the defaults.
+
+| Knob | What it tests | Example |
+|---|---|---|
+| `--msgBytes` | Bandwidth and egress with large messages. About 10000 is the realistic top | `--msgBytes 4000` |
+| `--channels` | The per-channel hub and subscriptions. Clients spread evenly, and `--rate` is per channel | `--channels 4` |
+| `--slowPct`, `--slowMode` | The 1 MiB drop. `stop` never reads, `crawl` takes one read per second. They are left out of delivery, and `slow gone` counts the drops | `--slowPct 10 --slowMode stop --rate 50 --msgBytes 10000 --hold 25` |
+| `--burst`, `--burstEverySec` | Many messages in one go, then silence, instead of `--rate` | `--burst 200 --burstEverySec 5 --hold 21` |
+| `--churnPerSec` | Clients closing and reconnecting with `?since=` all the time. A 15 minute cut of N clients is N / 900 per second | `--churnPerSec 11` |
+| `--storm`, `--stormJitterMs` | Every client cut at once halfway through the hold, as a deploy does. The server stays up, so unlike a real restart its buffer survives | `--storm --maxP99Ms 2000` |
+
+A message held up by a reconnect counts towards p99, so raise `--maxP99Ms` for `--churnPerSec` and `--storm`.
+
 ## Clean run through the public URL (2026-11-03 11:07 PST)
 
 One unattended run with no other load test nearby, against the live `discord-relay` service and its real bot. It used the same temporary build as the runs below, 3 generators in a separate Railway environment, 5 msg/s and a 45 s hold per level. Latency cells show the highest generator.

@@ -3,7 +3,24 @@
  * message in the measured window, its delivery time and whether any were missed. Raw sockets
  * because Bun's fetch allows 256 concurrent requests by default. Driven over IPC by run.ts.
  */
-type Conn = { tail: string; responded: boolean; live: boolean; last: number; inWindow: number; gaps: number; dups: number; slow: boolean }
+type Conn = {
+  n: number
+  tail: string
+  responded: boolean
+  live: boolean
+  last: number
+  inWindow: number
+  gaps: number
+  dups: number
+  slow: boolean
+  /** When a reconnect started; 0 while connected or on the first connection. */
+  goneAt: number
+  /** True from a deliberate close until its socket reports gone. */
+  dropping: boolean
+  redialMs: number
+  attempt: number
+  retry?: ReturnType<typeof setTimeout>
+}
 type Socket = Bun.Socket<Conn>
 
 export type WorkerCommand =
@@ -22,7 +39,11 @@ export type WorkerCommand =
     }
   | { type: 'window'; from: number; offsetMs: number }
   | { type: 'end'; to: number; graceMs: number }
+  | { type: 'churn'; perSec: number }
+  | { type: 'storm'; jitterMs: number }
   | { type: 'close' }
+
+type OpenCommand = Extract<WorkerCommand, { type: 'open' }>
 
 export type WorkerReply =
   | { type: 'opened'; ok: number; failed: number; statuses: Record<string, number> }
@@ -39,17 +60,28 @@ export type WorkerReply =
       cpuPct: number
       rxBytes: number
       slowTotal: number
+      reconnects: number
+      reconnectFailed: number
+      reconnectMsMax: number
     }
 
 const send = (reply: WorkerReply) => process.send?.(reply)
 
 // Simulated messages only: on the live service the buffer can also hold real Discord history.
+const ID_PREFIX = '1900000000'
 const EVENT = /id: 1900000000(\d{10})\ndata: [^\n]*?"createdAt":"([^"]+)"[^\n]*\n\n/g
 /** HTTP chunk framing. A proxy may split an event across chunks, which would otherwise hide it from EVENT. */
 const CHUNK_FRAMING = /\r\n[0-9a-f]+\r\n/g
 
 const conns = new Set<Socket>()
 let closed = 0
+let target: OpenCommand | undefined
+/** Connections between a drop and their new stream opening. */
+let reconnecting = 0
+let reconnects = 0
+let reconnectFailed = 0
+let reconnectMsMax = 0
+let churn: ReturnType<typeof setInterval> | undefined
 /** Slow clients opened so far. They are left out of every delivery figure. */
 let slowTotal = 0
 let crawler: ReturnType<typeof setInterval> | undefined
@@ -75,6 +107,14 @@ function maybeOpened(): void {
 function responded(conn: Conn, status: string): void {
   conn.responded = true
   conn.live = status === '200'
+  if (conn.goneAt) {
+    if (!conn.live) return
+    reconnects++
+    reconnecting--
+    reconnectMsMax = Math.max(reconnectMsMax, performance.now() - conn.goneAt)
+    conn.goneAt = conn.attempt = 0
+    return
+  }
   statuses[status] = (statuses[status] ?? 0) + 1
   awaitingResponse--
   maybeOpened()
@@ -127,6 +167,20 @@ function onData(s: Socket, buf: Buffer): void {
 }
 
 function onGone(s: Socket): void {
+  const conn = s.data
+  if (conn.goneAt) {
+    conns.delete(s)
+    if (conn.retry) return
+    // A failed attempt backs off the way the page does; a deliberate close waits as it was told to.
+    if (!conn.dropping) reconnectFailed++
+    const wait = conn.dropping ? conn.redialMs : Math.random() * Math.min(1000 * 2 ** conn.attempt++, 30_000)
+    conn.dropping = false
+    conn.retry = setTimeout(() => {
+      conn.retry = undefined
+      dial(conn)
+    }, wait)
+    return
+  }
   if (!s.data.responded) {
     s.data.responded = true
     failedOpen++
@@ -136,7 +190,7 @@ function onGone(s: Socket): void {
   maybeOpened()
 }
 
-async function open(cmd: Extract<WorkerCommand, { type: 'open' }>): Promise<void> {
+async function open(cmd: OpenCommand): Promise<void> {
   statuses = {}
   failedOpen = 0
   opening = true
@@ -146,43 +200,66 @@ async function open(cmd: Extract<WorkerCommand, { type: 'open' }>): Promise<void
       for (const s of conns) if (s.data.slow) s.resume()
     }, 1000)
   }
+  target = cmd
   const pause = 1000 / cmd.perSec
   const started = performance.now()
   for (let i = 0; i < cmd.count; i++) {
     const n = cmd.first + i
-    const request =
-      `GET /events?channel=${cmd.channelIds[n % cmd.channelIds.length]} HTTP/1.1\r\nHost: ${cmd.host}\r\nAccept: text/event-stream\r\n` +
-      // Unique per connection so the per-IP cap does not apply. Only works without Railway's proxy in the path, which sets this header itself.
-      `X-Real-IP: 10.${cmd.worker}.${(n >> 8) & 255}.${n & 255}\r\nConnection: keep-alive\r\n\r\n`
     const slow = n % 100 < cmd.slowPct
     if (slow) slowTotal++
     awaitingResponse++
-    Bun.connect<Conn>({
-      hostname: cmd.host,
-      tls: cmd.tls,
-      port: cmd.ports[n % cmd.ports.length] as number,
-      data: { tail: '', responded: false, live: false, last: 0, inWindow: 0, gaps: 0, dups: 0, slow },
-      socket: {
-        open(s) {
-          conns.add(s)
-          s.write(request)
-        },
-        data: onData,
-        close: onGone,
-        error(_s, err) {
-          console.error(JSON.stringify({ event: 'socket_error', error: err.message }))
-        },
-        connectError(s) {
-          onGone(s)
-        },
-      },
-    }).catch(() => {})
+    dial({ n, tail: '', responded: false, live: false, last: 0, inWindow: 0, gaps: 0, dups: 0, slow, goneAt: 0, dropping: false, redialMs: 0, attempt: 0 })
     const due = started + (i + 1) * pause
     const wait = due - performance.now()
     if (wait > 1) await Bun.sleep(wait)
   }
   opening = false
   maybeOpened()
+}
+
+/** Opens a connection. A reconnect passes ?since= with the newest message held, as the page does. */
+function dial(conn: Conn): void {
+  const cmd = target as OpenCommand
+  const { n } = conn
+  conn.tail = ''
+  conn.responded = conn.live = false
+  const since = conn.last ? `&since=${ID_PREFIX}${String(conn.last).padStart(10, '0')}` : ''
+  const request =
+    `GET /events?channel=${cmd.channelIds[n % cmd.channelIds.length]}${since} HTTP/1.1\r\nHost: ${cmd.host}\r\nAccept: text/event-stream\r\n` +
+    // Unique per connection so the per-IP cap does not apply. Only works without Railway's proxy in the path, which sets this header itself.
+    `X-Real-IP: 10.${cmd.worker}.${(n >> 8) & 255}.${n & 255}\r\nConnection: keep-alive\r\n\r\n`
+  Bun.connect<Conn>({
+    hostname: cmd.host,
+    tls: cmd.tls,
+    port: cmd.ports[n % cmd.ports.length] as number,
+    data: conn,
+    socket: {
+      open(s) {
+        conns.add(s)
+        s.write(request)
+      },
+      data: onData,
+      close: onGone,
+      error(_s, err) {
+        console.error(JSON.stringify({ event: 'socket_error', error: err.message }))
+      },
+      connectError(s) {
+        onGone(s)
+      },
+    },
+  }).catch(() => {})
+}
+
+/** Closes a connection that is reading normally and reconnects it after `redialMs`, as a browser does after a cut. */
+function drop(s: Socket, redialMs: number): void {
+  const conn = s.data
+  if (conn.slow || !conn.live) return
+  conn.goneAt = performance.now()
+  conn.dropping = true
+  conn.redialMs = redialMs
+  reconnecting++
+  conns.delete(s)
+  s.terminate()
 }
 
 let lagMsMax = 0
@@ -197,11 +274,12 @@ let cpuAt = performance.now()
 
 async function report(cmd: Extract<WorkerCommand, { type: 'end' }>): Promise<void> {
   to = cmd.to
+  clearInterval(churn)
   const deadline = performance.now() + cmd.graceMs
   const lagging = () => {
     let n = 0
     for (const s of conns) if (!s.data.slow && s.data.last < to) n++
-    return n
+    return n + reconnecting
   }
   while (lagging() > 0 && performance.now() < deadline) await Bun.sleep(100)
 
@@ -219,8 +297,24 @@ async function report(cmd: Extract<WorkerCommand, { type: 'end' }>): Promise<voi
   }
   const cpu = process.cpuUsage(cpuFrom)
   const cpuPct = ((cpu.user + cpu.system) / 1000 / (performance.now() - cpuAt)) * 100
-  send({ type: 'report', live, closed, received, gaps, dups, behind: lagging(), histMs: Object.fromEntries(hist), lagMsMax, cpuPct, rxBytes, slowTotal })
-  closed = 0
+  send({
+    type: 'report',
+    live,
+    closed,
+    received,
+    gaps,
+    dups,
+    behind: lagging(),
+    histMs: Object.fromEntries(hist),
+    lagMsMax,
+    cpuPct,
+    rxBytes,
+    slowTotal,
+    reconnects,
+    reconnectFailed,
+    reconnectMsMax,
+  })
+  closed = reconnects = reconnectFailed = reconnectMsMax = 0
   hist = new Map()
   from = to = Number.POSITIVE_INFINITY
   lagMsMax = 0
@@ -237,6 +331,20 @@ process.on('message', (cmd: WorkerCommand) => {
     lagMsMax = 0
     rxBytes = 0
   }
+  if (cmd.type === 'churn') {
+    let owed = 0
+    // Closed connections rejoin at the end of the set, so this walks through every client in turn.
+    churn = setInterval(() => {
+      owed += cmd.perSec / 10
+      for (const s of [...conns]) {
+        if (owed < 1) break
+        if (s.data.slow || !s.data.live) continue
+        drop(s, Math.random() * 1000)
+        owed--
+      }
+    }, 100)
+  }
+  if (cmd.type === 'storm') for (const s of [...conns]) drop(s, Math.random() * cmd.jitterMs)
   if (cmd.type === 'end') void report(cmd)
   if (cmd.type === 'close') process.exit(0)
 })

@@ -97,7 +97,7 @@ sequenceDiagram
   S-->>W: full buffer (up to BUFFER_SIZE messages)
   loop while connected
     S-->>W: new messages as they arrive
-    S-->>W: ": ping" every 25 s
+    S-->>W: "event: ping" every 25 s
   end
   Note over P,W: proxy cuts the request at 15 min, or the server restarts
   W->>W: wait a random delay, which grows with each failed attempt
@@ -128,7 +128,7 @@ sequenceDiagram
 | Route | Response |
 |---|---|
 | `GET /` | The React page. Bun bundles `frontend/` from the HTML import; `NODE_ENV=production` makes it a minified build with no hot reload. |
-| `GET /events?channel=<id>` | `text/event-stream` for one channel. Opens with a `discord` event, then sends its buffer and live events, with `: ping` every 25 s. `since=<id>` limits both to messages newer than that ID; an invalid value is ignored. No `channel` means the first configured channel; an ID that is not configured returns 404. Past 20 open streams from one IP it returns 429 with `Retry-After: 30`. A client more than 1 MiB behind on live writes is dropped. |
+| `GET /events?channel=<id>` | `text/event-stream` for one channel. Opens with a `discord` event, then sends its buffer and live events, with `event: ping` every 25 s. `since=<id>` limits both to messages newer than that ID; an invalid value is ignored. No `channel` means the first configured channel; an ID that is not configured returns 404. Past 20 open streams from one IP it returns 429 with `Retry-After: 30`. A client more than 1 MiB behind on live writes is dropped. |
 | `GET /config` | `{ "attachments": bool, "editsDeletes": bool, "debugPanel": bool, "channels": [{ "id": string, "name": string \| null }] }`. A `name` is null until the bot has loaded that channel at startup. |
 | `GET /health` | `200` when the Gateway is connected, `503` otherwise. Body: `{ "discord": "connected" \| "disconnected", "clients": n, "buffered": n, "lastEventAt": iso \| null, "uptimeSec": n }` |
 
@@ -145,7 +145,8 @@ data: {"id":"1301234567890123456","channelId":"…","author":{…},"content":"he
 event: delete
 data: {"id":"1301234567890123456","channelId":"…"}
 
-: ping
+event: ping
+data: 1
 ```
 
 The `id:` is always the Discord message ID. On reconnect the browser passes the newest ID it holds as `?since=` and gets only newer messages (see D7 in `decisions.md`), plus, with the `edits-deletes` flag on, a `delete` event for each of the last 500 deletions, whatever their age.

@@ -28,7 +28,7 @@ paths:
 
 - Every event MUST set `id:` to the Discord message ID.
 - A new connection MUST receive the buffer first, then live messages. With a valid `?since=`, both MUST be limited to newer messages.
-- A `: ping` comment MUST be sent every 25 seconds (Railway closes streams idle for 5 minutes and caps requests at 15 minutes).
+- An `event: ping` MUST be sent every 25 seconds, so the page can notice a dead stream (Railway closes streams idle for 5 minutes and caps requests at 15 minutes).
 - Subscriptions MUST be removed when the request aborts.
 - A stream MUST count queued bytes and drop a client past the limit on a live write. `/events` MUST return 429 past the per-IP connection cap.
 

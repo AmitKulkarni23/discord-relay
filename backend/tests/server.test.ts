@@ -323,7 +323,7 @@ describe('server', () => {
 
       const events = await openEvents(url)
 
-      expect(await events.readUntil(t => t.includes(': ping\n\n'))).toContain(': ping')
+      expect(await events.readUntil(t => t.includes('event: ping\n'))).toContain('event: ping\ndata: 1\n\n')
     })
 
     it('should ping every stream from one timer when several are open', async () => {
@@ -332,8 +332,8 @@ describe('server', () => {
 
       const first = await openEvents(url)
       const second = await openEvents(url)
-      await first.readUntil(t => t.includes(': ping\n\n'))
-      await second.readUntil(t => t.includes(': ping\n\n'))
+      await first.readUntil(t => t.includes('event: ping\n'))
+      await second.readUntil(t => t.includes('event: ping\n'))
       const created = timers.mock.calls.filter(([, ms]) => ms === 20).length
       timers.mockRestore()
 

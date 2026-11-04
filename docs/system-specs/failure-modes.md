@@ -7,8 +7,9 @@ Each row lists what can break, what a user would report, how we notice, and what
 | # | Failure | User sees | Detection | Handling | Status |
 |---|---|---|---|---|---|
 | 1 | Railway proxy ends the request at 15 min | A brief "Reconnecting…" | `EventSource` `error` event | The page reconnects after a random delay with `?since=`, and the server sends only newer messages | Mitigated |
-| 2 | Proxy closes a stream with no data for 5 min | Same as 1 | Same as 1 | `: ping` every 25 s | Mitigated |
+| 2 | Proxy closes a stream with no data for 5 min | Same as 1 | Same as 1 | `event: ping` every 25 s | Mitigated |
 | 3 | Browser loses its network | "Reconnecting…" until it is back | `EventSource` `error` event | Reconnect with backoff and `?since=`. Messages older than the buffer are skipped | Mitigated |
+| 3b | A stream dies with no error event, after laptop sleep or a network change | Nothing for up to 60 s, then "Reconnecting…" | The page hears nothing for 60 s; the server pings every 25 s | The page closes the stream and reconnects with `?since=` | Mitigated |
 | 4a | A write to a stream that already closed | Nothing | Write throws before `abort` fires | The write is caught and treated as a disconnect, so a dead tab cannot crash the server | Mitigated |
 | 4 | A client stops reading, or falls too far behind | That client reconnects and gets what it missed | `client_dropped` log line (`@event:client_dropped`) | Each stream counts queued bytes. Past 1 MiB on a live write, the stream errors, its queue is freed and the socket is closed | Mitigated |
 | 4b | One machine opens many streams to exhaust memory | Past the cap, that machine's page shows "Connection limit" | `@httpStatus:429` in Railway's HTTP logs | 20 open streams per IP, then 429. Shared networks share the cap, and many IPs (a botnet, an IPv6 range) get past it | Mitigated for one IP. Many IPs accepted |

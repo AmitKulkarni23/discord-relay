@@ -34,7 +34,8 @@ export function formatEvent(msg: Msg): string {
 
 const encoder = new TextEncoder()
 const CONNECTED = encoder.encode(': connected\n\n')
-const PING = encoder.encode(': ping\n\n')
+// A named event, not a comment: EventSource hides comments, and the page needs to see these to notice a dead stream.
+const PING = encoder.encode('event: ping\ndata: 1\n\n')
 const DISCORD_UP = encoder.encode('event: discord\ndata: connected\n\n')
 const DISCORD_DOWN = encoder.encode('event: discord\ndata: disconnected\n\n')
 /** How often the server checks the Gateway, to tell open pages when it changes. */

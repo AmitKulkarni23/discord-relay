@@ -10,6 +10,8 @@ const CATCH_UP_MS = 1_000
 /** How long the chip says what a reconnect recovered before returning to Live. */
 const RECOVERED_MS = 5_000
 
+/** A stream silent this long is dead even if the browser has not noticed. The server pings every 25 s, so this allows for one lost. */
+const SILENCE_MS = 60_000
 /** Failed attempts in a row before spending a request on asking the server why. */
 const PROBE_AFTER = 3
 
@@ -46,17 +48,37 @@ export function useEventStream(channel: string | null): EventStream {
     let retry: ReturnType<typeof setTimeout> | undefined
     let stable: ReturnType<typeof setTimeout> | undefined
     let recoveredNote: ReturnType<typeof setTimeout> | undefined
+    let silence: ReturnType<typeof setTimeout> | undefined
     let attempt = 0
     let since: string | null = null
     let dropped = false
     let everOpen = false
     let catchUpUntil = 0
 
+    const onDropped = (): void => {
+      es?.close()
+      clearTimeout(stable)
+      clearTimeout(recoveredNote)
+      clearTimeout(silence)
+      dropped = true
+      catchUpUntil = 0
+      setRecovered(null)
+      setConnection('reconnecting')
+      retry = setTimeout(() => void reconnect(), retryDelay(attempt++))
+    }
+
+    /** Laptop sleep or a network change can kill a stream without an error event, leaving the page claiming to be live. */
+    const heardFromServer = (): void => {
+      clearTimeout(silence)
+      silence = setTimeout(onDropped, SILENCE_MS)
+    }
+
     // EventSource's own retry has a fixed delay and stops for good on an HTTP error (e.g. a 502
     // mid-deploy), so every error closes it and this loop reconnects with backoff and jitter.
     const connect = (): void => {
       es = new EventSource(eventsUrl(channel, since))
       es.onopen = () => {
+        heardFromServer()
         setConnection('live')
         if (everOpen && dropped) {
           // ponytail: a time window, so a slow replay undercounts. A server end-of-replay event would make it exact.
@@ -71,12 +93,18 @@ export function useEventStream(channel: string | null): EventStream {
           attempt = 0
         }, STABLE_MS)
       }
-      es.addEventListener('discord', (e: MessageEvent<unknown>) => setDiscordUp(e.data !== 'disconnected'))
+      es.addEventListener('ping', heardFromServer)
+      es.addEventListener('discord', (e: MessageEvent<unknown>) => {
+        heardFromServer()
+        setDiscordUp(e.data !== 'disconnected')
+      })
       es.addEventListener('delete', (e: MessageEvent<unknown>) => {
+        heardFromServer()
         const id = parseDeletedId(String(e.data))
         if (id) setMsgs(prev => removeMsg(prev, id))
       })
       es.onmessage = (e: MessageEvent<unknown>) => {
+        heardFromServer()
         const m = parseMsg(String(e.data))
         if (!m) return
         if (since === null || compareIds(m.id, since) > 0) {
@@ -85,16 +113,7 @@ export function useEventStream(channel: string | null): EventStream {
         }
         setMsgs(prev => addMsg(prev, m))
       }
-      es.onerror = () => {
-        es?.close()
-        clearTimeout(stable)
-        clearTimeout(recoveredNote)
-        dropped = true
-        catchUpUntil = 0
-        setRecovered(null)
-        setConnection('reconnecting')
-        retry = setTimeout(() => void reconnect(), retryDelay(attempt++))
-      }
+      es.onerror = onDropped
     }
 
     // A refused client keeps its reason and waits as told, instead of reconnecting forever with no explanation.
@@ -114,6 +133,7 @@ export function useEventStream(channel: string | null): EventStream {
     connect()
     return () => {
       abort.abort()
+      clearTimeout(silence)
       clearTimeout(retry)
       clearTimeout(stable)
       clearTimeout(recoveredNote)

@@ -58,6 +58,9 @@ export class FakeEventSource {
   sendRaw(data: string): void {
     this.onmessage?.({ data })
   }
+  sendPing(): void {
+    this.listeners.get('ping')?.({ data: '1' })
+  }
   sendDelete(id: string): void {
     this.listeners.get('delete')?.({ data: JSON.stringify({ id, channelId: '1566584977829900002' }) })
   }

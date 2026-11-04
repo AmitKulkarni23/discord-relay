@@ -76,6 +76,69 @@ describe('useEventStream', () => {
     })
   })
 
+  describe('when an open stream goes silent', () => {
+    it('should treat it as dropped after a minute with nothing from the server', () => {
+      const { result } = renderHook(() => useEventStream(CHANNEL))
+      const first = FakeEventSource.latest()
+      open(first)
+
+      waitFor(59_999)
+      expect(result.current.status).toBe('live')
+
+      waitFor(1)
+      expect(first.closed).toBe(true)
+      expect(result.current.status).toBe('reconnecting')
+    })
+
+    it('should stay live while pings keep arriving', () => {
+      const { result } = renderHook(() => useEventStream(CHANNEL))
+      const es = FakeEventSource.latest()
+      open(es)
+
+      for (let i = 0; i < 5; i++) {
+        waitFor(25_000)
+        act(() => es.sendPing())
+      }
+
+      expect(es.closed).toBe(false)
+      expect(result.current.status).toBe('live')
+    })
+
+    it('should count a message as a sign of life', () => {
+      const { result } = renderHook(() => useEventStream(CHANNEL))
+      const es = FakeEventSource.latest()
+      open(es)
+
+      waitFor(50_000)
+      send(es, OLDER)
+      waitFor(50_000)
+
+      expect(result.current.status).toBe('live')
+    })
+
+    it('should reconnect once and not again from a stale timer', () => {
+      const random = jest.spyOn(Math, 'random').mockReturnValue(0)
+      renderHook(() => useEventStream(CHANNEL))
+      open(FakeEventSource.latest())
+
+      waitFor(60_000)
+      waitFor(0)
+
+      expect(FakeEventSource.opened).toHaveLength(2)
+      random.mockRestore()
+    })
+
+    it('should not watch a stream that has been closed by the page', () => {
+      const { unmount } = renderHook(() => useEventStream(CHANNEL))
+      open(FakeEventSource.latest())
+
+      unmount()
+      waitFor(120_000)
+
+      expect(FakeEventSource.opened).toHaveLength(1)
+    })
+  })
+
   describe('when a message is deleted', () => {
     it('should drop it from the list', () => {
       const { result } = renderHook(() => useEventStream(CHANNEL))

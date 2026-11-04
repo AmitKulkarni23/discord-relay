@@ -1,4 +1,5 @@
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactElement } from 'react'
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactElement, type RefObject } from 'react'
+import { flushSync } from 'react-dom'
 import { createRoot } from 'react-dom/client'
 import AppBar from '@mui/material/AppBar'
 import Avatar from '@mui/material/Avatar'
@@ -32,6 +33,8 @@ const FRESH_MS = 15_000
 const BOTTOM_SLACK = 80
 /** How long a stream must stay open before reconnect backoff starts over. */
 const STABLE_MS = 30_000
+/** A message taller than this many lines, wrapping included, collapses behind Show more. */
+const COLLAPSE_LINES = 15
 
 const timeFmt = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' })
 const fullFmt = new Intl.DateTimeFormat(undefined, { dateStyle: 'full', timeStyle: 'short' })
@@ -55,6 +58,11 @@ function dayLabel(date: Date): string {
 function isAtBottom(): boolean {
   const el = document.documentElement
   return el.scrollHeight - (window.scrollY + window.innerHeight) <= BOTTOM_SLACK
+}
+
+/** Scrolls to the newest message. */
+function pinToBottom(): void {
+  window.scrollTo({ top: document.documentElement.scrollHeight })
 }
 
 /** `# name`, or the bare ID while the bot has not loaded the channel yet. */
@@ -181,23 +189,87 @@ function DayDivider({ date }: { date: Date }): ReactElement {
   )
 }
 
-/** The text of a message, or an honest note when there is none to show. */
-function MessageBody({ msg, attachmentsOn }: { msg: Msg; attachmentsOn: boolean }): ReactElement | null {
+type MessageBodyProps = { msg: Msg; attachmentsOn: boolean; atBottom: RefObject<boolean> }
+
+/**
+ * The text of a message, or an honest note when there is none to show. Text past COLLAPSE_LINES is
+ * clipped behind Show more; it is measured, not counted, because long lines wrap differently per screen.
+ */
+function MessageBody({ msg, attachmentsOn, atBottom }: MessageBodyProps): ReactElement | null {
+  const [expanded, setExpanded] = useState(false)
+  const [clipped, setClipped] = useState(false)
+  const text = useRef<HTMLSpanElement>(null)
+
+  // A resize can clip a message that fitted, so keep measuring while it is collapsed.
+  useLayoutEffect(() => {
+    const el = text.current
+    if (!el || expanded) return
+    const measure = (): void => setClipped(el.scrollHeight - el.clientHeight > 1)
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [expanded, msg.content])
+
+  // The button appears after App has pinned the page, so pin again or the button lands below the fold.
+  useLayoutEffect(() => {
+    if (clipped && atBottom.current) pinToBottom()
+  }, [clipped, atBottom])
+
+  const toggle = (): void => {
+    flushSync(() => setExpanded(v => !v))
+    // Collapsing can leave the reader far below the message, so bring it back into view.
+    if (expanded) text.current?.closest('article')?.scrollIntoView({ block: 'nearest' })
+    // The page changed height without a scroll event, and a reader mid-message must not be pinned by the next one.
+    atBottom.current = isAtBottom()
+  }
+
   const empty = msg.content === ''
   // With attachments rendered below, an attachment-only message needs no text line.
   if (empty && attachmentsOn && msg.attachments.length > 0 && !msg.editedAt) return null
   return (
-    <Typography
-      variant="body1"
-      sx={{ m: 0, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', color: empty ? 'text.secondary' : 'text.primary', fontStyle: empty ? 'italic' : 'normal' }}
-    >
-      {empty ? (msg.attachments.length > 0 ? 'Attachment' : 'Message text unavailable') : msg.content}
-      {msg.editedAt ? (
-        <Typography component="span" variant="caption" sx={{ color: 'text.secondary', ml: 0.75, fontStyle: 'normal' }}>
-          (edited)
-        </Typography>
+    <>
+      <Typography
+        ref={text}
+        variant="body1"
+        sx={{
+          m: 0,
+          whiteSpace: 'pre-wrap',
+          overflowWrap: 'anywhere',
+          color: empty ? 'text.secondary' : 'text.primary',
+          fontStyle: empty ? 'italic' : 'normal',
+          ...(expanded ? {} : { maxHeight: `${COLLAPSE_LINES}lh`, overflow: 'hidden' }),
+          ...(clipped && !expanded ? { maskImage: 'linear-gradient(to bottom, black calc(100% - 2lh), transparent)' } : {}),
+        }}
+      >
+        {empty ? (msg.attachments.length > 0 ? 'Attachment' : 'Message text unavailable') : msg.content}
+        {msg.editedAt ? (
+          <Typography component="span" variant="caption" sx={{ color: 'text.secondary', ml: 0.75, fontStyle: 'normal' }}>
+            (edited)
+          </Typography>
+        ) : null}
+      </Typography>
+      {clipped || expanded ? (
+        <Button
+          size="small"
+          aria-expanded={expanded}
+          onClick={toggle}
+          sx={{
+            display: 'block',
+            mt: 0.25,
+            ml: -0.75,
+            px: 0.75,
+            minWidth: 0,
+            textTransform: 'none',
+            fontWeight: 600,
+            color: 'text.secondary',
+            '&:hover': { color: 'text.primary' },
+          }}
+        >
+          {expanded ? 'Show less' : 'Show more'}
+        </Button>
       ) : null}
-    </Typography>
+    </>
   )
 }
 
@@ -205,7 +277,7 @@ function MessageBody({ msg, attachmentsOn }: { msg: Msg; attachmentsOn: boolean 
  * One message. A `head` row starts an author group with avatar, name and
  * time; a continuation shows its time in the gutter on hover.
  */
-const MessageRow = memo(function MessageRow({ msg, head, attachmentsOn }: { msg: Msg; head: boolean; attachmentsOn: boolean }): ReactElement {
+const MessageRow = memo(function MessageRow({ msg, head, attachmentsOn, atBottom }: MessageBodyProps & { head: boolean }): ReactElement {
   const [fresh] = useState(() => Date.now() - Date.parse(msg.createdAt) < FRESH_MS)
   const at = new Date(msg.createdAt)
   const time = (
@@ -226,6 +298,7 @@ const MessageRow = memo(function MessageRow({ msg, head, attachmentsOn }: { msg:
         pb: 0.25,
         mt: head ? 0.75 : 0,
         borderRadius: 1,
+        scrollMarginTop: 64,
         '--arrive-tint': 'rgba(var(--mui-palette-primary-mainChannel) / 0.16)',
         animation: fresh ? `${arrive} 1.2s cubic-bezier(0.16, 1, 0.3, 1)` : 'none',
         '@media (prefers-reduced-motion: reduce)': { animation: 'none' },
@@ -279,7 +352,7 @@ const MessageRow = memo(function MessageRow({ msg, head, attachmentsOn }: { msg:
             </Typography>
           </Box>
         ) : null}
-        <MessageBody msg={msg} attachmentsOn={attachmentsOn} />
+        <MessageBody msg={msg} attachmentsOn={attachmentsOn} atBottom={atBottom} />
         {attachmentsOn && msg.attachments.length > 0 ? <Attachments items={msg.attachments} /> : null}
       </Box>
     </Box>
@@ -441,7 +514,7 @@ function App(): ReactElement {
   // Keep a reader who is at the bottom pinned there as messages land.
   useLayoutEffect(() => {
     if (!atBottom.current) return
-    window.scrollTo({ top: document.documentElement.scrollHeight })
+    pinToBottom()
     setSeenId(newestId)
   }, [newestId])
 
@@ -463,7 +536,11 @@ function App(): ReactElement {
         ) : (
           <Box role="log" aria-label={channelName ? `Messages in #${channelName}` : 'Messages'} sx={{ mt: 'auto' }}>
             {rows.map(r =>
-              r.kind === 'day' ? <DayDivider key={r.key} date={r.date} /> : <MessageRow key={r.key} msg={r.msg} head={r.head} attachmentsOn={attachmentsOn} />,
+              r.kind === 'day' ? (
+                <DayDivider key={r.key} date={r.date} />
+              ) : (
+                <MessageRow key={r.key} msg={r.msg} head={r.head} attachmentsOn={attachmentsOn} atBottom={atBottom} />
+              ),
             )}
           </Box>
         )}

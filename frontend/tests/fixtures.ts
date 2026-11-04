@@ -58,6 +58,9 @@ export class FakeEventSource {
   sendRaw(data: string): void {
     this.onmessage?.({ data })
   }
+  sendDelete(id: string): void {
+    this.listeners.get('delete')?.({ data: JSON.stringify({ id, channelId: '1566584977829900002' }) })
+  }
   sendDiscord(state: 'connected' | 'disconnected'): void {
     this.listeners.get('discord')?.({ data: state })
   }

@@ -23,6 +23,14 @@ export function addMsg(prev: Map<string, Msg>, m: Msg): Map<string, Msg> {
   return next
 }
 
+/** Removes a deleted message. Returns `prev` unchanged when it is not held, so nothing re-renders. */
+export function removeMsg(prev: Map<string, Msg>, id: string): Map<string, Msg> {
+  if (!prev.has(id)) return prev
+  const next = new Map(prev)
+  next.delete(id)
+  return next
+}
+
 /** The held messages, oldest first. */
 export function sortMsgs(msgs: Map<string, Msg>): Msg[] {
   return [...msgs.values()].sort((a, b) => compareIds(a.id, b.id))
@@ -56,6 +64,16 @@ export function parseMsg(data: string): Msg | null {
     return null
   }
   return isMsg(v) ? v : null
+}
+
+/** Parses one `delete` event's data into the deleted message's ID, or null when it does not match. */
+export function parseDeletedId(data: string): string | null {
+  try {
+    const v: unknown = JSON.parse(data)
+    return isRecord(v) && typeof v.id === 'string' ? v.id : null
+  } catch {
+    return null
+  }
 }
 
 /** Narrows an unknown value to a plain object. */

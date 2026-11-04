@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { compareIds, type Msg } from '../../backend/types.ts'
-import { addMsg, parseMsg, sortMsgs } from '../lib/messages.ts'
+import { addMsg, parseDeletedId, parseMsg, removeMsg, sortMsgs } from '../lib/messages.ts'
 import { eventsUrl, limitWaitMs, retryDelay, type Status } from '../lib/stream.ts'
 
 /** How long a stream must stay open before reconnect backoff starts over. */
@@ -72,6 +72,10 @@ export function useEventStream(channel: string | null): EventStream {
         }, STABLE_MS)
       }
       es.addEventListener('discord', (e: MessageEvent<unknown>) => setDiscordUp(e.data !== 'disconnected'))
+      es.addEventListener('delete', (e: MessageEvent<unknown>) => {
+        const id = parseDeletedId(String(e.data))
+        if (id) setMsgs(prev => removeMsg(prev, id))
+      })
       es.onmessage = (e: MessageEvent<unknown>) => {
         const m = parseMsg(String(e.data))
         if (!m) return

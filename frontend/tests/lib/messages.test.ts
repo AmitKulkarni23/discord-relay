@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test'
 import type { Msg } from '../../../backend/types.ts'
-import { addMsg, buildRows, MAX_MSGS, parseMsg, sortMsgs } from '../../lib/messages.ts'
+import { addMsg, buildRows, MAX_MSGS, parseDeletedId, parseMsg, removeMsg, sortMsgs } from '../../lib/messages.ts'
 
 const CHANNEL = '1566584977829900002'
 
@@ -61,6 +61,45 @@ describe('addMsg', () => {
       expect(held.size).toBe(MAX_MSGS)
       expect(oldest && held.has(oldest)).toBe(false)
       expect(held.has('1566588496699999999')).toBe(true)
+    })
+  })
+})
+
+describe('removeMsg', () => {
+  const m = makeMsg('1566588496691400001', '2026-11-01T23:03:23.418Z')
+
+  describe('when the message is held', () => {
+    it('should return a list without it', () => {
+      const held = addMsg(new Map(), m)
+
+      const next = removeMsg(held, m.id)
+
+      expect(next.size).toBe(0)
+      expect(held.size).toBe(1)
+    })
+  })
+
+  describe('when the message is not held', () => {
+    it('should return the same list, so nothing re-renders', () => {
+      const held = addMsg(new Map(), m)
+
+      expect(removeMsg(held, '1566588496691400009')).toBe(held)
+    })
+  })
+})
+
+describe('parseDeletedId', () => {
+  describe('when the event data names a message', () => {
+    it('should return its ID', () => {
+      expect(parseDeletedId('{"id":"1566588496691400001","channelId":"1566584977829900002"}')).toBe('1566588496691400001')
+    })
+  })
+
+  describe('when the event data is malformed', () => {
+    it('should return null', () => {
+      expect(parseDeletedId('not json')).toBeNull()
+      expect(parseDeletedId('{"id":42}')).toBeNull()
+      expect(parseDeletedId('null')).toBeNull()
     })
   })
 })

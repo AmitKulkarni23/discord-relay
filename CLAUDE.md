@@ -77,7 +77,7 @@ Coding rules live in `.claude/rules/` and load only when a matching file is touc
 Railway Feature Flags (Project Settings → Feature Flags), read at runtime by the `railway` SDK in `backend/flags.ts` and exposed to the browser via `GET /config`. Changing one applies within seconds, on the next page load, with no redeploy. Without `RAILWAY_TOKEN`, or before the first sync, every flag is off.
 
 - `attachments` (bool): render images, video and file links (Discord CDN URLs only).
-- `edits-deletes` (bool): live-update edited and deleted messages.
+- `edits-deletes` (bool): remove messages deleted in Discord from the page. Off means they stay until they leave the buffer or the server restarts. Live edits are planned here too, not built yet.
 - `debug-panel` (bool): show connection status, client count and last event time.
 
 They are not in `.railway/railway.ts`, because Railway IaC does not support flags yet. `.railway/flags.sh` holds the exact `railway flag set` commands and is their source of truth: change a default there, then run `sh .railway/flags.sh`. Never change a flag in the dashboard without updating that script.

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, mock, spyOn } from 'bun:test'
-import { Client, Events } from 'discord.js'
+import { Client, Events, Partials } from 'discord.js'
 import { collectHistory, createWatchdog, isMissingContent, startDiscord, toMsg, type MessageLike } from '../../sources/discord.ts'
 import type { Msg } from '../../types.ts'
 
@@ -353,7 +353,7 @@ const CHANNEL = '1301000000000000001'
 const MALFORMED = { author: null } as unknown as Partial<MessageLike>
 
 /** Runs the real startDiscord and discord.js Client with login and the channel faked, so nothing touches the network. */
-function startFakeDiscord(history: MessageLike[]) {
+function startFakeDiscord(history: MessageLike[], options: { deletesOn?: boolean; historyLimit?: number } = {}) {
   const logs: Array<Record<string, unknown>> = []
   spyOn(console, 'log').mockImplementation((line: string) => {
     logs.push(JSON.parse(line) as Record<string, unknown>)
@@ -364,17 +364,35 @@ function startFakeDiscord(history: MessageLike[]) {
     return 'token'
   })
   const published: Msg[] = []
-  const discord = startDiscord({ token: 'token', channelIds: [CHANNEL], publish: m => published.push(m) })
+  const removed: Array<[string, string]> = []
+  /** IDs the hub would report as buffered; set by a test that needs them. */
+  const buffered: { ids: string[] } = { ids: [] }
+  /** Runs while a history page is being fetched; set by a test that needs something to happen then. */
+  const fetching = { run: (): void => {} }
+  const discord = startDiscord({
+    token: 'token',
+    channelIds: [CHANNEL],
+    publish: m => published.push(m),
+    remove: (channelId, id) => removed.push([channelId, id]),
+    buffered: () => buffered.ids,
+    deletesEnabled: () => options.deletesOn ?? true,
+    historyLimit: options.historyLimit,
+  })
   login.mockRestore()
   if (!client) throw new Error('login was not called')
   const channel = {
     isTextBased: () => true,
     name: 'general',
     // Newest first, as Discord returns them. Every message fits on the first page.
-    messages: { fetch: async () => new Map([...history].reverse().map(m => [m.id, m])) },
+    messages: {
+      fetch: async () => {
+        fetching.run()
+        return new Map([...history].reverse().map(m => [m.id, m]))
+      },
+    },
   }
   const fetchChannel = spyOn(client.channels, 'fetch').mockResolvedValue(channel as never)
-  return { client, discord, published, logs, fetchChannel }
+  return { client, discord, published, removed, buffered, fetching, logs, fetchChannel }
 }
 
 /** Polls until `cond` holds, failing after a second. */
@@ -457,6 +475,145 @@ describe('startDiscord', () => {
       fake.client.emit(Events.ShardResume, 0, 0)
 
       expect(fake.fetchChannel).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  describe('when a message is deleted in Discord', () => {
+    const OTHER_CHANNEL = '1301000000000000099'
+
+    it('should ask for partial messages, so a message outside the cache still reports its deletion', () => {
+      const fake = startFakeDiscord([])
+      stop = fake.discord.stop
+
+      expect(fake.client.options.partials).toContain(Partials.Message)
+    })
+
+    it('should remove it when it is in a relayed channel', () => {
+      const fake = startFakeDiscord([])
+      stop = fake.discord.stop
+
+      fake.client.emit(Events.MessageDelete, { id: '1302000000000000001', channelId: CHANNEL } as never)
+
+      expect(fake.removed).toEqual([[CHANNEL, '1302000000000000001']])
+    })
+
+    it('should ignore a deletion in any other channel', () => {
+      const fake = startFakeDiscord([])
+      stop = fake.discord.stop
+
+      fake.client.emit(Events.MessageDelete, { id: '1302000000000000001', channelId: OTHER_CHANNEL } as never)
+
+      expect(fake.removed).toEqual([])
+    })
+
+    it('should remove every message of a bulk delete', () => {
+      const fake = startFakeDiscord([])
+      stop = fake.discord.stop
+      const ids = ['1302000000000000001', '1302000000000000002']
+
+      fake.client.emit(Events.MessageBulkDelete, new Map(ids.map(id => [id, { id }])) as never, { id: CHANNEL } as never)
+      fake.client.emit(Events.MessageBulkDelete, new Map([['1302000000000000003', { id: '1302000000000000003' }]]) as never, { id: OTHER_CHANNEL } as never)
+
+      expect(fake.removed).toEqual(ids.map(id => [CHANNEL, id]))
+    })
+
+    it('should never log what the message said', () => {
+      const fake = startFakeDiscord([])
+      stop = fake.discord.stop
+
+      fake.client.emit(Events.MessageDelete, { id: '1302000000000000001', channelId: CHANNEL, content: 'my password is hunter2' } as never)
+
+      expect(JSON.stringify(fake.logs)).not.toContain('hunter2')
+    })
+  })
+
+  describe('when history reloads after messages were deleted during an outage', () => {
+    const load = async (history: MessageLike[], bufferedIds: string[]) => {
+      const fake = startFakeDiscord(history)
+      stop = fake.discord.stop
+      fake.buffered.ids = bufferedIds
+      fake.client.emit(Events.ClientReady, fake.client as never)
+      await waitFor(() => fake.logs.some(l => l.event === 'history_loaded' || l.event === 'history_failed'))
+      return fake
+    }
+    const [A, B, C] = ['1302000000000000001', '1302000000000000002', '1302000000000000003']
+
+    it('should remove a buffered message Discord no longer has', async () => {
+      const fake = await load([makeDiscordMessage({ id: C }), makeDiscordMessage({ id: A })], [A, B, C])
+
+      expect(fake.removed).toEqual([[CHANNEL, B]])
+    })
+
+    it('should remove everything when the channel is now empty', async () => {
+      const fake = await load([], [A, B])
+
+      expect(fake.removed).toEqual([
+        [CHANNEL, A],
+        [CHANNEL, B],
+      ])
+    })
+
+    it('should not remove anything when the fetch fails', async () => {
+      const fake = startFakeDiscord([])
+      stop = fake.discord.stop
+      fake.buffered.ids = [A]
+      fake.fetchChannel.mockImplementation(async () => {
+        throw new Error('Service Unavailable')
+      })
+      fake.client.emit(Events.ClientReady, fake.client as never)
+      await waitFor(() => fake.logs.some(l => l.event === 'history_failed'))
+
+      expect(fake.removed).toEqual([])
+    })
+
+    it('should not remove a message posted while the fetch was running', async () => {
+      const fake = startFakeDiscord([makeDiscordMessage({ id: A })])
+      stop = fake.discord.stop
+      fake.buffered.ids = [A]
+      fake.fetching.run = () => {
+        fake.buffered.ids = [A, B]
+      }
+      fake.client.emit(Events.ClientReady, fake.client as never)
+      await waitFor(() => fake.logs.some(l => l.event === 'history_loaded'))
+
+      expect(fake.removed).toEqual([])
+    })
+  })
+
+  describe('when the edits-deletes flag is off', () => {
+    const [A, B] = ['1302000000000000001', '1302000000000000002']
+
+    it('should ignore single and bulk deletes', () => {
+      const fake = startFakeDiscord([], { deletesOn: false })
+      stop = fake.discord.stop
+
+      fake.client.emit(Events.MessageDelete, { id: A, channelId: CHANNEL } as never)
+      fake.client.emit(Events.MessageBulkDelete, new Map([[B, { id: B }]]) as never, { id: CHANNEL } as never)
+
+      expect(fake.removed).toEqual([])
+    })
+
+    it('should leave buffered messages alone when history reloads', async () => {
+      const fake = startFakeDiscord([makeDiscordMessage({ id: B })], { deletesOn: false })
+      stop = fake.discord.stop
+      fake.buffered.ids = [A, B]
+      fake.client.emit(Events.ClientReady, fake.client as never)
+      await waitFor(() => fake.logs.some(l => l.event === 'history_loaded'))
+
+      expect(fake.removed).toEqual([])
+    })
+  })
+
+  describe('when a reload returns a full page', () => {
+    it('should not treat a message older than the page as deleted', async () => {
+      const [OLDER, GONE, A, C] = ['1302000000000000001', '1302000000000000003', '1302000000000000002', '1302000000000000004']
+      const fake = startFakeDiscord([makeDiscordMessage({ id: A }), makeDiscordMessage({ id: C })], { historyLimit: 2 })
+      stop = fake.discord.stop
+      fake.buffered.ids = [OLDER, A, GONE, C]
+      fake.client.emit(Events.ClientReady, fake.client as never)
+      await waitFor(() => fake.logs.some(l => l.event === 'history_loaded'))
+
+      expect(fake.removed).toEqual([[CHANNEL, GONE]])
     })
   })
 

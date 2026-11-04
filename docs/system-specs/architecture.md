@@ -79,7 +79,7 @@ sequenceDiagram
   S-->>W: "id: msgId / data: {Msg JSON}" on every open stream
 ```
 
-When the `edits-deletes` flag is on, an edit replaces the buffered message with the same ID and is sent again under that ID. A delete removes the message and sends a `delete` event.
+When the `edits-deletes` flag is on, a delete removes the message from the buffer and sends `event: delete`. Messages deleted while the Gateway was down are found by comparing the next history reload with the buffer. With the flag off, a deleted message stays on the page until it leaves the buffer or the server restarts. Edits are planned behind the same flag.
 
 ### A browser connecting and reconnecting
 
@@ -143,13 +143,12 @@ id: 1301234567890123456
 data: {"id":"1301234567890123456","channelId":"…","author":{…},"content":"hello",…}
 
 event: delete
-id: 1301234567890123456
 data: {"id":"1301234567890123456","channelId":"…"}
 
 : ping
 ```
 
-The `id:` is always the Discord message ID. On reconnect the browser passes the newest ID it holds as `?since=` and gets only newer messages (see D7 in `decisions.md`).
+The `id:` is always the Discord message ID. On reconnect the browser passes the newest ID it holds as `?since=` and gets only newer messages (see D7 in `decisions.md`), plus, with the `edits-deletes` flag on, a `delete` event for each of the last 500 deletions, whatever their age.
 
 ## Message shape
 
@@ -225,7 +224,7 @@ Built:
 - Live relay of one or more channels, with history at startup, reconnect and dedupe, and a tab per channel on the page
 - the `attachments` flag
 
-Planned (flags exist, nothing reads them yet): `edits-deletes` and `debug-panel`.
+Planned: edits behind `edits-deletes`, which so far controls deletes only, and `debug-panel`, which nothing reads yet.
 
 Not built, and described in the README instead:
 

@@ -55,6 +55,11 @@ export function encodeEvent(msg: Msg): Uint8Array {
   return bytes
 }
 
+/** Formats a deletion as a named SSE event. It has no `id:`, because a deletion is not a position in the stream. */
+function deleteEvent(id: string, channelId: string): Uint8Array {
+  return encoder.encode(`event: delete\ndata: ${JSON.stringify({ id, channelId })}\n\n`)
+}
+
 /** Reads ?since=, an untrusted message ID. Anything else is 0, which every ID is newer than, so the full buffer is sent. */
 function parseSince(value: string | null): bigint {
   return value && /^\d{1,20}$/.test(value) ? BigInt(value) : 0n
@@ -147,11 +152,17 @@ export function startServer(deps: ServerDeps): { url: URL; stop: () => void } {
           // Send something at once so headers flush even when the buffer is empty.
           send(CONNECTED)
           send(discordBytes(isDiscordConnected()))
+          // A reconnecting browser may hold messages deleted while it was away. A new one holds nothing.
+          if (since > 0n) for (const id of hub.removed(channelId)) send(deleteEvent(id, channelId))
           for (const m of hub.recent(channelId).filter(isNew)) send(encodeEvent(m))
           // A restarted server refills its buffer through publish, so a live message can be one the browser holds.
-          const unsubscribe = hub.subscribe(channelId, m => {
-            if (isNew(m)) write(encodeEvent(m))
-          })
+          const unsubscribe = hub.subscribe(
+            channelId,
+            m => {
+              if (isNew(m)) write(encodeEvent(m))
+            },
+            id => write(deleteEvent(id, channelId)),
+          )
 
           let closed = false
           cleanup = () => {
@@ -252,6 +263,9 @@ export function main(): void {
     channelIds: config.channelIds,
     historyLimit: config.bufferSize,
     publish: hub.publish,
+    remove: hub.remove,
+    buffered: channelId => hub.recent(channelId).map(m => m.id),
+    deletesEnabled: () => readFlags().editsDeletes,
     onWatchdogExpired: () => {
       log.error('watchdog_expired', { reason: 'Gateway disconnected for more than 5 minutes; exiting so Railway restarts us' })
       process.exit(1)

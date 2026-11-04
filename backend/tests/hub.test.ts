@@ -203,4 +203,85 @@ describe('hub', () => {
       expect(hub.subscriberCount()).toBe(2)
     })
   })
+
+  describe('when a message is deleted', () => {
+    it('should drop it from the buffer and tell only that channel', () => {
+      const hub = createHub(10)
+      const onRemove = mock((_id: string) => {})
+      const other = mock((_id: string) => {})
+      hub.subscribe(GENERAL, () => {}, onRemove)
+      hub.subscribe(RANDOM, () => {}, other)
+      hub.publish(makeMsg('1302000000000000001'))
+      hub.publish(makeMsg('1302000000000000002'))
+
+      hub.remove(GENERAL, '1302000000000000001')
+
+      expect(hub.recent(GENERAL).map(m => m.id)).toEqual(['1302000000000000002'])
+      expect(onRemove).toHaveBeenCalledWith('1302000000000000001')
+      expect(other).not.toHaveBeenCalled()
+    })
+
+    it('should still tell subscribers when the message has already left the buffer, because open pages hold more', () => {
+      const hub = createHub(1)
+      const onRemove = mock((_id: string) => {})
+      hub.subscribe(GENERAL, () => {}, onRemove)
+      hub.publish(makeMsg('1302000000000000001'))
+      hub.publish(makeMsg('1302000000000000002'))
+
+      hub.remove(GENERAL, '1302000000000000001')
+
+      expect(onRemove).toHaveBeenCalledTimes(1)
+    })
+
+    it('should tell subscribers once when two sources report the same deletion', () => {
+      const hub = createHub(10)
+      const onRemove = mock((_id: string) => {})
+      hub.subscribe(GENERAL, () => {}, onRemove)
+
+      hub.remove(GENERAL, '1302000000000000001')
+      hub.remove(GENERAL, '1302000000000000001')
+
+      expect(onRemove).toHaveBeenCalledTimes(1)
+    })
+
+    it('should not let a history fetch that started earlier bring it back', () => {
+      const hub = createHub(10)
+      const onMessage = mock((_m: Msg) => {})
+      hub.subscribe(GENERAL, onMessage)
+      hub.remove(GENERAL, '1302000000000000001')
+
+      hub.publish(makeMsg('1302000000000000001'))
+
+      expect(hub.recent(GENERAL)).toEqual([])
+      expect(onMessage).not.toHaveBeenCalled()
+    })
+
+    it('should keep the others informed when one subscriber throws', () => {
+      const hub = createHub(10)
+      const onRemove = mock((_id: string) => {})
+      hub.subscribe(
+        GENERAL,
+        () => {},
+        () => {
+          throw new Error('stream already closed')
+        },
+      )
+      hub.subscribe(GENERAL, () => {}, onRemove)
+
+      hub.remove(GENERAL, '1302000000000000001')
+
+      expect(onRemove).toHaveBeenCalledTimes(1)
+    })
+
+    it('should remember recent deletions for reconnecting browsers, up to a limit', () => {
+      const hub = createHub(10)
+      for (let i = 0; i < 501; i++) hub.remove(GENERAL, String(1302000000000000000n + BigInt(i)))
+
+      const removed = hub.removed(GENERAL)
+
+      expect(removed).toHaveLength(500)
+      expect(removed[0]).toBe('1302000000000000001')
+      expect(removed.at(-1)).toBe('1302000000000000500')
+    })
+  })
 })

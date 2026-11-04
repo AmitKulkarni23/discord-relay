@@ -86,6 +86,63 @@ function start(hub: Hub, overrides: { connected?: boolean; pingMs?: number; chan
   return server
 }
 
+describe('the delete event', () => {
+  const OLD = '1302000000000000001'
+  const NEW = '1302000000000000002'
+  const deleted = (id: string): string => `event: delete\ndata: {"id":"${id}","channelId":"${CHANNEL}"}\n\n`
+
+  it('should tell an open stream, even about a message older than its since', async () => {
+    const hub = createHub(10)
+    hub.publish(makeMsg(NEW))
+    const { url } = start(hub)
+    const stream = await openEvents(url, `/events?since=${NEW}`)
+    await waitFor(() => hub.subscriberCount() === 1)
+
+    hub.remove(CHANNEL, OLD)
+
+    expect(await stream.readUntil(t => t.includes('event: delete'))).toContain(deleted(OLD))
+    stream.abort()
+  })
+
+  it('should replay recent deletions to a reconnecting browser', async () => {
+    const hub = createHub(10)
+    hub.remove(CHANNEL, OLD)
+    const { url } = start(hub)
+
+    const stream = await openEvents(url, `/events?since=${NEW}`)
+
+    expect(await stream.readUntil(t => t.includes('event: delete'))).toContain(deleted(OLD))
+    stream.abort()
+  })
+
+  it('should send a first-time visitor no deletions, because their buffer never held them', async () => {
+    const hub = createHub(10)
+    hub.remove(CHANNEL, OLD)
+    hub.publish(makeMsg(NEW))
+    const { url } = start(hub)
+
+    const stream = await openEvents(url)
+    const text = await stream.readUntil(t => t.includes(NEW))
+
+    expect(text).not.toContain('event: delete')
+    stream.abort()
+  })
+
+  it('should stop serving a deleted message to new visitors', async () => {
+    const hub = createHub(10)
+    hub.publish(makeMsg(OLD))
+    hub.publish(makeMsg(NEW))
+    hub.remove(CHANNEL, OLD)
+    const { url } = start(hub)
+
+    const stream = await openEvents(url)
+    const text = await stream.readUntil(t => t.includes(NEW))
+
+    expect(text).not.toContain(OLD)
+    stream.abort()
+  })
+})
+
 describe('the discord status event', () => {
   it('should tell a new stream that Discord is connected', async () => {
     const { url } = start(createHub(10))

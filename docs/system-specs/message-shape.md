@@ -68,7 +68,7 @@ A snowflake also encodes its creation time: `(BigInt(id) >> 22n) + 1420070400000
 |---|---|---|
 | `: connected` | First line of every stream | A comment. Sent at once so headers reach the browser even when the buffer is empty. `EventSource` ignores it. |
 | `: ping` | Every 25 seconds | A comment that keeps Railway's proxy from closing an idle stream. `EventSource` ignores it. |
-| `event: delete` | Only with the `edits-deletes` flag (not built yet) | `data:` holds `{"id", "channelId"}` of a deleted message. |
+| `event: delete` | With the `edits-deletes` flag on: when a message is deleted, and on reconnect for recent deletions | `data:` holds `{"id", "channelId"}` of a deleted message. |
 
 Each event ends with a blank line, which is how SSE separates events.
 

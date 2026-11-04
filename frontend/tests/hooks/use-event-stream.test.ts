@@ -76,6 +76,30 @@ describe('useEventStream', () => {
     })
   })
 
+  describe('when a message is deleted', () => {
+    it('should drop it from the list', () => {
+      const { result } = renderHook(() => useEventStream(CHANNEL))
+      const es = FakeEventSource.latest()
+      send(es, OLDER, NEWER)
+
+      act(() => es.sendDelete(OLDER.id))
+
+      expect(result.current.messages.map(m => m.id)).toEqual([NEWER.id])
+    })
+
+    it('should keep asking only for newer messages after the newest is deleted', () => {
+      renderHook(() => useEventStream(CHANNEL))
+      const es = FakeEventSource.latest()
+      send(es, NEWER)
+      act(() => es.sendDelete(NEWER.id))
+
+      fail(es)
+      waitFor(1000)
+
+      expect(FakeEventSource.latest().url).toBe(`/events?channel=${CHANNEL}&since=${NEWER.id}`)
+    })
+  })
+
   describe('when the bot loses Discord', () => {
     it('should wait for Discord while the stream stays open, then go live again', () => {
       const { result } = renderHook(() => useEventStream(CHANNEL))

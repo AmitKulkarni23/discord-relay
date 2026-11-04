@@ -1,6 +1,6 @@
-import { Client, Events, GatewayIntentBits } from 'discord.js'
+import { Client, Events, GatewayIntentBits, Partials } from 'discord.js'
 import { log } from '../log.ts'
-import type { ChannelInfo, Msg } from '../types.ts'
+import { compareIds, type ChannelInfo, type Msg } from '../types.ts'
 
 type AttachmentsLike = {
   values(): Iterable<{ url: string; name: string; contentType: string | null; size: number; width: number | null; height: number | null }>
@@ -41,6 +41,12 @@ export type DiscordDeps = {
   /** Every channel to relay. */
   channelIds: string[]
   publish: (m: Msg) => void
+  /** Removes a message deleted in Discord. */
+  remove: (channelId: string, id: string) => void
+  /** The IDs of a channel's buffered messages. */
+  buffered: (channelId: string) => string[]
+  /** The `edits-deletes` flag: whether deletions in Discord reach the page. Read each time, so a change applies at once. */
+  deletesEnabled: () => boolean
   /** How many recent messages to load at startup; matches the hub's buffer size. */
   historyLimit?: number
   /** Called when the Gateway stays disconnected longer than `watchdogMs`. */
@@ -169,9 +175,11 @@ export function createWatchdog(opts: {
  * names for /config, and `stop`.
  */
 export function startDiscord(deps: DiscordDeps) {
-  const { token, channelIds, publish, historyLimit = 100, onWatchdogExpired = () => {}, watchdogMs = 5 * 60_000 } = deps
+  const { token, channelIds, publish, remove, buffered, deletesEnabled, historyLimit = 100, onWatchdogExpired = () => {}, watchdogMs = 5 * 60_000 } = deps
   const client = new Client({
     intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
+    // Without this, deleting a message outside discord.js's cache fires no event, and it would stay on the page.
+    partials: [Partials.Message],
   })
   const watchdog = createWatchdog({ limitMs: watchdogMs, onExpire: onWatchdogExpired })
   let connected = false
@@ -217,6 +225,19 @@ export function startDiscord(deps: DiscordDeps) {
     }
   }
 
+  /**
+   * Removes messages deleted while the Gateway was down, which fire no event: anything held that Discord
+   * no longer returns. `fetched` is oldest first. A full page says nothing about messages older than it.
+   */
+  function removeMissing(channelId: string, held: string[], fetched: Array<{ id: string }>): void {
+    if (!deletesEnabled()) return
+    const kept = new Set(fetched.map(m => m.id))
+    const oldest = fetched.length < historyLimit ? undefined : fetched[0]?.id
+    for (const id of held) {
+      if (!kept.has(id) && (oldest === undefined || compareIds(id, oldest) > 0)) remove(channelId, id)
+    }
+  }
+
   /** Publishes one channel's latest `historyLimit` messages, oldest first. Logs and continues on failure. */
   async function publishHistory(channelId: string): Promise<void> {
     try {
@@ -226,7 +247,10 @@ export function startDiscord(deps: DiscordDeps) {
         return
       }
       if ('name' in channel && typeof channel.name === 'string') names.set(channelId, channel.name)
+      // Taken before the fetch, so a message posted while it runs is never mistaken for a deleted one.
+      const held = buffered(channelId)
       const messages = await collectHistory(async (before, limit) => [...(await channel.messages.fetch({ limit, before })).values()], historyLimit)
+      removeMissing(channelId, held, messages)
       for (const m of messages) handle(m)
       log.info('history_loaded', { channelId, count: messages.length })
     } catch (err) {
@@ -256,6 +280,12 @@ export function startDiscord(deps: DiscordDeps) {
   })
   client.on(Events.MessageCreate, m => {
     if (wanted.has(m.channelId)) handle(m)
+  })
+  client.on(Events.MessageDelete, m => {
+    if (deletesEnabled() && wanted.has(m.channelId)) remove(m.channelId, m.id)
+  })
+  client.on(Events.MessageBulkDelete, (messages, channel) => {
+    if (deletesEnabled() && wanted.has(channel.id)) for (const id of messages.keys()) remove(channel.id, id)
   })
 
   // Start the countdown now so a login that never becomes ready also restarts the process.

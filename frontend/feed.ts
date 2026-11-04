@@ -112,8 +112,10 @@ export function parseMarkup(text: string): Part[] {
   }
   for (const match of text.matchAll(TOKEN)) {
     const g = match.groups ?? {}
-    addText(text.slice(at, match.index))
+    const before = text.slice(at, match.index)
+    addText(g.block !== undefined ? before.replace(/\n$/, '') : before)
     at = match.index + match[0].length
+    if (g.block !== undefined && text[at] === '\n') at++
     if (g.escaped !== undefined) addText(g.escaped)
     else if (g.block !== undefined) parts.push({ kind: 'block', text: g.block })
     else if (g.code !== undefined) parts.push({ kind: 'code', text: g.code })

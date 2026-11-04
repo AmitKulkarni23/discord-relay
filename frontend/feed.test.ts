@@ -380,6 +380,11 @@ describe('parseMarkup', () => {
       expect(parseMarkup('```plain```')).toEqual([{ kind: 'block', text: 'plain' }])
     })
 
+    it('should drop one line break on each side of a code block, since the block already sits on its own line', () => {
+      expect(parseMarkup('before\n```a```\nafter')).toEqual([text('before'), { kind: 'block', text: 'a' }, text('after')])
+      expect(parseMarkup('before\n\n```a```')).toEqual([text('before\n'), { kind: 'block', text: 'a' }])
+    })
+
     it('should keep escaped characters literal and join them with the text around them', () => {
       expect(parseMarkup('\\*a\\*')).toEqual([text('*a*')])
     })

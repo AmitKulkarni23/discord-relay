@@ -145,8 +145,9 @@ function FileCard({ a, href }: { a: Attachment; href: string | null }): ReactEle
             href={href}
             target="_blank"
             rel="noopener noreferrer"
-            underline="hover"
-            sx={{ display: 'block', fontSize: 14, fontWeight: 500, color: 'primary.main', overflowWrap: 'anywhere' }}
+            color="inherit"
+            underline="always"
+            sx={{ display: 'block', fontSize: 14, fontWeight: 500, overflowWrap: 'anywhere' }}
           >
             {a.name}
           </Link>

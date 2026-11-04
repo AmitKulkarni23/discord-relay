@@ -10,6 +10,9 @@ import { createTheme } from '@mui/material/styles'
 /** The page background per scheme; also the browser's toolbar colour. */
 export const GROUND = { dark: '#0D0E11', light: '#F7F8FA' }
 
+/** Code text. A named stack, because a bare `monospace` makes browsers shrink the text. */
+export const MONO = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace'
+
 export const theme = createTheme({
   cssVariables: { colorSchemeSelector: 'data-color-scheme' },
   colorSchemes: {
@@ -44,6 +47,12 @@ export const theme = createTheme({
     subtitle2: { fontSize: 14, fontWeight: 600, lineHeight: 1.3 },
   },
   components: {
+    // One focus style everywhere: ButtonBase removes the outline, so draw it, and drop the pulsing ripple that would sit inside it.
+    MuiButton: { defaultProps: { disableFocusRipple: true } },
+    MuiIconButton: { defaultProps: { disableFocusRipple: true } },
+    MuiButtonBase: {
+      styleOverrides: { root: { '&.Mui-focusVisible': { outline: '2px solid var(--mui-palette-primary-main)', outlineOffset: 2 } } },
+    },
     MuiCssBaseline: {
       styleOverrides: {
         html: { scrollbarColor: 'var(--mui-palette-divider) var(--mui-palette-background-default)' },

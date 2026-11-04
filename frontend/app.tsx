@@ -24,7 +24,7 @@ import type { ChannelInfo, Msg } from '../backend/types.ts'
 import Attachments from './attachments.tsx'
 import { addMsg, buildRows, compareIds, eventsUrl, fetchConfig, parseMarkup, parseMsg, retryDelay, sortMsgs, type Part } from './feed.ts'
 import { isDiscordCdn } from './media.ts'
-import { GROUND, theme } from './theme.ts'
+import { GROUND, MONO, theme } from './theme.ts'
 
 /** The browser's view of the /events stream and, once it is open, of the bot's Discord connection. */
 type Status = 'connecting' | 'live' | 'reconnecting' | 'discord'
@@ -37,6 +37,14 @@ const BOTTOM_SLACK = 80
 const STABLE_MS = 30_000
 /** A message taller than this many lines, wrapping included, collapses behind Show more. */
 const COLLAPSE_LINES = 15
+/** How long an empty feed waits before saying why, so a replay in progress never flashes a wrong message. */
+const EMPTY_DELAY_MS = 1_500
+/** Fingers need bigger targets than a mouse does. */
+const COARSE = '@media (pointer: coarse)'
+/** Below this width the top bar cannot hold the product name, the channel and the longest status. */
+const NARROW = '@media (max-width: 359px)'
+/** Out of sight on a narrow screen, still read by screen readers. */
+const VISUALLY_HIDDEN = { position: 'absolute', width: '1px', height: '1px', overflow: 'hidden', clip: 'rect(0 0 0 0)' }
 
 const timeFmt = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' })
 const fullFmt = new Intl.DateTimeFormat(undefined, { dateStyle: 'full', timeStyle: 'short' })
@@ -115,7 +123,7 @@ function ThemeToggle(): ReactElement {
       <IconButton
         aria-label={label}
         onClick={() => setMode(next)}
-        sx={{ width: 36, height: 36, color: 'text.secondary', '&:hover': { color: 'text.primary' } }}
+        sx={{ width: 36, height: 36, color: 'text.secondary', '&:hover': { color: 'text.primary' }, [COARSE]: { width: 44, height: 44 } }}
       >
         <SvgIcon sx={{ fontSize: 20 }} viewBox="0 0 24 24">
           <g fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -142,10 +150,14 @@ function TopBar({ channels, activeId, onSelect, status }: TopBarProps): ReactEle
   return (
     <AppBar position="sticky" elevation={0} sx={{ bgcolor: 'background.default', borderBottom: 1, borderColor: 'divider', backgroundImage: 'none' }}>
       <Toolbar sx={{ minHeight: { xs: 56 }, px: { xs: 2, sm: 3 }, gap: 1.5 }}>
-        <Typography component="h1" variant="subtitle2" sx={{ fontSize: 15, color: 'text.primary', flexShrink: 0 }}>
+        <Typography component="h1" variant="subtitle2" sx={{ fontSize: 15, color: 'text.primary', flexShrink: 0, [NARROW]: VISUALLY_HIDDEN }}>
           DiscordRelay
         </Typography>
-        <Divider orientation="vertical" flexItem sx={{ my: 2, display: channels.length > 1 ? { xs: 'none', sm: 'block' } : active ? 'block' : 'none' }} />
+        <Divider
+          orientation="vertical"
+          flexItem
+          sx={{ my: 2, display: channels.length > 1 ? { xs: 'none', sm: 'block' } : active ? 'block' : 'none', [NARROW]: { display: 'none' } }}
+        />
         {channels.length > 1 ? (
           <Tabs
             value={activeId ?? false}
@@ -165,6 +177,8 @@ function TopBar({ channels, activeId, onSelect, status }: TopBarProps): ReactEle
                   minHeight: 56,
                   minWidth: 0,
                   px: 1.5,
+                  // The tab strip clips anything outside a tab.
+                  '&.Mui-focusVisible': { outlineOffset: -2 },
                   textTransform: 'none',
                   fontSize: 14,
                   fontWeight: 500,
@@ -191,7 +205,7 @@ function TopBar({ channels, activeId, onSelect, status }: TopBarProps): ReactEle
 /** A centred date line between messages from different days. */
 function DayDivider({ date }: { date: Date }): ReactElement {
   return (
-    <Divider sx={{ my: 2, '&::before, &::after': { borderColor: 'divider' } }}>
+    <Divider sx={{ my: 2 }}>
       <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600 }}>
         {dayLabel(date)}
       </Typography>
@@ -240,7 +254,7 @@ function MessageParts({ parts }: { parts: Part[] }): ReactElement {
             )
           case 'code':
             return (
-              <Box key={i} component="code" sx={{ fontFamily: 'monospace', fontSize: '0.9em', bgcolor: 'action.selected', borderRadius: 0.5, px: 0.5 }}>
+              <Box key={i} component="code" sx={{ fontFamily: MONO, fontSize: '0.9em', bgcolor: 'action.selected', borderRadius: 0.5, px: 0.5 }}>
                 {part.text}
               </Box>
             )
@@ -249,7 +263,7 @@ function MessageParts({ parts }: { parts: Part[] }): ReactElement {
               <Box
                 key={i}
                 component="pre"
-                sx={{ fontFamily: 'monospace', fontSize: '0.9em', m: 0, my: 0.5, p: 1, overflowX: 'auto', border: 1, borderColor: 'divider', borderRadius: 1 }}
+                sx={{ fontFamily: MONO, fontSize: '0.9em', m: 0, my: 0.5, p: 1, overflowX: 'auto', border: 1, borderColor: 'divider', borderRadius: 1 }}
               >
                 {part.text}
               </Box>
@@ -311,6 +325,12 @@ function MessageBody({ msg, attachmentsOn, atBottom }: MessageBodyProps): ReactE
     atBottom.current = isAtBottom()
   }
 
+  const showToggle = clipped || expanded
+  const edited = msg.editedAt ? (
+    <Typography component="span" variant="caption" sx={{ color: 'text.secondary', ml: 0.75, fontStyle: 'normal' }}>
+      (edited)
+    </Typography>
+  ) : null
   const empty = msg.content === ''
   // With attachments rendered below, an attachment-only message needs no text line.
   if (empty && attachmentsOn && msg.attachments.length > 0 && !msg.editedAt) return null
@@ -331,31 +351,30 @@ function MessageBody({ msg, attachmentsOn, atBottom }: MessageBodyProps): ReactE
         }}
       >
         {empty ? msg.attachments.length > 0 ? 'Attachment' : 'Message text unavailable' : <MessageParts parts={parseMarkup(msg.content)} />}
-        {msg.editedAt ? (
-          <Typography component="span" variant="caption" sx={{ color: 'text.secondary', ml: 0.75, fontStyle: 'normal' }}>
-            (edited)
-          </Typography>
-        ) : null}
+        {showToggle ? null : edited}
       </Typography>
-      {clipped || expanded ? (
-        <Button
-          size="small"
-          aria-expanded={expanded}
-          onClick={toggle}
-          sx={{
-            display: 'block',
-            mt: 0.25,
-            ml: -0.75,
-            px: 0.75,
-            minWidth: 0,
-            textTransform: 'none',
-            fontWeight: 600,
-            color: 'text.secondary',
-            '&:hover': { color: 'text.primary' },
-          }}
-        >
-          {expanded ? 'Show less' : 'Show more'}
-        </Button>
+      {showToggle ? (
+        // A clipped message would hide (edited), so it moves down beside the button.
+        <Box sx={{ display: 'flex', alignItems: 'center', mt: 0.25 }}>
+          <Button
+            size="small"
+            aria-expanded={expanded}
+            onClick={toggle}
+            sx={{
+              ml: -0.75,
+              px: 0.75,
+              minWidth: 0,
+              textTransform: 'none',
+              fontWeight: 600,
+              color: 'text.secondary',
+              '&:hover': { color: 'text.primary' },
+              [COARSE]: { minHeight: 44 },
+            }}
+          >
+            {expanded ? 'Show less' : 'Show more'}
+          </Button>
+          {edited}
+        </Box>
       ) : null}
     </>
   )
@@ -363,7 +382,7 @@ function MessageBody({ msg, attachmentsOn, atBottom }: MessageBodyProps): ReactE
 
 /**
  * One message. A `head` row starts an author group with avatar, name and
- * time; a continuation shows its time in the gutter on hover.
+ * time; a continuation shows its time in the gutter, on hover where hover exists.
  */
 const MessageRow = memo(function MessageRow({ msg, head, attachmentsOn, atBottom }: MessageBodyProps & { head: boolean }): ReactElement {
   const [fresh] = useState(() => Date.now() - Date.parse(msg.createdAt) < FRESH_MS)
@@ -459,7 +478,12 @@ const MessageRow = memo(function MessageRow({ msg, head, attachmentsOn, atBottom
 })
 
 /** Shown in place of the feed before any message has arrived. */
-function EmptyState({ status, channelName }: { status: Status; channelName: string | null }): ReactElement {
+function EmptyState({ status, channelName }: { status: Status; channelName: string | null }): ReactElement | null {
+  const [ready, setReady] = useState(false)
+  useEffect(() => {
+    const timer = setTimeout(() => setReady(true), EMPTY_DELAY_MS)
+    return () => clearTimeout(timer)
+  }, [])
   const where = channelName ? `#${channelName}` : 'the channel'
   const [title, body] =
     status === 'live'
@@ -467,6 +491,7 @@ function EmptyState({ status, channelName }: { status: Status; channelName: stri
       : status === 'discord'
         ? ['Waiting for Discord', 'The relay is reconnecting to Discord. Messages appear as soon as it is back.']
         : [status === 'connecting' ? 'Connecting to the relay' : 'Reconnecting to the relay', 'Messages appear as soon as the stream opens.']
+  if (!ready) return null
   return (
     <Box sx={{ m: 'auto', textAlign: 'center', py: 8, px: 2 }}>
       <Typography variant="subtitle2" component="p" sx={{ fontSize: 15, color: 'text.primary', mb: 0.5 }}>
@@ -638,7 +663,7 @@ function App(): ReactElement {
         sx={{ maxWidth: 792, mx: 'auto', px: { xs: 1, sm: 2 }, pt: 1, pb: 10, minHeight: 'calc(100dvh - 57px)', display: 'flex', flexDirection: 'column' }}
       >
         {rows.length === 0 ? (
-          <EmptyState status={status} channelName={channelName} />
+          <EmptyState key={status} status={status} channelName={channelName} />
         ) : (
           <Box role="log" aria-label={channelName ? `Messages in #${channelName}` : 'Messages'} sx={{ mt: 'auto' }}>
             {rows.map(r =>

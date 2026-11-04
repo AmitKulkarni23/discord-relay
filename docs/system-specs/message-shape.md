@@ -6,7 +6,7 @@ What a browser receives on `GET /events`, and what each field means. IDs and nam
 
 ```
 id: 1566588496691400001
-data: {"id":"1566588496691400001","channelId":"1566584977829900002","author":{"id":"961675715634400003","name":"relay_tester","avatarUrl":"https://cdn.discordapp.com/embed/avatars/0.png","bot":false},"content":"Hello from Relay Channel","createdAt":"2026-11-01T23:03:23.418Z","editedAt":null,"attachments":[]}
+data: {"id":"1566588496691400001","channelId":"1566584977829900002","author":{"id":"961675715634400003","name":"relay_tester","avatarUrl":"https://cdn.discordapp.com/embed/avatars/0.png","bot":false},"content":"Hello from Relay Channel","note":null,"createdAt":"2026-11-01T23:03:23.418Z","editedAt":null,"attachments":[]}
 
 ```
 
@@ -23,6 +23,7 @@ The `data:` line is one JSON object, shown formatted:
     "bot": false
   },
   "content": "Hello from Relay Channel",
+  "note": null,
   "createdAt": "2026-11-01T23:03:23.418Z",
   "editedAt": null,
   "attachments": []
@@ -39,7 +40,8 @@ The `data:` line is one JSON object, shown formatted:
 | `author.name` | string | Display name: the user's global name if they set one, otherwise their username. | `author.globalName ?? author.username` |
 | `author.avatarUrl` | string \| null | Avatar image URL. Users without an avatar get Discord's default (`/embed/avatars/<n>.png`). | `author.displayAvatarURL()` |
 | `author.bot` | boolean | True for bots and webhooks. | `author.bot` |
-| `content` | string | Message text with mentions and custom emoji resolved to names; other Discord formatting stays as typed, and the page renders it. Empty when the message has only attachments, or when the MessageContent intent is off. | `message.cleanContent` |
+| `content` | string | Message text with mentions and custom emoji resolved to names; other Discord formatting stays as typed, and the page renders it. A forward carries its original text, and an embed-only message its embed's title and description. Empty when the message has only attachments or a note, or when the MessageContent intent is off. | `message.cleanContent` |
+| `note` | string \| null | What the message carries besides typed text: `Forwarded`, `Sticker: name`, `Poll: question`, `Embed`, joined with ` · `. `null` for an ordinary message. | Computed in `toMsg` |
 | `createdAt` | string | When the message was posted, ISO 8601 in UTC. | `message.createdAt` |
 | `editedAt` | string \| null | When it was last edited, or `null` if never edited. | `message.editedAt` |
 | `attachments` | array | Files attached to the message. Empty array when there are none. | `message.attachments` |
@@ -69,3 +71,5 @@ A snowflake also encodes its creation time: `(BigInt(id) >> 22n) + 1420070400000
 | `event: delete` | Only with the `edits-deletes` flag (not built yet) | `data:` holds `{"id", "channelId"}` of a deleted message. |
 
 Each event ends with a blank line, which is how SSE separates events.
+
+Discord's system messages (joins, pins, boosts) are not relayed.

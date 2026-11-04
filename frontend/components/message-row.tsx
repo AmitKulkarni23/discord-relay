@@ -99,10 +99,17 @@ function MessageBody({ msg, attachmentsOn, scroll }: MessageBodyProps): ReactEle
     </Typography>
   ) : null
   const empty = msg.content === ''
-  // With attachments rendered below, an attachment-only message needs no text line.
-  if (empty && attachmentsOn && msg.attachments.length > 0 && !msg.editedAt) return null
+  const hasFiles = msg.attachments.length > 0
+  const note = msg.note ? (
+    <Typography variant="caption" component="p" sx={{ m: 0, color: 'text.secondary', fontStyle: 'italic' }}>
+      {msg.note}
+    </Typography>
+  ) : null
+  // Attachments rendered below, or a note saying what the message is, already explain a message with no text.
+  if (empty && !msg.editedAt && (attachmentsOn ? hasFiles : msg.note !== null && !hasFiles)) return note
   return (
     <>
+      {note}
       <Typography
         ref={text}
         component="div"

@@ -18,6 +18,8 @@ export type Msg = {
   channelId: string
   author: { id: string; name: string; avatarUrl: string | null; bot: boolean }
   content: string
+  /** Says what a message carries besides typed text ("Forwarded", "Sticker: name"), or null when nothing. */
+  note: string | null
   /** ISO 8601 */
   createdAt: string
   /** ISO 8601, or null if never edited */

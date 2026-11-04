@@ -12,6 +12,7 @@ function makeMsg(id: string, overrides: Partial<Msg> = {}): Msg {
     channelId: GENERAL,
     author: { id: '1290000000000000042', name: 'amit', avatarUrl: null, bot: false },
     content: `deploy finished for build ${id}`,
+    note: null,
     createdAt: '2026-11-01T17:00:00.000Z',
     editedAt: null,
     attachments: [],

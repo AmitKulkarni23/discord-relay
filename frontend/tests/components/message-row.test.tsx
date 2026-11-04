@@ -71,6 +71,45 @@ describe('MessageRow', () => {
     })
   })
 
+  describe('when a message has a note', () => {
+    it('should show the note in place of a placeholder when there is no text', () => {
+      const { getByText, queryByText } = renderRow(makeMsg({ content: '', note: 'Sticker: party parrot' }))
+
+      expect(getByText('Sticker: party parrot')).toBeDefined()
+      expect(queryByText('Message text unavailable')).toBeNull()
+    })
+
+    it('should show the note and the text together', () => {
+      const { getByText } = renderRow(makeMsg({ note: 'Forwarded' }))
+
+      expect(getByText('Forwarded')).toBeDefined()
+      expect(getByText('deploy finished for build 482')).toBeDefined()
+    })
+
+    it('should show it on an attachment-only message', () => {
+      const { getByText, container } = renderRow(makeMsg({ content: '', note: 'Forwarded', attachments: [makeAttachment()] }), makeScroll(), {
+        attachmentsOn: true,
+      })
+
+      expect(getByText('Forwarded')).toBeDefined()
+      expect(container.querySelector('img[alt="build-log.png"]')).not.toBeNull()
+    })
+
+    it('should still mention the attachment when attachments are off', () => {
+      const { getByText } = renderRow(makeMsg({ content: '', note: 'Forwarded', attachments: [makeAttachment()] }))
+
+      expect(getByText('Attachment')).toBeDefined()
+    })
+
+    it('should treat the note as text, never as markup or a link', () => {
+      const { container, getByText } = renderRow(makeMsg({ content: '', note: 'Poll: <img src=x> https://evil.example' }))
+
+      expect(getByText('Poll: <img src=x> https://evil.example')).toBeDefined()
+      expect(container.querySelector('a')).toBeNull()
+      expect(container.querySelector('img[src="x"]')).toBeNull()
+    })
+  })
+
   describe('when a message fits', () => {
     it('should offer no Show more and keep (edited) with the text', () => {
       pretendTextIs(100, 100)

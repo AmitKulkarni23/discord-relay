@@ -89,6 +89,7 @@ function isMsg(v: unknown): v is Msg {
     typeof v.id === 'string' &&
     typeof v.channelId === 'string' &&
     typeof v.content === 'string' &&
+    (v.note === null || typeof v.note === 'string') &&
     isDate(v.createdAt) &&
     (v.editedAt === null || isDate(v.editedAt)) &&
     Array.isArray(v.attachments) &&

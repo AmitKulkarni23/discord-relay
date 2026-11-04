@@ -8,7 +8,7 @@ import type { Msg } from '../backend/types.ts'
 /** Above any real snowflake, so simulated messages sort last. The last 10 digits are the sequence number. */
 const ID_BASE = 1_900_000_000n * 10_000_000_000n
 /** The bytes of an SSE event that are not the message content. */
-const EVENT_OVERHEAD = 296
+const EVENT_OVERHEAD = 308
 const CONTENT = 'Simulated load test message from the DiscordRelay harness, not a real Discord message. '.repeat(2)
 
 export type LoadControl = { stats: () => Response; setRate: (perSec: number, msgBytes: number, burst: number, everySec: number) => void }
@@ -24,6 +24,7 @@ export function createLoadControl(hub: Hub, channelIds: string[], bufferSize: nu
       channelId,
       author: { id: '1290000000000000042', name: 'load-producer', avatarUrl: null, bot: true },
       content,
+      note: null,
       createdAt: new Date().toISOString(),
       editedAt: null,
       attachments: [],

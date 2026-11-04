@@ -167,6 +167,7 @@ type Msg = {
   channelId: string
   author: { id: string; name: string; avatarUrl: string | null; bot: boolean }
   content: string
+  note: string | null
   createdAt: string      // ISO 8601
   editedAt: string | null
   attachments: Attachment[]

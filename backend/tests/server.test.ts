@@ -15,6 +15,7 @@ function makeMsg(id: string, content = `deploy finished for build ${id}`, channe
     channelId,
     author: { id: '1290000000000000042', name: 'amit', avatarUrl: null, bot: false },
     content,
+    note: null,
     createdAt,
     editedAt: null,
     attachments: [],

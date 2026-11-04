@@ -7,6 +7,7 @@ export function makeMsg(overrides: Partial<Msg> = {}): Msg {
     channelId: '1566584977829900002',
     author: { id: '961675715634400003', name: 'relay_tester', avatarUrl: null, bot: false },
     content: 'deploy finished for build 482',
+    note: null,
     createdAt: '2026-11-01T23:03:23.418Z',
     editedAt: null,
     attachments: [],

@@ -8,6 +8,7 @@ function makeDiscordMessage(overrides: Partial<MessageLike> = {}): MessageLike {
   return {
     id: '1302000000000000001',
     channelId: '1301000000000000001',
+    content: 'deploy finished for build 482',
     cleanContent: 'deploy finished for build 482',
     createdAt: new Date('2026-11-01T17:00:00.000Z'),
     editedAt: null,
@@ -19,6 +20,11 @@ function makeDiscordMessage(overrides: Partial<MessageLike> = {}): MessageLike {
       displayAvatarURL: () => 'https://cdn.discordapp.com/avatars/1290000000000000042/abc.png',
     },
     attachments: new Map(),
+    system: false,
+    stickers: new Map(),
+    embeds: [],
+    poll: null,
+    messageSnapshots: { first: () => undefined },
     ...overrides,
   }
 }
@@ -79,6 +85,7 @@ describe('toMsg', () => {
           bot: false,
         },
         content: 'deploy finished for build 482',
+        note: null,
         createdAt: '2026-11-01T17:00:00.000Z',
         editedAt: null,
         attachments: [],
@@ -125,6 +132,93 @@ describe('toMsg', () => {
 })
 
 describe('isMissingContent', () => {
+  describe('when a message carries something other than typed text', () => {
+    const snapshots = (snapshot: { content: string | null; attachments: Map<string, unknown> }) =>
+      ({ first: () => snapshot }) as unknown as MessageLike['messageSnapshots']
+    const file = {
+      url: 'https://cdn.discordapp.com/attachments/1/2/build-log.png',
+      name: 'build-log.png',
+      contentType: 'image/png',
+      size: 2048,
+      width: 640,
+      height: 480,
+    }
+
+    it('should fall back to the raw text when discord.js cannot clean it, because its channel is not cached', () => {
+      const msg = toMsg(makeDiscordMessage({ content: 'ping <@961675715634400003>', cleanContent: null }))
+
+      expect(msg.content).toBe('ping <@961675715634400003>')
+    })
+
+    it('should leave the note empty for an ordinary message', () => {
+      expect(toMsg(makeDiscordMessage()).note).toBeNull()
+    })
+
+    it('should show the original text and files of a forward, labelled as forwarded', () => {
+      const msg = toMsg(
+        makeDiscordMessage({
+          cleanContent: '',
+          messageSnapshots: snapshots({ content: 'deploy finished for build 482', attachments: new Map([['1', file]]) }),
+        }),
+      )
+
+      expect(msg.content).toBe('deploy finished for build 482')
+      expect(msg.attachments.map(a => a.name)).toEqual(['build-log.png'])
+      expect(msg.note).toBe('Forwarded')
+    })
+
+    it('should cope with a forward that has no text', () => {
+      const msg = toMsg(makeDiscordMessage({ cleanContent: '', messageSnapshots: snapshots({ content: null, attachments: new Map() }) }))
+
+      expect(msg.content).toBe('')
+      expect(msg.note).toBe('Forwarded')
+    })
+
+    it('should name a sticker', () => {
+      const msg = toMsg(makeDiscordMessage({ cleanContent: '', stickers: new Map([['1', { name: 'party parrot' }]]) }))
+
+      expect(msg.content).toBe('')
+      expect(msg.note).toBe('Sticker: party parrot')
+    })
+
+    it('should state a poll question', () => {
+      const msg = toMsg(makeDiscordMessage({ cleanContent: '', poll: { question: { text: 'Ship it today?' } } }))
+
+      expect(msg.note).toBe('Poll: Ship it today?')
+    })
+
+    it('should use the title and description of an embed-only message as its text', () => {
+      const msg = toMsg(makeDiscordMessage({ cleanContent: '', embeds: [{ title: 'Build 482', description: 'All checks passed' }] }))
+
+      expect(msg.content).toBe('Build 482\nAll checks passed')
+      expect(msg.note).toBe('Embed')
+    })
+
+    it('should still label an embed with no text', () => {
+      const msg = toMsg(makeDiscordMessage({ cleanContent: '', embeds: [{ title: null, description: null }] }))
+
+      expect(msg.content).toBe('')
+      expect(msg.note).toBe('Embed')
+    })
+
+    it('should ignore the link preview of a message that has text', () => {
+      const msg = toMsg(makeDiscordMessage({ cleanContent: 'see https://railway.com', embeds: [{ title: 'Railway', description: 'Deploy anything' }] }))
+
+      expect(msg.content).toBe('see https://railway.com')
+      expect(msg.note).toBeNull()
+    })
+
+    it('should list everything when a message has several kinds', () => {
+      const msg = toMsg(makeDiscordMessage({ stickers: new Map([['1', { name: 'party parrot' }]]), poll: { question: { text: 'Ship it today?' } } }))
+
+      expect(msg.note).toBe('Sticker: party parrot · Poll: Ship it today?')
+    })
+
+    it('should not count a labelled message as missing its content', () => {
+      expect(isMissingContent(toMsg(makeDiscordMessage({ cleanContent: '', stickers: new Map([['1', { name: 'party parrot' }]]) })))).toBe(false)
+    })
+  })
+
   describe('when content and attachments are empty', () => {
     it('should return true when there is nothing to show', () => {
       expect(isMissingContent(toMsg(makeDiscordMessage({ cleanContent: '' })))).toBe(true)
@@ -363,6 +457,30 @@ describe('startDiscord', () => {
       fake.client.emit(Events.ShardResume, 0, 0)
 
       expect(fake.fetchChannel).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  describe('when Discord posts a system message', () => {
+    it('should not publish a join, pin or boost as it arrives', () => {
+      const fake = startFakeDiscord([])
+      stop = fake.discord.stop
+
+      fake.client.emit(Events.MessageCreate, makeDiscordMessage({ id: '1302000000000000001', cleanContent: '', system: true }) as never)
+      fake.client.emit(Events.MessageCreate, makeDiscordMessage({ id: '1302000000000000002' }) as never)
+
+      expect(fake.published.map(m => m.id)).toEqual(['1302000000000000002'])
+      expect(fake.logs.filter(l => l.event === 'message_content_missing')).toHaveLength(0)
+    })
+
+    it('should leave it out of history too', async () => {
+      const history = [makeDiscordMessage({ id: '1302000000000000002' }), makeDiscordMessage({ id: '1302000000000000001', cleanContent: '', system: true })]
+      const fake = startFakeDiscord(history)
+      stop = fake.discord.stop
+
+      fake.client.emit(Events.ClientReady, fake.client as never)
+      await waitFor(() => fake.logs.some(l => l.event === 'history_loaded'))
+
+      expect(fake.published.map(m => m.id)).toEqual(['1302000000000000002'])
     })
   })
 

@@ -11,6 +11,7 @@ function makeMsg(id: string, at: string, author = 'relay_tester', overrides: Par
     channelId: CHANNEL,
     author: { id: `9616757156344000${author.length}`, name: author, avatarUrl: 'https://cdn.discordapp.com/embed/avatars/0.png', bot: false },
     content: `message ${id} from ${author}`,
+    note: null,
     createdAt: at,
     editedAt: null,
     attachments: [],
@@ -119,6 +120,12 @@ describe('parseMsg', () => {
   describe('when the event data is malformed', () => {
     it('should return null when the data is not JSON', () => {
       expect(parseMsg('not json')).toBeNull()
+    })
+
+    it('should return null when the note is mistyped', () => {
+      const m = makeMsg('1566588496691400001', '2026-11-01T23:03:23.418Z')
+
+      expect(parseMsg(JSON.stringify({ ...m, note: 7 }))).toBeNull()
     })
 
     it('should return null when a date is not a date, since formatting it would throw during render', () => {

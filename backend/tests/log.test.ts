@@ -31,6 +31,37 @@ describe('log', () => {
     })
   })
 
+  describe('when running in production', () => {
+    const before = { NODE_ENV: process.env.NODE_ENV, LOG_LEVEL: process.env.LOG_LEVEL }
+    afterEach(() => {
+      process.env.NODE_ENV = before.NODE_ENV
+      if (before.LOG_LEVEL === undefined) delete process.env.LOG_LEVEL
+      else process.env.LOG_LEVEL = before.LOG_LEVEL
+    })
+
+    it('should drop debug lines but keep every other level', () => {
+      process.env.NODE_ENV = 'production'
+      delete process.env.LOG_LEVEL
+
+      log.debug('client_connected', { clients: 3 })
+      expect(out).not.toHaveBeenCalled()
+
+      log.info('server_started')
+      log.warn('gateway_disconnected')
+      log.error('discord_login_failed')
+      expect(out).toHaveBeenCalledTimes(3)
+    })
+
+    it('should keep debug lines when LOG_LEVEL asks for them during an incident', () => {
+      process.env.NODE_ENV = 'production'
+      process.env.LOG_LEVEL = 'debug'
+
+      log.debug('client_connected', { clients: 3 })
+
+      expect(lastLine().event).toBe('client_connected')
+    })
+  })
+
   describe('when fields try to override the core keys', () => {
     it('should keep the real level and event when fields contain the same names', () => {
       log.info('history_loaded', { level: 'error', event: 'spoofed', count: 100 })

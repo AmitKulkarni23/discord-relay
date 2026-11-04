@@ -15,7 +15,10 @@ function write(level: Level, event: string, fields: Record<string, unknown>): vo
  * Never pass the bot token or message content in `fields`.
  */
 export const log = {
-  debug: (event: string, fields: Record<string, unknown> = {}): void => write('debug', event, fields),
+  debug: (event: string, fields: Record<string, unknown> = {}): void => {
+    // Off in production: a deploy reconnecting 12k clients would write 24k lines and bury real errors past Railway's 500 lines/s.
+    if (process.env.NODE_ENV !== 'production' || process.env.LOG_LEVEL === 'debug') write('debug', event, fields)
+  },
   info: (event: string, fields: Record<string, unknown> = {}): void => write('info', event, fields),
   warn: (event: string, fields: Record<string, unknown> = {}): void => write('warn', event, fields),
   error: (event: string, fields: Record<string, unknown> = {}): void => write('error', event, fields),

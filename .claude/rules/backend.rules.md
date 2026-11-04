@@ -43,5 +43,6 @@ paths:
 
 - Logs MUST go through `log.debug|info|warn|error(event, fields)` in `backend/log.ts`: one JSON object per line with `level` and `event` fields (e.g. `gateway_connected`, `client_connected`). Railway filters on `@level:` and `@event:`.
 - Levels: `error` for failures that need action (bad config, login failed, watchdog), `warn` for degraded but self-healing (Gateway down, missing content), `info` for lifecycle, `debug` for per-browser connects and disconnects.
+- `debug` lines MUST stay off in production unless `LOG_LEVEL=debug`, so nothing that needs noticing may log only at `debug`.
 - `client_*` events MUST include `requestId` from `X-Railway-Request-Id`, so they can be matched to Railway's network logs.
 - The bot token, message content and client IP addresses MUST NOT be logged.

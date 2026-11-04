@@ -180,6 +180,7 @@ type Msg = {
 | `DISCORD_TOKEN` | yes | Bot token, stored as a sealed Railway variable. |
 | `CHANNEL_ID` | yes | Channel(s) to relay: one ID, or several comma-separated. |
 | `BUFFER_SIZE` | no (`100`) | Messages kept per channel and loaded at startup, 1 to 500. |
+| `LOG_LEVEL` | no | `debug` logs each client connecting and disconnecting in production. Off by default, because a deploy reconnecting every client would exceed Railway's log limit. |
 | `PORT` | injected | Set by Railway. |
 | `RAILWAY_TOKEN` | no | Project token for reading feature flags. Without it every flag is off. |
 

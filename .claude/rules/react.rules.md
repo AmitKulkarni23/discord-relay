@@ -26,6 +26,7 @@ Rule names in parentheses are from Vercel's react-best-practices. Next.js, serve
 ## Security
 
 - Message content MUST be rendered as React text. `dangerouslySetInnerHTML` MUST NOT be used.
+- Links in message text MUST only be http or https, opened with `target="_blank"` and `rel="noopener noreferrer"`.
 - Attachment `src`/`href` MUST only be set when the URL host is `cdn.discordapp.com` or `media.discordapp.net`.
 - Images MUST use `loading="lazy"`. Videos MUST NOT autoplay.
 

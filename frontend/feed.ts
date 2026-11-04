@@ -60,6 +60,40 @@ export function retryDelay(attempt: number, random: () => number = Math.random):
   return random() * Math.min(1000 * 2 ** attempt, MAX_RETRY_MS)
 }
 
+/** One piece of a message's text. Only http and https ever become links. */
+export type Part = { kind: 'text'; text: string } | { kind: 'link'; href: string }
+
+const LINK = /https?:\/\/[^\s<]+/gi
+
+/** Length of `url` without trailing punctuation, keeping a closing bracket opened inside the URL. */
+function linkLength(url: string): number {
+  let end = url.length
+  while (end > 0) {
+    const last = url.charAt(end - 1)
+    const closes = last === ')' && url.slice(0, end).split('(').length < url.slice(0, end).split(')').length
+    if (!closes && !'.,;:!?\'"]'.includes(last)) break
+    end--
+  }
+  return end
+}
+
+/** Splits a message's text into plain text and links, for React to render. */
+export function parseMarkup(text: string): Part[] {
+  const parts: Part[] = []
+  let at = 0
+  const addText = (t: string): void => {
+    if (t) parts.push({ kind: 'text', text: t })
+  }
+  for (const match of text.matchAll(LINK)) {
+    const end = match.index + linkLength(match[0])
+    addText(text.slice(at, match.index))
+    parts.push({ kind: 'link', href: text.slice(match.index, end) })
+    at = end
+  }
+  addText(text.slice(at))
+  return parts
+}
+
 /** Builds the /events URL. `since` is the newest ID held, so a reconnect gets only newer messages. */
 export function eventsUrl(channel: string | null, since: string | null): string {
   const params = new URLSearchParams()

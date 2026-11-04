@@ -1,6 +1,19 @@
 import { describe, expect, it } from 'bun:test'
 import type { Msg } from '../backend/types.ts'
-import { addMsg, buildRows, compareIds, eventsUrl, fetchConfig, MAX_MSGS, MAX_RETRY_MS, parseConfig, parseMsg, retryDelay, sortMsgs } from './feed.ts'
+import {
+  addMsg,
+  buildRows,
+  compareIds,
+  eventsUrl,
+  fetchConfig,
+  MAX_MSGS,
+  MAX_RETRY_MS,
+  parseConfig,
+  parseMarkup,
+  parseMsg,
+  retryDelay,
+  sortMsgs,
+} from './feed.ts'
 
 const CHANNEL = '1566584977829900002'
 
@@ -255,6 +268,45 @@ describe('fetchConfig', () => {
       }
 
       expect(await fetchConfig(abort.signal, get, noWait)).toBeNull()
+    })
+  })
+})
+
+describe('parseMarkup', () => {
+  describe('links', () => {
+    it('should keep plain text as one part', () => {
+      expect(parseMarkup('no links here')).toEqual([{ kind: 'text', text: 'no links here' }])
+    })
+
+    it('should split out an https link with the text around it', () => {
+      expect(parseMarkup('see https://railway.com/docs now')).toEqual([
+        { kind: 'text', text: 'see ' },
+        { kind: 'link', href: 'https://railway.com/docs' },
+        { kind: 'text', text: ' now' },
+      ])
+    })
+
+    it('should leave trailing punctuation out of a link', () => {
+      expect(parseMarkup('go to http://a.com/b.')).toEqual([
+        { kind: 'text', text: 'go to ' },
+        { kind: 'link', href: 'http://a.com/b' },
+        { kind: 'text', text: '.' },
+      ])
+    })
+
+    it('should keep a closing bracket that belongs to the URL and drop one that does not', () => {
+      expect(parseMarkup('https://a.com/x_(y)')).toEqual([{ kind: 'link', href: 'https://a.com/x_(y)' }])
+      expect(parseMarkup('(https://a.com/x)')).toEqual([
+        { kind: 'text', text: '(' },
+        { kind: 'link', href: 'https://a.com/x' },
+        { kind: 'text', text: ')' },
+      ])
+    })
+
+    it('should never link a script or data URL', () => {
+      for (const text of ['javascript:alert(1)', 'data:text/html,x', 'JAVASCRIPT://https://a.com'.slice(0, 13)]) {
+        expect(parseMarkup(text)).toEqual([{ kind: 'text', text }])
+      }
     })
   })
 })

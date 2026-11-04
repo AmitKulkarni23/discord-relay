@@ -9,6 +9,7 @@ import Chip from '@mui/material/Chip'
 import CssBaseline from '@mui/material/CssBaseline'
 import Divider from '@mui/material/Divider'
 import IconButton from '@mui/material/IconButton'
+import Link from '@mui/material/Link'
 import Tab from '@mui/material/Tab'
 import Tabs from '@mui/material/Tabs'
 import SvgIcon from '@mui/material/SvgIcon'
@@ -20,7 +21,7 @@ import type { ChannelInfo, Msg } from '../backend/types.ts'
 // Bun's HTML bundler does not code-split, so this ships in the main bundle even with
 // the `attachments` flag off (a few KB). It only renders when the flag is on; split with Bun.build if it grows.
 import Attachments from './attachments.tsx'
-import { addMsg, buildRows, compareIds, eventsUrl, fetchConfig, parseMsg, retryDelay, sortMsgs } from './feed.ts'
+import { addMsg, buildRows, compareIds, eventsUrl, fetchConfig, parseMarkup, parseMsg, retryDelay, sortMsgs } from './feed.ts'
 import { isDiscordCdn } from './media.ts'
 import { GROUND, theme } from './theme.ts'
 
@@ -189,6 +190,23 @@ function DayDivider({ date }: { date: Date }): ReactElement {
   )
 }
 
+/** A message's text as React nodes, never as HTML. */
+function MessageText({ text }: { text: string }): ReactElement {
+  return (
+    <>
+      {parseMarkup(text).map((part, i) =>
+        part.kind === 'link' ? (
+          <Link key={i} href={part.href} target="_blank" rel="noopener noreferrer" color="inherit" underline="always">
+            {part.href}
+          </Link>
+        ) : (
+          part.text
+        ),
+      )}
+    </>
+  )
+}
+
 type MessageBodyProps = { msg: Msg; attachmentsOn: boolean; atBottom: RefObject<boolean> }
 
 /**
@@ -242,7 +260,7 @@ function MessageBody({ msg, attachmentsOn, atBottom }: MessageBodyProps): ReactE
           ...(clipped && !expanded ? { maskImage: 'linear-gradient(to bottom, black calc(100% - 2lh), transparent)' } : {}),
         }}
       >
-        {empty ? (msg.attachments.length > 0 ? 'Attachment' : 'Message text unavailable') : msg.content}
+        {empty ? msg.attachments.length > 0 ? 'Attachment' : 'Message text unavailable' : <MessageText text={msg.content} />}
         {msg.editedAt ? (
           <Typography component="span" variant="caption" sx={{ color: 'text.secondary', ml: 0.75, fontStyle: 'normal' }}>
             (edited)

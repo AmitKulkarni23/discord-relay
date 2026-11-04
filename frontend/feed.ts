@@ -134,6 +134,11 @@ export function parseMarkup(text: string): Part[] {
   return parts
 }
 
+/** What the status chip says just after a reconnect: that the stream is back, and what `?since=` recovered. */
+export function recoveredLabel(caughtUp: number): string {
+  return caughtUp === 0 ? 'Back live' : `Back · ${caughtUp} caught up`
+}
+
 /** Builds the /events URL. `since` is the newest ID held, so a reconnect gets only newer messages. */
 export function eventsUrl(channel: string | null, since: string | null): string {
   const params = new URLSearchParams()

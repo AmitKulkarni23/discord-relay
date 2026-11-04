@@ -11,6 +11,7 @@ import {
   parseConfig,
   parseMarkup,
   parseMsg,
+  recoveredLabel,
   retryDelay,
   sortMsgs,
   type Part,
@@ -235,6 +236,17 @@ describe('parseConfig', () => {
 
       expect(config).toEqual({ attachments: false, channels: [{ id: '1566584977829900002', name: 'relay' }] })
     })
+  })
+})
+
+describe('recoveredLabel', () => {
+  it('should say only that the stream is back when nothing was missed', () => {
+    expect(recoveredLabel(0)).toBe('Back live')
+  })
+
+  it('should say how many missed messages were caught up', () => {
+    expect(recoveredLabel(1)).toBe('Back · 1 caught up')
+    expect(recoveredLabel(12)).toBe('Back · 12 caught up')
   })
 })
 

@@ -22,7 +22,7 @@ import type { ChannelInfo, Msg } from '../backend/types.ts'
 // Bun's HTML bundler does not code-split, so this ships in the main bundle even with
 // the `attachments` flag off (a few KB). It only renders when the flag is on; split with Bun.build if it grows.
 import Attachments from './attachments.tsx'
-import { addMsg, buildRows, compareIds, eventsUrl, fetchConfig, parseMarkup, parseMsg, retryDelay, sortMsgs, type Part } from './feed.ts'
+import { addMsg, buildRows, compareIds, eventsUrl, fetchConfig, parseMarkup, parseMsg, recoveredLabel, retryDelay, sortMsgs, type Part } from './feed.ts'
 import { isDiscordCdn } from './media.ts'
 import { GROUND, MONO, theme } from './theme.ts'
 
@@ -45,6 +45,10 @@ const COARSE = '@media (pointer: coarse)'
 const NARROW = '@media (max-width: 359px)'
 /** Out of sight on a narrow screen, still read by screen readers. */
 const VISUALLY_HIDDEN = { position: 'absolute', width: '1px', height: '1px', overflow: 'hidden', clip: 'rect(0 0 0 0)' }
+/** After a reconnect, messages this soon after the stream opens count as caught up. */
+const CATCH_UP_MS = 1_000
+/** How long the chip says what a reconnect recovered before returning to Live. */
+const RECOVERED_MS = 5_000
 
 const timeFmt = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' })
 const fullFmt = new Intl.DateTimeFormat(undefined, { dateStyle: 'full', timeStyle: 'short' })
@@ -61,6 +65,11 @@ const FORMAT = {
 const arrive = keyframes`
   from { background-color: var(--arrive-tint); }
   to { background-color: transparent; }
+`
+
+const beat = keyframes`
+  from { transform: scale(1); opacity: 0.6; }
+  to { transform: scale(3); opacity: 0; }
 `
 
 /** "Today", "Yesterday", or the weekday and date. */
@@ -90,16 +99,39 @@ function channelLabel(c: ChannelInfo): string {
 
 const STATUS_LABEL: Record<Status, string> = { connecting: 'Connecting', live: 'Live', reconnecting: 'Reconnecting', discord: 'Waiting for Discord' }
 
-/** The connection chip: green only when messages can really flow; amber while the stream retries or the bot has lost Discord. */
-function StatusChip({ status }: { status: Status }): ReactElement {
+type StatusChipProps = { status: Status; newestId: string | null; recovered: number | null }
+
+/**
+ * The connection chip: green only when messages can really flow; amber while the stream retries or the bot has
+ * lost Discord. The dot beats once per newest message, and after a reconnect the chip says what came back.
+ */
+function StatusChip({ status, newestId, recovered }: StatusChipProps): ReactElement {
   const dot = status === 'live' ? 'success.main' : status === 'connecting' ? 'text.secondary' : 'warning.main'
   return (
     <Box role="status" aria-live="polite">
       <Chip
         size="small"
         variant="outlined"
-        label={STATUS_LABEL[status]}
-        icon={<Box component="span" sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: dot }} />}
+        label={status === 'live' && recovered !== null ? recoveredLabel(recovered) : STATUS_LABEL[status]}
+        icon={
+          <Box component="span" sx={{ position: 'relative', width: 8, height: 8, borderRadius: '50%', bgcolor: dot }}>
+            {status === 'live' && newestId ? (
+              <Box
+                key={newestId}
+                component="span"
+                sx={{
+                  position: 'absolute',
+                  inset: 0,
+                  borderRadius: '50%',
+                  bgcolor: dot,
+                  opacity: 0,
+                  animation: `${beat} 900ms cubic-bezier(0.16, 1, 0.3, 1)`,
+                  '@media (prefers-reduced-motion: reduce)': { animation: 'none' },
+                }}
+              />
+            ) : null}
+          </Box>
+        }
         sx={{ borderColor: 'divider', color: 'text.primary', fontWeight: 500, height: 28, px: 0.25, '& .MuiChip-icon': { ml: 1.25, mr: -0.25 } }}
       />
     </Box>
@@ -142,10 +174,10 @@ function ThemeToggle(): ReactElement {
   )
 }
 
-type TopBarProps = { channels: ChannelInfo[]; activeId: string | null; onSelect: (id: string) => void; status: Status }
+type TopBarProps = { channels: ChannelInfo[]; activeId: string | null; onSelect: (id: string) => void } & StatusChipProps
 
 /** Sticky top bar: product name, the channel (tabs when there are several), connection state, theme. */
-function TopBar({ channels, activeId, onSelect, status }: TopBarProps): ReactElement {
+function TopBar({ channels, activeId, onSelect, status, newestId, recovered }: TopBarProps): ReactElement {
   const active = channels.find(c => c.id === activeId)
   return (
     <AppBar position="sticky" elevation={0} sx={{ bgcolor: 'background.default', borderBottom: 1, borderColor: 'divider', backgroundImage: 'none' }}>
@@ -194,7 +226,7 @@ function TopBar({ channels, activeId, onSelect, status }: TopBarProps): ReactEle
           </Typography>
         ) : null}
         <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 1 }}>
-          <StatusChip status={status} />
+          <StatusChip status={status} newestId={newestId} recovered={recovered} />
           <ThemeToggle />
         </Box>
       </Toolbar>
@@ -542,6 +574,8 @@ function App(): ReactElement {
   const [stream, setStream] = useState<Status>('connecting')
   /** What the server last said about Discord; only meaningful while the stream is open. */
   const [discordUp, setDiscordUp] = useState(true)
+  /** Messages recovered by the last reconnect, while the chip is saying so; otherwise null. */
+  const [recovered, setRecovered] = useState<number | null>(null)
   const [channels, setChannels] = useState<ChannelInfo[]>([])
   const [attachmentsOn, setAttachmentsOn] = useState(false)
   /** The channel picked in the URL or the tabs; null means the server's default. */
@@ -569,6 +603,7 @@ function App(): ReactElement {
   useEffect(() => {
     setMsgs(new Map())
     setStream('connecting')
+    setRecovered(null)
     setSeenId(null)
     atBottom.current = true
     let es: EventSource | undefined
@@ -576,6 +611,10 @@ function App(): ReactElement {
     let stable: ReturnType<typeof setTimeout> | undefined
     let attempt = 0
     let since: string | null = null
+    let dropped = false
+    let everOpen = false
+    let catchUpUntil = 0
+    let recoveredNote: ReturnType<typeof setTimeout> | undefined
 
     // EventSource's own retry has a fixed delay and stops for good on an HTTP error (e.g. a 502
     // mid-deploy), so every error closes it and this loop reconnects with backoff and jitter.
@@ -583,6 +622,14 @@ function App(): ReactElement {
       es = new EventSource(eventsUrl(streamChannel, since))
       es.onopen = () => {
         setStream('live')
+        if (everOpen && dropped) {
+          // ponytail: a time window, so a slow replay undercounts. A server end-of-replay event would make it exact.
+          catchUpUntil = Date.now() + CATCH_UP_MS
+          setRecovered(0)
+          recoveredNote = setTimeout(() => setRecovered(null), RECOVERED_MS)
+        }
+        everOpen = true
+        dropped = false
         // Not on open alone: a server that accepts and then dies must keep backing off.
         stable = setTimeout(() => {
           attempt = 0
@@ -592,12 +639,19 @@ function App(): ReactElement {
       es.onmessage = e => {
         const m = parseMsg(String(e.data))
         if (!m) return
-        if (since === null || compareIds(m.id, since) > 0) since = m.id
+        if (since === null || compareIds(m.id, since) > 0) {
+          since = m.id
+          if (Date.now() < catchUpUntil) setRecovered(n => (n ?? 0) + 1)
+        }
         setMsgs(prev => addMsg(prev, m))
       }
       es.onerror = () => {
         es?.close()
         clearTimeout(stable)
+        clearTimeout(recoveredNote)
+        dropped = true
+        catchUpUntil = 0
+        setRecovered(null)
         setStream('reconnecting')
         retry = setTimeout(connect, retryDelay(attempt++))
       }
@@ -607,6 +661,7 @@ function App(): ReactElement {
     return () => {
       clearTimeout(retry)
       clearTimeout(stable)
+      clearTimeout(recoveredNote)
       es?.close()
     }
   }, [streamChannel])
@@ -657,7 +712,7 @@ function App(): ReactElement {
   return (
     <ThemeProvider theme={theme} defaultMode="system" noSsr>
       <CssBaseline enableColorScheme />
-      <TopBar channels={channels} activeId={activeId} onSelect={selectChannel} status={status} />
+      <TopBar channels={channels} activeId={activeId} onSelect={selectChannel} status={status} newestId={newestId} recovered={recovered} />
       <Box
         component="main"
         sx={{ maxWidth: 792, mx: 'auto', px: { xs: 1, sm: 2 }, pt: 1, pb: 10, minHeight: 'calc(100dvh - 57px)', display: 'flex', flexDirection: 'column' }}

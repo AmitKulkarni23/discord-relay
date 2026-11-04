@@ -5,6 +5,7 @@ import AppBar from '@mui/material/AppBar'
 import Avatar from '@mui/material/Avatar'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
+import ButtonBase from '@mui/material/ButtonBase'
 import Chip from '@mui/material/Chip'
 import CssBaseline from '@mui/material/CssBaseline'
 import Divider from '@mui/material/Divider'
@@ -21,7 +22,7 @@ import type { ChannelInfo, Msg } from '../backend/types.ts'
 // Bun's HTML bundler does not code-split, so this ships in the main bundle even with
 // the `attachments` flag off (a few KB). It only renders when the flag is on; split with Bun.build if it grows.
 import Attachments from './attachments.tsx'
-import { addMsg, buildRows, compareIds, eventsUrl, fetchConfig, parseMarkup, parseMsg, retryDelay, sortMsgs } from './feed.ts'
+import { addMsg, buildRows, compareIds, eventsUrl, fetchConfig, parseMarkup, parseMsg, retryDelay, sortMsgs, type Part } from './feed.ts'
 import { isDiscordCdn } from './media.ts'
 import { GROUND, theme } from './theme.ts'
 
@@ -40,6 +41,14 @@ const COLLAPSE_LINES = 15
 const timeFmt = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' })
 const fullFmt = new Intl.DateTimeFormat(undefined, { dateStyle: 'full', timeStyle: 'short' })
 const dayFmt = new Intl.DateTimeFormat(undefined, { weekday: 'long', month: 'long', day: 'numeric' })
+
+/** How each kind of Discord formatting looks. */
+const FORMAT = {
+  bold: { fontWeight: 700 },
+  italic: { fontStyle: 'italic' },
+  underline: { textDecoration: 'underline' },
+  strike: { textDecoration: 'line-through' },
+}
 
 const arrive = keyframes`
   from { background-color: var(--arrive-tint); }
@@ -190,19 +199,79 @@ function DayDivider({ date }: { date: Date }): ReactElement {
   )
 }
 
-/** A message's text as React nodes, never as HTML. */
-function MessageText({ text }: { text: string }): ReactElement {
+/** Spoiler text: hidden from sight and screen readers until the reader clicks it. */
+function TextSpoiler({ parts }: { parts: Part[] }): ReactElement {
+  const [shown, setShown] = useState(false)
+  if (shown) {
+    return (
+      <Box component="span" sx={{ bgcolor: 'action.selected', borderRadius: 0.5, px: 0.25 }}>
+        <MessageParts parts={parts} />
+      </Box>
+    )
+  }
+  return (
+    <ButtonBase
+      component="span"
+      disableRipple
+      aria-label="Spoiler: show"
+      onClick={() => setShown(true)}
+      sx={{ display: 'inline', font: 'inherit', bgcolor: 'text.secondary', borderRadius: 0.5, px: 0.25, verticalAlign: 'baseline' }}
+    >
+      <Box component="span" aria-hidden sx={{ visibility: 'hidden' }}>
+        <MessageParts parts={parts} />
+      </Box>
+    </ButtonBase>
+  )
+}
+
+/** Parsed message text as React nodes, never as HTML. */
+function MessageParts({ parts }: { parts: Part[] }): ReactElement {
   return (
     <>
-      {parseMarkup(text).map((part, i) =>
-        part.kind === 'link' ? (
-          <Link key={i} href={part.href} target="_blank" rel="noopener noreferrer" color="inherit" underline="always">
-            {part.href}
-          </Link>
-        ) : (
-          part.text
-        ),
-      )}
+      {parts.map((part, i) => {
+        switch (part.kind) {
+          case 'text':
+            return part.text
+          case 'link':
+            return (
+              <Link key={i} href={part.href} target="_blank" rel="noopener noreferrer" color="inherit" underline="always">
+                {part.href}
+              </Link>
+            )
+          case 'code':
+            return (
+              <Box key={i} component="code" sx={{ fontFamily: 'monospace', fontSize: '0.9em', bgcolor: 'action.selected', borderRadius: 0.5, px: 0.5 }}>
+                {part.text}
+              </Box>
+            )
+          case 'block':
+            return (
+              <Box
+                key={i}
+                component="pre"
+                sx={{ fontFamily: 'monospace', fontSize: '0.9em', m: 0, my: 0.5, p: 1, overflowX: 'auto', border: 1, borderColor: 'divider', borderRadius: 1 }}
+              >
+                {part.text}
+              </Box>
+            )
+          case 'time': {
+            const at = new Date(part.iso)
+            return (
+              <time key={i} dateTime={part.iso} title={fullFmt.format(at)}>
+                {fullFmt.format(at)}
+              </time>
+            )
+          }
+          case 'spoiler':
+            return <TextSpoiler key={i} parts={part.parts} />
+          default:
+            return (
+              <Box key={i} component="span" sx={FORMAT[part.kind]}>
+                <MessageParts parts={part.parts} />
+              </Box>
+            )
+        }
+      })}
     </>
   )
 }
@@ -216,7 +285,7 @@ type MessageBodyProps = { msg: Msg; attachmentsOn: boolean; atBottom: RefObject<
 function MessageBody({ msg, attachmentsOn, atBottom }: MessageBodyProps): ReactElement | null {
   const [expanded, setExpanded] = useState(false)
   const [clipped, setClipped] = useState(false)
-  const text = useRef<HTMLSpanElement>(null)
+  const text = useRef<HTMLDivElement>(null)
 
   // A resize can clip a message that fitted, so keep measuring while it is collapsed.
   useLayoutEffect(() => {
@@ -249,6 +318,7 @@ function MessageBody({ msg, attachmentsOn, atBottom }: MessageBodyProps): ReactE
     <>
       <Typography
         ref={text}
+        component="div"
         variant="body1"
         sx={{
           m: 0,
@@ -260,7 +330,7 @@ function MessageBody({ msg, attachmentsOn, atBottom }: MessageBodyProps): ReactE
           ...(clipped && !expanded ? { maskImage: 'linear-gradient(to bottom, black calc(100% - 2lh), transparent)' } : {}),
         }}
       >
-        {empty ? msg.attachments.length > 0 ? 'Attachment' : 'Message text unavailable' : <MessageText text={msg.content} />}
+        {empty ? msg.attachments.length > 0 ? 'Attachment' : 'Message text unavailable' : <MessageParts parts={parseMarkup(msg.content)} />}
         {msg.editedAt ? (
           <Typography component="span" variant="caption" sx={{ color: 'text.secondary', ml: 0.75, fontStyle: 'normal' }}>
             (edited)

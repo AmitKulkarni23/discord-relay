@@ -8,7 +8,7 @@ function makeDiscordMessage(overrides: Partial<MessageLike> = {}): MessageLike {
   return {
     id: '1302000000000000001',
     channelId: '1301000000000000001',
-    content: 'deploy finished for build 482',
+    cleanContent: 'deploy finished for build 482',
     createdAt: new Date('2026-11-01T17:00:00.000Z'),
     editedAt: null,
     author: {
@@ -64,6 +64,10 @@ describe('toMsg', () => {
   })
 
   describe('when a message is converted', () => {
+    it('should use the text with mentions and custom emoji already resolved to names', () => {
+      expect(toMsg(makeDiscordMessage({ cleanContent: '@Amit shipped it :party:' })).content).toBe('@Amit shipped it :party:')
+    })
+
     it('should keep IDs, content, avatar and creation time when converted', () => {
       expect(toMsg(makeDiscordMessage())).toEqual({
         id: '1302000000000000001',
@@ -123,14 +127,14 @@ describe('toMsg', () => {
 describe('isMissingContent', () => {
   describe('when content and attachments are empty', () => {
     it('should return true when there is nothing to show', () => {
-      expect(isMissingContent(toMsg(makeDiscordMessage({ content: '' })))).toBe(true)
+      expect(isMissingContent(toMsg(makeDiscordMessage({ cleanContent: '' })))).toBe(true)
     })
   })
 
   describe('when the message has something to show', () => {
     it('should return false when there is an attachment but no text', () => {
       const msg = makeDiscordMessage({
-        content: '',
+        cleanContent: '',
         attachments: new Map([
           [
             '1',
@@ -368,7 +372,7 @@ describe('startDiscord', () => {
       stop = fake.discord.stop
 
       for (const id of ['1302000000000000001', '1302000000000000002']) {
-        fake.client.emit(Events.MessageCreate, makeDiscordMessage({ id, content: '' }) as never)
+        fake.client.emit(Events.MessageCreate, makeDiscordMessage({ id, cleanContent: '' }) as never)
       }
 
       expect(fake.logs.filter(l => l.event === 'message_content_missing')).toHaveLength(1)

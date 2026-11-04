@@ -9,7 +9,7 @@ Attachments render behind the `attachments` flag (TASK-009). What is left:
 - **Thumbnails for images.** Images load at full resolution, so a 25 MB photo costs every viewer 25 MB even though it shows at 400 px. Load a resized variant from Discord's media proxy (`media.discordapp.net` with a width parameter) and link to the original. Check the URL format against a real attachment first.
 - **Size on video and audio.** Show "Video · 480 MB" before play, as file cards already do.
 - **Expired links.** Discord's attachment URLs expire after about 24 hours. The page shows "no longer available" when one fails; refreshing URLs server-side (Discord has an attachment-refresh endpoint) would keep old media working.
-- **Not captured yet:** embeds (link previews, bot cards), stickers, custom emoji and mentions (passed through as raw `<:name:id>`, `<@id>`, `<#id>`), replies, threads, polls and reactions.
+- **Not captured yet:** embeds (link previews, bot cards), stickers, custom emoji images (shown as `:name:`), headings, quotes, lists and masked links (shown as typed), replies, threads, polls and reactions.
 
 ## 2. Edits, deletes and the debug panel
 

@@ -39,7 +39,7 @@ The `data:` line is one JSON object, shown formatted:
 | `author.name` | string | Display name: the user's global name if they set one, otherwise their username. | `author.globalName ?? author.username` |
 | `author.avatarUrl` | string \| null | Avatar image URL. Users without an avatar get Discord's default (`/embed/avatars/<n>.png`). | `author.displayAvatarURL()` |
 | `author.bot` | boolean | True for bots and webhooks. | `author.bot` |
-| `content` | string | Message text, as typed (Discord markdown is not rendered). Empty when the message has only attachments, or when the MessageContent intent is off. | `message.content` |
+| `content` | string | Message text with mentions and custom emoji resolved to names; other Discord formatting stays as typed, and the page renders it. Empty when the message has only attachments, or when the MessageContent intent is off. | `message.cleanContent` |
 | `createdAt` | string | When the message was posted, ISO 8601 in UTC. | `message.createdAt` |
 | `editedAt` | string \| null | When it was last edited, or `null` if never edited. | `message.editedAt` |
 | `attachments` | array | Files attached to the message. Empty array when there are none. | `message.attachments` |
@@ -58,7 +58,7 @@ IDs are strings because Discord IDs are 64-bit "snowflakes", larger than the big
 
 A snowflake also encodes its creation time: `(BigInt(id) >> 22n) + 1420070400000n` is milliseconds since the Unix epoch. That is why sorting by ID sorts by time.
 
-`content` can contain Discord mention syntax such as `<@961675715634400003>` for a user or `<#1566584977829900002>` for a channel. The relay passes it through unchanged.
+`content` comes from discord.js `message.cleanContent`, so `<@961675715634400003>` arrives as `@name`, `<#1566584977829900002>` as `#name` and `<:party:123>` as `:party:`. A mention of a user or channel the bot has not cached stays in its raw form.
 
 ## Other lines on the stream
 

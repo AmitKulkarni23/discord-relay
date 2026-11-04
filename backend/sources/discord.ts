@@ -9,7 +9,7 @@ import type { ChannelInfo, Msg } from '../types.ts'
 export type MessageLike = {
   id: string
   channelId: string
-  content: string
+  cleanContent: string
   createdAt: Date
   editedAt: Date | null
   author: {
@@ -48,7 +48,8 @@ export function toMsg(m: MessageLike): Msg {
       avatarUrl: m.author.displayAvatarURL(),
       bot: m.author.bot,
     },
-    content: m.content,
+    // Mentions and custom emoji become @name, #name and :name:. An uncached mention stays raw.
+    content: m.cleanContent,
     createdAt: m.createdAt.toISOString(),
     editedAt: m.editedAt ? m.editedAt.toISOString() : null,
     attachments: [...m.attachments.values()].map(a => ({

@@ -158,16 +158,24 @@ export function startDiscord(deps: DiscordDeps) {
     }
   }
 
-  /** Converts and publishes one message, warning when its content is missing. */
+  /**
+   * Converts and publishes one message, warning when its content is missing. A message that
+   * cannot be converted is logged and skipped, so it costs one message, not a restart (a throw on
+   * the live path is uncaught) or the rest of the channel's history.
+   */
   function handle(m: MessageLike): void {
-    const msg = toMsg(m)
-    if (isMissingContent(msg)) {
-      log.warn('message_content_missing', {
-        messageId: msg.id,
-        hint: 'Enable the MessageContent intent for the bot in the Discord developer portal',
-      })
+    try {
+      const msg = toMsg(m)
+      if (isMissingContent(msg)) {
+        log.warn('message_content_missing', {
+          messageId: msg.id,
+          hint: 'Enable the MessageContent intent for the bot in the Discord developer portal',
+        })
+      }
+      publish(msg)
+    } catch (err) {
+      log.error('message_skipped', { channelId: m.channelId, messageId: m.id, error: err instanceof Error ? err.message : String(err) })
     }
-    publish(msg)
   }
 
   /** Publishes one channel's latest `historyLimit` messages, oldest first. Logs and continues on failure. */

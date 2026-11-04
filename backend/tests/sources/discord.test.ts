@@ -1,5 +1,7 @@
-import { describe, expect, it, mock } from 'bun:test'
-import { collectHistory, createWatchdog, isMissingContent, toMsg, type MessageLike } from '../../sources/discord.ts'
+import { afterEach, describe, expect, it, mock, spyOn } from 'bun:test'
+import { Client, Events } from 'discord.js'
+import { collectHistory, createWatchdog, isMissingContent, startDiscord, toMsg, type MessageLike } from '../../sources/discord.ts'
+import type { Msg } from '../../types.ts'
 
 /** Builds a realistic discord.js-shaped message; override any field per test. */
 function makeDiscordMessage(overrides: Partial<MessageLike> = {}): MessageLike {
@@ -244,6 +246,81 @@ describe('collectHistory', () => {
 
       expect(ch.calls).toHaveLength(2)
       expect(got.map(m => m.id)).toEqual(ch.ids)
+    })
+  })
+})
+
+const CHANNEL = '1301000000000000001'
+/** A message discord.js could hand over that toMsg cannot convert. */
+const MALFORMED = { author: null } as unknown as Partial<MessageLike>
+
+/** Runs the real startDiscord and discord.js Client with login and the channel faked, so nothing touches the network. */
+function startFakeDiscord(history: MessageLike[]) {
+  const logs: Array<Record<string, unknown>> = []
+  spyOn(console, 'log').mockImplementation((line: string) => {
+    logs.push(JSON.parse(line) as Record<string, unknown>)
+  })
+  let client: Client | undefined
+  const login = spyOn(Client.prototype, 'login').mockImplementation(async function (this: Client) {
+    client = this
+    return 'token'
+  })
+  const published: Msg[] = []
+  const discord = startDiscord({ token: 'token', channelIds: [CHANNEL], publish: m => published.push(m) })
+  login.mockRestore()
+  if (!client) throw new Error('login was not called')
+  const channel = {
+    isTextBased: () => true,
+    name: 'general',
+    // Newest first, as Discord returns them. Every message fits on the first page.
+    messages: { fetch: async () => new Map([...history].reverse().map(m => [m.id, m])) },
+  }
+  const fetchChannel = spyOn(client.channels, 'fetch').mockResolvedValue(channel as never)
+  return { client, discord, published, logs, fetchChannel }
+}
+
+/** Polls until `cond` holds, failing after a second. */
+async function waitFor(cond: () => boolean): Promise<void> {
+  const deadline = Date.now() + 1000
+  while (!cond()) {
+    if (Date.now() > deadline) throw new Error('waitFor timed out')
+    await Bun.sleep(1)
+  }
+}
+
+describe('startDiscord', () => {
+  let stop = async (): Promise<void> => {}
+  afterEach(async () => {
+    await stop()
+    mock.restore()
+  })
+
+  describe('when a message cannot be converted', () => {
+    it('should log it and keep going when it arrives live', () => {
+      const fake = startFakeDiscord([])
+      stop = fake.discord.stop
+
+      fake.client.emit(Events.MessageCreate, makeDiscordMessage({ id: '1302000000000000001', ...MALFORMED }) as never)
+      fake.client.emit(Events.MessageCreate, makeDiscordMessage({ id: '1302000000000000002' }) as never)
+
+      expect(fake.published.map(m => m.id)).toEqual(['1302000000000000002'])
+      expect(fake.logs).toContainEqual(expect.objectContaining({ level: 'error', event: 'message_skipped', messageId: '1302000000000000001' }))
+    })
+
+    it('should still load the rest of the channel when it is in the history', async () => {
+      const history = [
+        makeDiscordMessage({ id: '1302000000000000001' }),
+        makeDiscordMessage({ id: '1302000000000000002', ...MALFORMED }),
+        makeDiscordMessage({ id: '1302000000000000003' }),
+      ]
+      const fake = startFakeDiscord(history)
+      stop = fake.discord.stop
+
+      fake.client.emit(Events.ClientReady, fake.client as never)
+      await waitFor(() => fake.logs.some(l => l.event === 'history_loaded' || l.event === 'history_failed'))
+
+      expect(fake.published.map(m => m.id)).toEqual(['1302000000000000001', '1302000000000000003'])
+      expect(fake.logs).not.toContainEqual(expect.objectContaining({ event: 'history_failed' }))
     })
   })
 })

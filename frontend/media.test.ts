@@ -16,6 +16,10 @@ describe('isDiscordCdn', () => {
       expect(isDiscordCdn('javascript:alert(1)')).toBe(false)
       expect(isDiscordCdn(null)).toBe(false)
     })
+
+    it('should reject it when the value is not a URL at all', () => {
+      expect(isDiscordCdn('not a url')).toBe(false)
+    })
   })
 })
 

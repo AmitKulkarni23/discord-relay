@@ -102,6 +102,49 @@ describe('parseMsg', () => {
     })
   })
 
+  describe('when the message has attachments', () => {
+    const attachment = {
+      url: 'https://cdn.discordapp.com/attachments/1/2/build-log.png',
+      name: 'build-log.png',
+      contentType: 'image/png',
+      size: 2048,
+      width: 640,
+      height: 480,
+    }
+    const withAttachment = (a: unknown): string => JSON.stringify({ ...makeMsg('1566588496691400001', '2026-11-01T23:03:23.418Z'), attachments: [a] })
+
+    it('should keep an attachment when every field has the right type', () => {
+      expect(parseMsg(withAttachment(attachment))?.attachments).toEqual([attachment])
+    })
+
+    it('should keep an attachment when its type and dimensions are unknown', () => {
+      const unknownFile = { ...attachment, contentType: null, width: null, height: null }
+
+      expect(parseMsg(withAttachment(unknownFile))?.attachments).toEqual([unknownFile])
+    })
+
+    it('should return null when any attachment field is missing or mistyped', () => {
+      const bad = [
+        null,
+        'build-log.png',
+        { ...attachment, url: 42 },
+        { ...attachment, name: null },
+        { ...attachment, contentType: 7 },
+        { ...attachment, size: '2048' },
+        { ...attachment, width: '640' },
+        { ...attachment, height: '480' },
+      ]
+
+      for (const a of bad) expect(parseMsg(withAttachment(a))).toBeNull()
+    })
+
+    it('should return null when attachments is not a list', () => {
+      const m = makeMsg('1566588496691400001', '2026-11-01T23:03:23.418Z')
+
+      expect(parseMsg(JSON.stringify({ ...m, attachments: attachment }))).toBeNull()
+    })
+  })
+
   describe('when the event data is malformed', () => {
     it('should return null when the data is not JSON', () => {
       expect(parseMsg('not json')).toBeNull()

@@ -320,7 +320,18 @@ const MessageRow = memo(function MessageRow({ msg, head, attachmentsOn, atBottom
         <Typography
           variant="caption"
           className="relay-gutter-time"
-          sx={{ color: 'text.secondary', textAlign: 'right', pt: '3px', opacity: 0, transition: 'opacity 120ms', fontSize: 11 }}
+          sx={{
+            display: 'flex',
+            justifyContent: 'flex-end',
+            whiteSpace: 'nowrap',
+            color: 'text.secondary',
+            pt: '3px',
+            opacity: 0,
+            transition: 'opacity 120ms',
+            fontSize: 11,
+            // Touch screens have no hover, so a grouped message would never show its time.
+            '@media (hover: none)': { opacity: 1, fontSize: 10 },
+          }}
         >
           {time}
         </Typography>

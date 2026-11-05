@@ -49,7 +49,7 @@ One channel, messages of about 470 bytes, a 60 s hold per step, `BUFFER_SIZE` 10
 5. **Stress one thing at a time.** At 10 msg/s with half the usable max: 4,000-byte messages, slow clients, reconnect churn, a reconnect storm, and bursts.
 6. **The real page (needs approval for Playwright).** Open it in a browser at each rate, because the page may struggle before the server does.
 
-The live service is not touched at any point.
+The live service is only tested with a temporary build, on your approval, while it has no real viewers. It adds one private port, and redeploying from `main` removes it.
 
 ## Reading the results
 

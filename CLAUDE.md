@@ -120,7 +120,7 @@ bun run typecheck
 bun test           # unit + integration, no network
 bun test --coverage  # per-file floor in bunfig.toml
 bun audit          # known vulnerabilities
-bun load/run.ts --consumers 1000,5000 --rate 5   # local load test, never against production. Knobs: --help. Plan: docs/load_test_plan.md
+bun load/run.ts --consumers 1000,5000 --rate 5   # local load test. Production only with approval, as docs/load_test_plan.md says. Knobs: --help. Plan: docs/load_test_plan.md
 ```
 
 ```bash

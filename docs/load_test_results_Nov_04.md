@@ -49,7 +49,7 @@ All three run on Railway and talk over the private network.
 - **App:** the real `discord-relay` service with its real bot, running a temporary build. The build adds one private port, so the generator can send messages and the test can read stats.
 - **Consumers:** stand in for browsers. Each consumer is one open `/events` connection that checks every message arrived and how long it took.
 
-## Results
+## Result 1: 1,000 consumers at 10 msg/s
 
 10 msg/s, 1,000 consumers, 60 s hold, 1 consumer replica, messages of about 470 bytes.
 

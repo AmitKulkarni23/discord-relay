@@ -33,6 +33,10 @@
 
 The 1 s, 5 s, 80% and 200 ms limits are judgement calls, not standards.
 
+**Message size: 456 bytes**
+
+This stands in for a typical short chat message. Most of a real message is metadata, such as IDs, author details and a timestamp, so even a short one is about 400 bytes. It is a rough estimate, not sampled from real traffic. It stays fixed so runs can be compared, and larger messages are tested separately.
+
 ## Setup
 
 ```
@@ -51,7 +55,7 @@ All three run on Railway and talk over the private network.
 
 ## Result 1: 1,000 consumers at 10 msg/s
 
-10 msg/s, 1,000 consumers, 60 s hold, 1 consumer replica, messages of about 470 bytes.
+10 msg/s, 1,000 consumers, 60 s hold, 1 consumer replica, messages of 456 bytes.
 
 | Check | Result |
 |---|---:|

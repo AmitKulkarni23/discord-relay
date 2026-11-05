@@ -11,30 +11,39 @@ const ID_BASE = 1_900_000_000n * 10_000_000_000n
 const EVENT_OVERHEAD = 308
 const CONTENT = 'Simulated load test message from the DiscordRelay harness, not a real Discord message. '.repeat(2)
 
-export type LoadControl = { stats: () => Response; setRate: (perSec: number, msgBytes: number, burst: number, everySec: number) => void }
+export type LoadControl = {
+  stats: () => Response
+  setRate: (perSec: number, msgBytes: number, burst: number, everySec: number) => void
+  publish: (msgs: Msg[]) => void
+}
 
-export function createLoadControl(hub: Hub, channelIds: string[], bufferSize: number): LoadControl {
+/** Message content that makes an SSE event about `msgBytes` long; 0 keeps a typical text message, about 470 bytes. */
+export function loadContent(msgBytes: number): string {
+  return msgBytes > 0 ? 'x'.repeat(Math.max(0, msgBytes - EVENT_OVERHEAD)) : CONTENT
+}
+
+/** One simulated message. `seq` becomes the last 10 digits of its ID, which is how a consumer spots a gap. */
+export function makeLoadMsg(seq: number, channelId: string, content: string): Msg {
+  return {
+    id: String(ID_BASE + BigInt(seq)),
+    channelId,
+    author: { id: '1290000000000000042', name: 'load-producer', avatarUrl: null, bot: true },
+    content,
+    note: null,
+    createdAt: new Date().toISOString(),
+    editedAt: null,
+    attachments: [],
+  }
+}
+
+export function createLoadControl(hub: Hub, channelIds: string[], bufferSize: number, eventsPort: number): LoadControl {
   let seq = 0
   let content = CONTENT
-
-  /** By default a typical text message, about 470 bytes as an SSE event. */
-  function makeMsg(channelId: string): Msg {
-    return {
-      id: String(ID_BASE + BigInt(seq)),
-      channelId,
-      author: { id: '1290000000000000042', name: 'load-producer', avatarUrl: null, bot: true },
-      content,
-      note: null,
-      createdAt: new Date().toISOString(),
-      editedAt: null,
-      attachments: [],
-    }
-  }
 
   /** One message per channel under one sequence number, so a client's gap check works in any channel. */
   function publishToAll(): void {
     seq++
-    for (const channelId of channelIds) hub.publish(makeMsg(channelId))
+    for (const channelId of channelIds) hub.publish(makeLoadMsg(seq, channelId, content))
   }
 
   // Everything below resets when stats() reads it, so each sample covers one window.
@@ -64,7 +73,7 @@ export function createLoadControl(hub: Hub, channelIds: string[], bufferSize: nu
      */
     setRate(perSec, msgBytes, burst, everySec) {
       clearInterval(publisher)
-      if (msgBytes > 0) content = 'x'.repeat(Math.max(0, msgBytes - EVENT_OVERHEAD))
+      if (msgBytes > 0) content = loadContent(msgBytes)
       if (perSec <= 0) return
       if (seq === 0) for (let i = 0; i < bufferSize; i++) publishToAll()
       publisher = setInterval(
@@ -80,6 +89,16 @@ export function createLoadControl(hub: Hub, channelIds: string[], bufferSize: nu
       )
     },
 
+    /** Publishes messages an outside generator made and timed, one at a time, as the bot does. */
+    publish(msgs) {
+      const start = performance.now()
+      for (const msg of msgs) hub.publish(msg)
+      const ms = performance.now() - start
+      publishes++
+      publishMsTotal += ms
+      publishMsMax = Math.max(publishMsMax, ms)
+    },
+
     stats() {
       const now = performance.now()
       const cpu = process.cpuUsage(lastCpu)
@@ -87,6 +106,8 @@ export function createLoadControl(hub: Hub, channelIds: string[], bufferSize: nu
         now: Date.now(),
         seq,
         channelIds,
+        /** Where /events listens, which a runner elsewhere cannot otherwise know on Railway. */
+        eventsPort,
         clients: hub.subscriberCount(),
         /** Percent of one core since the last read; may pass 100 on several cores. */
         cpuPct: ((cpu.user + cpu.system) / 1000 / (now - lastAt)) * 100,
@@ -103,4 +124,32 @@ export function createLoadControl(hub: Hub, channelIds: string[], bufferSize: nu
       return Response.json(body)
     },
   }
+}
+
+/**
+ * Serves the load runner and generator on their own port: GET /stats, GET /clock, POST /rate, POST /publish.
+ * On Railway only the private network reaches this port, so it adds nothing to the public page.
+ */
+export function startLoadControl(hub: Hub, channelIds: string[], bufferSize: number, eventsPort: number, port: number): void {
+  const control = createLoadControl(hub, channelIds, bufferSize, eventsPort)
+  Bun.serve({
+    port,
+    hostname: '::',
+    async fetch(req) {
+      const url = new URL(req.url)
+      if (url.pathname === '/stats') return control.stats()
+      // Separate from /stats, because reading that resets its counters.
+      if (url.pathname === '/clock') return Response.json({ now: Date.now() })
+      if (url.pathname === '/rate' && req.method === 'POST') {
+        const q = url.searchParams
+        control.setRate(Number(q.get('perSec')), Number(q.get('msgBytes')), Number(q.get('burst')), Number(q.get('everySec')))
+        return new Response('ok')
+      }
+      if (url.pathname === '/publish' && req.method === 'POST') {
+        control.publish((await req.json()) as Msg[])
+        return new Response('ok')
+      }
+      return new Response('Not found', { status: 404 })
+    },
+  })
 }

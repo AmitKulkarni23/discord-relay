@@ -22,6 +22,7 @@ function processAt(url: URL): ConsumerProcess | undefined {
 
 const server = Bun.serve({
   port: Number(process.env.PORT ?? 4000),
+  hostname: '::',
   // /next waits for a process to reply, which can take as long as a whole step.
   idleTimeout: 0,
   async fetch(req) {

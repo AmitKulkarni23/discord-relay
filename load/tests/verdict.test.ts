@@ -13,9 +13,21 @@ const clean: StepOutcome = {
   slowest: 400,
   busiestProcessCpu: 30,
   processLagMs: 5,
+  generatorFailed: 0,
+  generatorLagMs: 0,
 }
 
 describe('classifyStep', () => {
+  describe('when an outside generator is sending the messages', () => {
+    it('should be broken when a send failed, even if every message that was sent arrived', () => {
+      expect(classifyStep({ ...clean, generatorFailed: 1 }, LIMITS)).toBe('BROKEN')
+    })
+
+    it('should be invalid when the generator fell behind its own schedule and the step did not pass', () => {
+      expect(classifyStep({ ...clean, p99: 2000, generatorLagMs: 500 }, LIMITS)).toBe('INVALID')
+    })
+  })
+
   describe('when delivery met every bar', () => {
     it('should pass', () => {
       expect(classifyStep(clean, LIMITS)).toBe('PASS')

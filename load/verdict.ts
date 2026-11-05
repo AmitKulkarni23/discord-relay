@@ -17,13 +17,17 @@ export type StepOutcome = {
   slowest: number
   busiestProcessCpu: number
   processLagMs: number
+  /** Messages an outside generator could not deliver to the server. */
+  generatorFailed: number
+  /** How far an outside generator fell behind its own timers. */
+  generatorLagMs: number
 }
 
 /** Judges one step. A busy process only matters when the step did not pass, since it can only make delivery look worse. */
 export function classifyStep(o: StepOutcome, limits: { maxP99Ms: number; maxSlowestMs: number }): Verdict {
-  const broken = o.received !== o.expected || o.dropped > 0 || o.gaps > 0 || o.live !== o.healthy
+  const broken = o.received !== o.expected || o.dropped > 0 || o.gaps > 0 || o.live !== o.healthy || o.generatorFailed > 0
   if (!broken && o.p99 <= limits.maxP99Ms && o.slowest <= limits.maxSlowestMs) return 'PASS'
-  if (o.busiestProcessCpu > MAX_PROCESS_CPU_PCT || o.processLagMs > MAX_PROCESS_LAG_MS) return 'INVALID'
+  if (o.busiestProcessCpu > MAX_PROCESS_CPU_PCT || o.processLagMs > MAX_PROCESS_LAG_MS || o.generatorLagMs > MAX_PROCESS_LAG_MS) return 'INVALID'
   return broken ? 'BROKEN' : 'SLOW'
 }
 

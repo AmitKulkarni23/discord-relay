@@ -45,6 +45,8 @@ Target
   --public               the host is a deploy behind HTTPS, with its control routes under --controlPath
   --controlPath <path>   control route prefix with --public (default /__load)
   --controlUrl <url>     full control URL, overriding the above
+  --generator <url>      load/generator.ts on another service sends the messages, on its own clock, instead of the server's own timer
+  --ignoreClients <n>    start even with this many connections already open, such as a page left open on a live service (default 0)
 
 A step is PASS, SLOW (nothing lost, too late), BROKEN (messages lost, consumers dropped or refused), or INVALID (did not pass
 and a process was overloaded, so add processes or machines). Each step prints its window, for load/railway-metrics.ts.
@@ -60,6 +62,8 @@ const { values } = parseArgs({
     public: { type: 'boolean', default: false },
     controlPath: { type: 'string', default: '/__load' },
     controlUrl: { type: 'string' },
+    generator: { type: 'string' },
+    ignoreClients: { type: 'string', default: '0' },
     port: { type: 'string', default: '3100' },
     consumers: { type: 'string', default: '100,1000,2000,5000,10000' },
     rate: { type: 'string', default: '5' },
@@ -103,7 +107,7 @@ const connectPerSec = Number(values.connectPerSec)
 const limits = { maxP99Ms: Number(values.maxP99Ms), maxSlowestMs: Number(values.maxSlowestMs) }
 const listeners = Number(values.listeners)
 const isPublic = values.public as boolean
-const ports = isPublic ? [443] : Array.from({ length: listeners }, (_, i) => (i === 0 ? port : port + 1 + i))
+const ignoreClients = Number(values.ignoreClients)
 const consumerLevels = (values.consumers as string).split(',').map(Number)
 const GRACE_MS = 10_000
 /** Longer than any step takes, even at the highest counts. */
@@ -125,6 +129,7 @@ type Stats = {
   now: number
   seq: number
   channelIds: string[]
+  eventsPort: number
   clients: number
   cpuPct: number
   rssMb: number
@@ -134,6 +139,11 @@ type Stats = {
   publishMsAvg: number
   publishMsMax: number
 }
+/** Whoever makes the messages holds their sequence number and the clock they are timed against. */
+const source = values.generator ?? control
+type GeneratorStats = { seq: number; failed: number; lagMsMax: number; sendMsMax: number }
+const getGenerator = async (): Promise<GeneratorStats> =>
+  (await fetch(`${source}/stats`, { signal: AbortSignal.timeout(30_000) })).json() as Promise<GeneratorStats>
 const getStats = async (): Promise<Stats> => (await fetch(`${control}/stats`, { signal: AbortSignal.timeout(30_000) })).json() as Promise<Stats>
 
 /** A process on another machine, driven through its load/agent.ts. Commands stay in order, as they do over IPC. */
@@ -177,6 +187,8 @@ const all = <T>(fn: (w: ConsumerProcess, i: number) => Promise<T>) => Promise.al
 /** Stops every process, here and on other machines, so no connection outlives the run. */
 async function stop(code: number): Promise<never> {
   for (const w of processes) w.kill()
+  // A server on another service outlives the run, and it must not keep receiving messages.
+  await Promise.allSettled([fetch(`${source}/rate?perSec=0`, { method: 'POST', signal: AbortSignal.timeout(5000) })])
   await Promise.allSettled(machines.map(machine => fetch(`${machine}/stop`, { method: 'POST', signal: AbortSignal.timeout(5000) })))
   localServer?.kill()
   process.exit(code)
@@ -203,24 +215,26 @@ void localServer?.exited.then(code => {
   void stop(1)
 })
 
-const { channelIds } = await waitForServer()
+const { channelIds, eventsPort } = await waitForServer()
+const ports = isPublic ? [443] : Array.from({ length: listeners }, (_, i) => (i === 0 ? eventsPort : eventsPort + 1 + i))
 // Each machine has its own clock, and delivery times are measured on the machine that receives them.
-const localOffset = machines.length ? 0 : await clockOffset(control)
+const localOffset = machines.length ? 0 : await clockOffset(source)
 const machineOffsets = await Promise.all(
-  machines.map(async machine => ((await (await fetch(`${machine}/offset?control=${encodeURIComponent(control)}`)).json()) as { offsetMs: number }).offsetMs),
+  machines.map(async machine => ((await (await fetch(`${machine}/offset?control=${encodeURIComponent(source)}`)).json()) as { offsetMs: number }).offsetMs),
 )
 const offsets = machines.length
   ? machines.flatMap((_, m) => Array.from({ length: processesPerMachine }, () => machineOffsets[m] ?? 0))
   : processes.map(() => localOffset)
-await fetch(`${control}/rate?perSec=0`, { method: 'POST' })
+await fetch(`${source}/rate?perSec=0`, { method: 'POST' })
 await Bun.sleep(1000)
 // A leftover connection would be counted as a consumer it is not, and it costs the server work.
-for (let i = 0; (await getStats()).clients > 0; i++) {
+for (let i = 0; (await getStats()).clients > ignoreClients; i++) {
   if (i === 60) throw new Error('the load server still has open connections: restart it, or wait for them to close')
   await Bun.sleep(1000)
 }
 const baseline = await getStats()
-await fetch(`${control}/rate?perSec=${rate}&msgBytes=${msgBytes}&burst=${burst}&everySec=${burstEverySec}`, { method: 'POST' })
+const generatorTarget = values.generator ? `&target=${encodeURIComponent(control)}&channels=${channelIds.join(',')}` : ''
+await fetch(`${source}/rate?perSec=${rate}&msgBytes=${msgBytes}&burst=${burst}&everySec=${burstEverySec}${generatorTarget}`, { method: 'POST' })
 console.log(
   JSON.stringify({
     event: 'start',
@@ -282,7 +296,9 @@ for (const target of consumerLevels) {
   await Bun.sleep(5000)
   await getStats()
 
-  const from = (await getStats()).seq + (burst ? burst * Math.max(1, Math.ceil(2 / burstEverySec)) : Math.ceil(rate * 2))
+  // Reading the generator here also clears what it counted before the window.
+  const from =
+    (values.generator ? await getGenerator() : await getStats()).seq + (burst ? burst * Math.max(1, Math.ceil(2 / burstEverySec)) : Math.ceil(rate * 2))
   processes.forEach((w, i) => w.command({ type: 'window', from, offsetMs: offsets[i] ?? 0 }))
   const windowStart = performance.now()
   const windowStartIso = new Date().toISOString()
@@ -297,15 +313,26 @@ for (const target of consumerLevels) {
     )
   }
   const samples: Stats[] = []
+  let generatorFailed = 0
+  let generatorLagMs = 0
+  let generatorSendMsMax = 0
+  const readGenerator = async (): Promise<number> => {
+    const g = await getGenerator()
+    generatorFailed += g.failed
+    generatorLagMs = Math.max(generatorLagMs, g.lagMsMax)
+    generatorSendMsMax = Math.max(generatorSendMsMax, g.sendMsMax)
+    return g.seq
+  }
   const holdEnd = performance.now() + holdSec * 1000
   while (performance.now() < holdEnd) {
     await Bun.sleep(5000)
     samples.push(await getStats())
+    if (values.generator) await readGenerator()
   }
   const last = await getStats()
   samples.push(last)
   const windowEndIso = new Date().toISOString()
-  const to = last.seq
+  const to = values.generator ? await readGenerator() : last.seq
   const reports = await all(w => {
     w.command({ type: 'end', to, graceMs: GRACE_MS })
     return w.next()
@@ -359,11 +386,15 @@ for (const target of consumerLevels) {
   const lagMax = Math.max(...samples.map(s => s.lagMsMax))
   const kbPerClient = ((last.rssMb - baseline.rssMb) * 1024) / target
   const verdict: Verdict = classifyStep(
-    { received, expected, dropped, gaps, live, healthy, p99, slowest: max, busiestProcessCpu, processLagMs: processLag },
+    { received, expected, dropped, gaps, live, healthy, p99, slowest: max, busiestProcessCpu, processLagMs: processLag, generatorFailed, generatorLagMs },
     limits,
   )
   const row = {
     consumers: target,
+    messages: to - from,
+    generatorFailed,
+    generatorLagMs,
+    generatorSendMsMax,
     windowStartIso,
     windowEndIso,
     connectSec,

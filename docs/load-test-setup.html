@@ -1,0 +1,23 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Load Test Setup</title><style>
+:root{--bg:#fff;--fg:#1f2328;--muted:#5b636e;--line:#8a929c;--ext-bg:#f1ecff;--ext-bd:#7c5cd6;--our-bg:#e8f1ff;--our-bd:#2f6fdb;--inf-bg:#fff4e0;--inf-bd:#d48a12;--usr-bg:#e7f7ee;--usr-bd:#2e9a5b;--grp-bd:#9aa3ad}
+@media (prefers-color-scheme:dark){:root{--bg:#191919;--fg:#e6e6e6;--muted:#a0a7b0;--line:#7d858f;--ext-bg:#2a2340;--ext-bd:#9b82ea;--our-bg:#1b2a42;--our-bd:#5b93ee;--inf-bg:#3a2c12;--inf-bd:#e0a33a;--usr-bg:#173324;--usr-bd:#4cc27f;--grp-bd:#5e666f}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:13px/1.35 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,sans-serif}
+.wrap{max-width:780px;margin:0 auto;padding:16px}
+.n{border:1.5px solid;border-radius:10px;padding:8px 12px;text-align:center}.n b{display:block;font-size:13.5px}.n small{display:block;color:var(--muted);font-size:11.5px;margin-top:2px}
+.ext{background:var(--ext-bg);border-color:var(--ext-bd)}.our{background:var(--our-bg);border-color:var(--our-bd)}.usr{background:var(--usr-bg);border-color:var(--usr-bd)}
+.stack{box-shadow:4px 4px 0 -1.5px var(--bg),4px 4px 0 0 var(--usr-bd),8px 8px 0 -1.5px var(--bg),8px 8px 0 0 var(--usr-bd)}
+.h{display:flex;flex-direction:column;justify-content:center;padding:0 6px}.h>.lbl{font-size:11px;color:var(--muted);text-align:center;margin-bottom:3px;white-space:nowrap}
+.h>.ln{height:2px;background:var(--line);position:relative}.h>.ln::after{content:"";position:absolute;right:0;top:-5px;border-top:6px solid transparent;border-bottom:6px solid transparent;border-left:8px solid var(--line)}
+.grp{border:1.5px dashed var(--grp-bd);border-radius:14px;padding:28px 14px 16px;position:relative}.grp>.gl{position:absolute;top:8px;left:14px;font-size:11.5px;font-weight:600;color:var(--muted)}
+.row{display:grid;grid-template-columns:1fr 118px 1fr 150px 1fr;align-items:center}
+.note{font-size:11.5px;color:var(--muted);text-align:center;margin-top:12px}
+</style></head><body><div class="wrap">
+<div class="grp"><span class="gl">Railway · private network</span><div class="row">
+<div class="n ext"><b>Load generator</b><small>stands in for Discord<br>456-byte messages at a fixed rate</small></div>
+<div class="h"><span class="lbl">private port</span><span class="ln"></span></div>
+<div class="n our"><b>App: discord-relay</b><small>real hub + /events<br>temporary build, real bot idle</small></div>
+<div class="h"><span class="lbl">SSE /events</span><span class="ln"></span></div>
+<div class="n usr stack"><b>Consumers × 5 services</b><small>stand in for browsers<br>check every message + latency</small></div>
+</div></div>
+<div class="note">App restarted + 2 min wait before each test · 60 s hold per step · PASS = 100% delivered, none dropped, p99 ≤ 1 s, slowest ≤ 5 s<br>The public edge was tested separately through the real URL.</div>
+</div></body></html>

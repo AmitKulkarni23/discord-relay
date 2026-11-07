@@ -62,6 +62,8 @@ Built: `load-tests/`, with results in `docs/load_test_results.md`. Still open:
 
 **Today.** Logs are structured JSON with a `level` field (`log.debug|info|warn|error` in `backend/log.ts`), so Railway's log search can filter `@level:error` or `@event:gateway_disconnected`. There is no dashboard, no alarm, and no metric beyond what Railway collects on its own.
 
+**Plan.** Send metrics to Grafana, build the dashboards and alarms there, and deliver alarm notifications to Discord. The README's Observability section stays empty until this is built.
+
 ### What Railway provides
 
 - **Built-in metrics:** CPU, memory, disk and network per service, kept 30 days. Railway collects no application metrics (request latency, error rates).

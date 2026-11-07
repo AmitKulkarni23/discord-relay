@@ -2,7 +2,7 @@
 :root{--bg:#fff;--fg:#1f2328;--muted:#5b636e;--line:#8a929c;--ext-bg:#f1ecff;--ext-bd:#7c5cd6;--our-bg:#e8f1ff;--our-bd:#2f6fdb;--inf-bg:#fff4e0;--inf-bd:#d48a12;--usr-bg:#e7f7ee;--usr-bd:#2e9a5b;--grp-bd:#9aa3ad;--warn:#c43d3d}
 @media (prefers-color-scheme:dark){:root{--bg:#191919;--fg:#e6e6e6;--muted:#a0a7b0;--line:#7d858f;--ext-bg:#2a2340;--ext-bd:#9b82ea;--our-bg:#1b2a42;--our-bd:#5b93ee;--inf-bg:#3a2c12;--inf-bd:#e0a33a;--usr-bg:#173324;--usr-bd:#4cc27f;--grp-bd:#5e666f;--warn:#ff7b7b}}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:13px/1.35 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,sans-serif}
-.wrap{max-width:1240px;margin:0 auto;padding:16px}
+.wrap{max-width:880px;margin:0 auto;padding:16px}
 .n{border:1.5px solid;border-radius:10px;padding:8px 12px;text-align:center}.n b{display:block;font-size:13.5px}.n small{display:block;color:var(--muted);font-size:11.5px;margin-top:2px}
 .ext{background:var(--ext-bg);border-color:var(--ext-bd)}.our{background:var(--our-bg);border-color:var(--our-bd)}.inf{background:var(--inf-bg);border-color:var(--inf-bd)}.usr{background:var(--usr-bg);border-color:var(--usr-bd)}.dash{border-style:dashed}
 .center{max-width:320px;margin:0 auto}
@@ -20,19 +20,19 @@
 .col{display:grid;grid-template-columns:1fr 260px 1fr;align-items:center}.side{display:flex;align-items:center}.side>.n{flex:1}.side>.h{width:84px}
 
 .row{display:grid;grid-template-columns:auto 1fr auto 1fr auto 1fr auto 1fr auto 1fr auto;align-items:center}
-.row .n{padding:8px 14px;white-space:nowrap}.row>.h{min-width:120px}.row .h>.lbl{white-space:nowrap}.h>.lbl{white-space:normal;line-height:1.2}
+.row .n{padding:8px 10px;white-space:nowrap}.row>.h{min-width:62px;padding:0 5px}.row .h>.lbl{white-space:normal;line-height:1.2;margin-bottom:4px}.h>.lbl{white-space:normal;line-height:1.2}
 .row>*{opacity:.3}.row>.hot{opacity:1}.h.hot>.ln{background:var(--fg)}.h.hot>.ln::after{border-left-color:var(--fg)}.h.hot>.lbl{color:var(--fg);font-weight:600}
 </style></head><body><div class="wrap"><div class="row">
 <div class="n ext" data-i="0"><b>Discord</b></div>
 <div class="h" data-e="0"><span class="lbl">Gateway + REST</span><span class="ln"></span></div>
 <div class="n our" data-i="1"><b>Discord bot</b></div>
-<div class="h" data-e="1"><span class="lbl">publish(msg)</span><span class="ln"></span></div>
+<div class="h" data-e="1"><span class="lbl">publish<wbr>(msg)</span><span class="ln"></span></div>
 <div class="n our" data-i="2"><b>Hub</b></div>
 <div class="h" data-e="2"><span class="lbl">subscriber callback</span><span class="ln"></span></div>
 <div class="n our" data-i="3"><b>SSE stream</b></div>
 <div class="h" data-e="3"><span class="lbl">HTTP response</span><span class="ln"></span></div>
 <div class="n inf" data-i="4"><b>Railway edge</b></div>
-<div class="h" data-e="4"><span class="lbl">text/event-stream</span><span class="ln"></span></div>
+<div class="h" data-e="4"><span class="lbl">SSE events</span><span class="ln"></span></div>
 <div class="n usr" data-i="5"><b>Browser</b></div>
 </div></div>
 <script>

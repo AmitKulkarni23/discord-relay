@@ -68,7 +68,7 @@ One Railway service, with one replica, runs three components in a single Bun pro
 
 ### Discord to bot (Gateway)
 
-![Discord to bot hop](docs/failure-hop-0.png)
+![Discord to bot hop](docs/failure-flow-0.png)
 
 | Failure | User sees | Detection | Handling |
 | --- | --- | --- | --- |
@@ -81,7 +81,7 @@ One Railway service, with one replica, runs three components in a single Bun pro
 
 ### Bot to hub (in process)
 
-![Bot to hub hop](docs/failure-hop-1.png)
+![Bot to hub hop](docs/failure-flow-1.png)
 
 | Failure | User sees | Detection | Handling |
 | --- | --- | --- | --- |
@@ -92,7 +92,7 @@ One Railway service, with one replica, runs three components in a single Bun pro
 
 ### Hub to SSE stream to edge to browser
 
-![Hub to browser hops](docs/failure-hop-2.png)
+![Hub to browser hops](docs/failure-flow-2.png)
 
 | Failure | User sees | Detection | Handling |
 | --- | --- | --- | --- |

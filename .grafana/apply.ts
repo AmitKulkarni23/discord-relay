@@ -81,7 +81,8 @@ function dashboard(ds: string) {
           options: { colorMode: 'background', reduceOptions: { calcs: ['lastNotNull'] } },
         },
       ),
-      panel(2, 'Viewers (open streams)', 'timeseries', 12, 0, ds, { viewers: 'sum(last_over_time(relay_sse_clients[2m]))' }),
+      // ponytail: max, not sum, so the old and new process overlapping in a deploy are not counted twice. Use sum once there are replicas.
+      panel(2, 'Viewers (open streams)', 'timeseries', 12, 0, ds, { viewers: 'max(last_over_time(relay_sse_clients[2m]))' }),
       panel(3, 'Messages per second', 'timeseries', 0, 8, ds, { messages: 'sum(rate(relay_messages_total[5m]))' }),
       panel(4, 'HTTP 500 errors (per 5 min)', 'timeseries', 12, 8, ds, { '500s': 'sum(increase(relay_http_errors_total[5m]))' }),
       panel(
@@ -184,7 +185,7 @@ function alertRules(ds: string) {
       'relay-edge-cap',
       'Near the edge cap',
       ds,
-      'sum(last_over_time(relay_sse_clients[2m]))',
+      'max(last_over_time(relay_sse_clients[2m]))',
       'gt',
       8000,
       '5m',
@@ -206,7 +207,7 @@ function alertRules(ds: string) {
       'relay-drop-spike',
       'Drop spike',
       ds,
-      'sum(increase(relay_clients_dropped_total[5m])) / clamp_min(sum(last_over_time(relay_sse_clients[2m])), 1)',
+      'sum(increase(relay_clients_dropped_total[5m])) / clamp_min(max(last_over_time(relay_sse_clients[2m])), 1)',
       'gt',
       0.01,
       '0s',

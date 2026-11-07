@@ -256,6 +256,8 @@ Each line carries a `deployment` tag, so the old and new process keep separate t
 
 One Grafana dashboard with a panel per metric: Gateway status, viewers, messages per second, 500s, clients dropped, 429s and watchdog restarts.
 
+![Grafana dashboard](docs/grafana-dashboard.png)
+
 ### Alarms
 
 Alarms post to a private Discord channel.

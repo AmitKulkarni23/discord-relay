@@ -52,8 +52,8 @@ flowchart TD
   b2["<b>Browser</b>"]
   b3["<b>Browser</b>"]
 
-  discord -- "Gateway WebSocket (live) + REST (history at startup)" --> ingest
-  http -- "HTML page + SSE streams" --> edge
+  discord -- "Gateway WebSocket (live) + REST (history at startup)" --> svc
+  svc -- "HTML page + SSE streams" --> edge
   edge --> b1
   edge --> b2
   edge --> b3

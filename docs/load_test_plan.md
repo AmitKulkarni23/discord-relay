@@ -42,7 +42,7 @@ One channel, messages of about 470 bytes, a 60 s hold per step, `BUFFER_SIZE` 10
 
 ## Steps
 
-1. **Harness (local, `load/` only). Done.** The results above and the busiest process are in `load/run.ts`. Several machines are coordinated through `load/agent.ts`, so `--consumers` is the total and only the runner reads the server's stats. `load/max.ts` searches for the limit, and `load/railway-metrics.ts` reads server CPU and memory from `railway metrics`.
+1. **Harness (local, `load-tests/` only). Done.** The results above and the busiest process are in `load-tests/run.ts`. Several machines are coordinated through `load-tests/agent.ts`, so `--consumers` is the total and only the runner reads the server's stats. `load-tests/max.ts` searches for the limit, and `load-tests/railway-metrics.ts` reads server CPU and memory from `railway metrics`.
 2. **Railway (needs approval).** A separate server service with no Discord bot, and enough consumer machines for the count being tested. Check the cost first, and tear it all down afterwards.
 3. **Find the limits.** Run each rate from no open connections, narrow down between the last pass and the first failure, and repeat the limit 3 times.
 4. **Confirm it holds.** About 70% of the usable max at 10 msg/s for 30 minutes, watching for memory growth.
@@ -70,19 +70,19 @@ The live service is only tested with a temporary build, on your approval, while 
 On each consumer machine, and once on the load server:
 
 ```bash
-PORT=4000 bun load/agent.ts
-PORT=3100 CHANNELS=1 bun load/server.ts
+PORT=4000 bun load-tests/agent.ts
+PORT=3100 CHANNELS=1 bun load-tests/server.ts
 ```
 
 From one machine that can reach them all, which on Railway means one inside the private network:
 
 ```bash
-bun load/max.ts --host <server> --machines http://<consumer-1>:4000,http://<consumer-2>:4000 \
+bun load-tests/max.ts --host <server> --machines http://<consumer-1>:4000,http://<consumer-2>:4000 \
   --rate 10 --consumers 5000,10000,20000,30000,40000,60000 --hold 60 --maxSec 3600 | tee results.jsonl
 ```
 
 Then, from anywhere the Railway CLI is logged in:
 
 ```bash
-bun load/railway-metrics.ts results.jsonl --service <server service>
+bun load-tests/railway-metrics.ts results.jsonl --service <server service>
 ```

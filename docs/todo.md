@@ -44,7 +44,7 @@ This tests the real path end to end (Discord → bot → hub → SSE → browser
 
 ### Testing fan-out
 
-Built: `load/`, with results in `docs/load_test_results.md`. Still open:
+Built: `load-tests/`, with results in `docs/load_test_results.md`. Still open:
 
 - Find out why a few connections stalled for up to 46 s in the one-machine private runs. The later five-machine runs did not show this at up to 57,500 clients, so one consumer's network path is a suspect, not confirmed.
 - Find out why p99 was higher at 1 msg/s than at 5 msg/s for the same client count over the private network.

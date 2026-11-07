@@ -12,7 +12,7 @@ paths:
 - Frontend tests MUST live in `frontend/tests/`, mirroring the source tree: `frontend/lib/markup.ts` is tested by `frontend/tests/lib/markup.test.ts`.
 - Component and hook tests MUST use React Testing Library with happy-dom, by calling `setupDom()` from `frontend/tests/dom.ts`. A preload MUST NOT be used, because it would replace `fetch` for the backend's tests.
 - Layout cannot be tested in happy-dom: tests MUST state heights explicitly, and real scrolling and clipping belong in a browser.
-- Load harness tests MUST live in `load/tests/` and cover its pure logic. The rest of the harness is checked by running it.
+- Load harness tests MUST live in `load-tests/tests/` and cover its pure logic. The rest of the harness is checked by running it.
 - Tests MUST NOT call Discord or any network service. Integration tests MUST replace the bot with a fake source that calls `hub.publish`.
 
 ## Structure and naming

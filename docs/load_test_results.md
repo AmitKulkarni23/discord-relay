@@ -1,9 +1,9 @@
 # Load test results
 
-`load/` runs the real hub and server with a fake producer, and opens raw TCP connections to `/events`. It ramps client counts and stops at the first step that fails. A step passes when every client gets every message, none drop, and p99 delivery is at most 1 s.
+`load-tests/` runs the real hub and server with a fake producer, and opens raw TCP connections to `/events`. It ramps client counts and stops at the first step that fails. A step passes when every client gets every message, none drop, and p99 delivery is at most 1 s.
 
 ```bash
-bun load/run.ts --consumer machines 1000,5000,10000 --rate 5 --hold 45
+bun load-tests/run.ts --consumer machines 1000,5000,10000 --rate 5 --hold 45
 ```
 
 Knobs, which can be combined. The results below predate them and used the defaults, and they also predate the verdicts and multi-machine coordination in `docs/load_test_plan.md`: each machine ran its own ramp.

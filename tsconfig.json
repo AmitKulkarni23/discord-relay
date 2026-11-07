@@ -13,5 +13,5 @@
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true
   },
-  "include": ["backend/**/*.ts", "load/**/*.ts", "frontend/**/*.ts", "frontend/**/*.tsx", ".railway/**/*.ts"]
+  "include": ["backend/**/*.ts", "load-tests/**/*.ts", "frontend/**/*.ts", "frontend/**/*.tsx", ".railway/**/*.ts"]
 }

@@ -1,5 +1,5 @@
 /**
- * Simulated message producer and resource stats for a load test. load/server.ts uses it, and a
+ * Simulated message producer and resource stats for a load test. load-tests/server.ts uses it, and a
  * test of the live service wires it into a temporary, uncommitted deploy (see README, Load test).
  */
 import type { Hub } from '../backend/hub.ts'

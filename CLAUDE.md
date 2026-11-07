@@ -52,7 +52,7 @@ discord-relay/
 │   ├── hooks/             # use-event-stream, use-page-config, use-stick-to-bottom
 │   ├── lib/               # pure, tested logic: messages, markup, stream, media
 │   └── tests/             # mirrors frontend/: tests/lib/markup.test.ts
-├── load/                  # load test: fake producer + raw-socket clients (not deployed, results in docs/load_test_results.md)
+├── load-tests/            # load test: fake producer + raw-socket clients (not deployed, results in docs/load_test_results.md)
 │   ├── run.ts             # ramps client counts, stops at the first failing level
 │   ├── server.ts          # real hub and server, fake producer, control port
 │   ├── producer.ts        # fake messages and resource stats
@@ -120,7 +120,7 @@ bun run typecheck
 bun test           # unit + integration, no network
 bun test --coverage  # per-file floor in bunfig.toml
 bun audit          # known vulnerabilities
-bun load/run.ts --consumers 1000,5000 --rate 5   # local load test. Production only with approval, as docs/load_test_plan.md says. Knobs: --help. Plan: docs/load_test_plan.md
+bun load-tests/run.ts --consumers 1000,5000 --rate 5   # local load test. Production only with approval, as docs/load_test_plan.md says. Knobs: --help. Plan: docs/load_test_plan.md
 ```
 
 ```bash

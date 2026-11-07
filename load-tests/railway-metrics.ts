@@ -2,9 +2,9 @@
  * Adds Railway's own CPU and memory figures to a load test's results, measured from outside the process
  * so several readers cannot disturb them. Run it afterwards, wherever the Railway CLI is logged in.
  *
- *   bun load/railway-metrics.ts results.jsonl --service load-server
+ *   bun load-tests/railway-metrics.ts results.jsonl --service load-server
  *
- * results.jsonl is load/run.ts's or load/max.ts's output. Samples are 30 s apart, so short spikes do not show. Railway can pad a window with zeros, which are left out.
+ * results.jsonl is load-tests/run.ts's or load-tests/max.ts's output. Samples are 30 s apart, so short spikes do not show. Railway can pad a window with zeros, which are left out.
  */
 import { parseArgs } from 'node:util'
 import { summarizeMetrics, type Sample } from './metrics-summary.ts'
@@ -15,7 +15,7 @@ const { values, positionals } = parseArgs({
   options: { service: { type: 'string' }, environment: { type: 'string' } },
 })
 const [file] = positionals
-if (!file || !values.service) throw new Error('usage: bun load/railway-metrics.ts results.jsonl --service <name> [--environment <name>]')
+if (!file || !values.service) throw new Error('usage: bun load-tests/railway-metrics.ts results.jsonl --service <name> [--environment <name>]')
 const env = values.environment ? ['-e', values.environment] : []
 console.log('consumers | verdict | cpu avg vCPU | cpu max vCPU | memory max GB | samples')
 for (const line of (await Bun.file(file).text()).split('\n')) {

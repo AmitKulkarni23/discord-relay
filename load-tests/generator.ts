@@ -1,9 +1,9 @@
 /**
  * Sends simulated messages to a server's control port, on its own clock and from its own service, so a
  * busy server cannot slow the test down without it showing. Each message is timestamped when it is due,
- * so time spent waiting for the server counts as delivery time. Driven by load/run.ts --generator.
+ * so time spent waiting for the server counts as delivery time. Driven by load-tests/run.ts --generator.
  *
- *   PORT=4100 bun load/generator.ts
+ *   PORT=4100 bun load-tests/generator.ts
  */
 import type { Msg } from '../backend/types.ts'
 import { loadContent, makeLoadMsg } from './producer.ts'

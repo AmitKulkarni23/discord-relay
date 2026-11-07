@@ -1,10 +1,10 @@
 /**
- * Finds the usable max at one message rate: ramps with load/run.ts, narrows the gap between its last
+ * Finds the usable max at one message rate: ramps with load-tests/run.ts, narrows the gap between its last
  * pass and first failure, and repeats the result. Each try is a separate run with no connections left over.
  *
- *   bun load/max.ts --rate 10 --consumers 5000,10000,20000,40000 --hold 60
+ *   bun load-tests/max.ts --rate 10 --consumers 5000,10000,20000,40000 --hold 60
  *
- * Takes load/run.ts's flags, plus --repeats (default 3) and --precisionPct (default 10).
+ * Takes load-tests/run.ts's flags, plus --repeats (default 3) and --precisionPct (default 10).
  */
 import { parseArgs } from 'node:util'
 import { findUsableMax, type RampSummary, type Verdict } from './verdict.ts'
@@ -19,9 +19,9 @@ const { values } = parseArgs({
 if (typeof values.consumers !== 'string') throw new Error('--consumers is required, for example --consumers 5000,10000,20000')
 const passthrough = argv.filter((arg, i) => !OWN_FLAGS.has(arg) && !OWN_FLAGS.has(argv[i - 1] ?? ''))
 
-/** Runs load/run.ts, passing its output through, and returns its summary. */
+/** Runs load-tests/run.ts, passing its output through, and returns its summary. */
 async function run(consumers: string, extra: string[] = []): Promise<RampSummary & { lastVerdict: Verdict | null }> {
-  const proc = Bun.spawn(['bun', 'load/run.ts', '--consumers', consumers, ...extra, ...passthrough], { stdout: 'pipe', stderr: 'inherit' })
+  const proc = Bun.spawn(['bun', 'load-tests/run.ts', '--consumers', consumers, ...extra, ...passthrough], { stdout: 'pipe', stderr: 'inherit' })
   const output = await new Response(proc.stdout).text()
   await proc.exited
   process.stdout.write(output)
@@ -33,7 +33,7 @@ async function run(consumers: string, extra: string[] = []): Promise<RampSummary
     if (event.event === 'step' && event.verdict) lastVerdict = event.verdict
     if (event.event === 'done') summary = event
   }
-  if (!summary) throw new Error(`load/run.ts ended without a result (exit ${proc.exitCode})`)
+  if (!summary) throw new Error(`load-tests/run.ts ended without a result (exit ${proc.exitCode})`)
   return { ...summary, lastVerdict }
 }
 

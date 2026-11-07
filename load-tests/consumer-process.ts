@@ -1,6 +1,6 @@
 /**
- * A running copy of load/consumer.ts, and the clock check every machine needs. Used by load/run.ts
- * for processes on its own machine, and by load/agent.ts for processes on another one.
+ * A running copy of load-tests/consumer.ts, and the clock check every machine needs. Used by load-tests/run.ts
+ * for processes on its own machine, and by load-tests/agent.ts for processes on another one.
  */
 import type { ConsumerCommand, ConsumerReply } from './consumer.ts'
 
@@ -10,7 +10,7 @@ export type ConsumerProcess = { command: (c: ConsumerCommand) => void; next: () 
 export function spawnProcess(): ConsumerProcess {
   const replies: ConsumerReply[] = []
   const waiting: Array<(r: ConsumerReply) => void> = []
-  const proc = Bun.spawn(['bun', 'load/consumer.ts'], {
+  const proc = Bun.spawn(['bun', 'load-tests/consumer.ts'], {
     stdout: 'inherit',
     stderr: 'inherit',
     ipc(message: ConsumerReply) {

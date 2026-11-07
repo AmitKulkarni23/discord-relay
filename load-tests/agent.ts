@@ -1,9 +1,9 @@
 /**
- * Runs on each consumer machine and lets load/run.ts on another machine drive its processes, so one
+ * Runs on each consumer machine and lets load-tests/run.ts on another machine drive its processes, so one
  * runner can coordinate them all: every machine moves through the steps together, the results add up,
  * and only the runner reads the server's stats, which reset when read.
  *
- *   PORT=4000 bun load/agent.ts
+ *   PORT=4000 bun load-tests/agent.ts
  *
  * Holds no state between runs: each run starts by replacing the processes, which closes their connections.
  */

@@ -1,4 +1,4 @@
-/** Ramps /events consumers until a step fails; `bun load/run.ts --help` lists every knob. */
+/** Ramps /events consumers until a step fails; `bun load-tests/run.ts --help` lists every knob. */
 import { parseArgs } from 'node:util'
 import { clockOffset, spawnProcess, type ConsumerProcess } from './consumer-process.ts'
 import type { ConsumerCommand, ConsumerReply } from './consumer.ts'
@@ -7,7 +7,7 @@ import { classifyStep, summarizeRamp, type Verdict } from './verdict.ts'
 const HELP = `Finds how many consumers (open /events connections, each standing in for one browser) the server holds: tries each
 count in turn and stops at the first step that fails. Exits 1 if any step failed. Local only unless you mean otherwise: never point it at production.
 
-  bun load/run.ts --consumers 1000,5000,10000 --rate 5 --hold 60 --processes 4
+  bun load-tests/run.ts --consumers 1000,5000,10000 --rate 5 --hold 60 --processes 4
 
 Load
   --consumers <n,n>      consumer counts to try, one step each (default 100,1000,2000,5000,10000)
@@ -35,21 +35,21 @@ Pass or fail
 
 Consumers
   --processes <n>        processes per machine running the consumers, split evenly. Test rig only: the server is unaffected (default 4)
-  --machines <url,url>   load/agent.ts on other machines, which then hold the consumers instead of this one
+  --machines <url,url>   load-tests/agent.ts on other machines, which then hold the consumers instead of this one
   --connectPerSec <n>    how fast consumers connect (default 1000)
   --listeners <n>        ports the server listens on (default 1)
 
 Target
   --port <n>             local server port; control runs on port + 1 (default 3100)
-  --host <host>          use this server instead of spawning load/server.ts
+  --host <host>          use this server instead of spawning load-tests/server.ts
   --public               the host is a deploy behind HTTPS, with its control routes under --controlPath
   --controlPath <path>   control route prefix with --public (default /__load)
   --controlUrl <url>     full control URL, overriding the above
-  --generator <url>      load/generator.ts on another service sends the messages, on its own clock, instead of the server's own timer
+  --generator <url>      load-tests/generator.ts on another service sends the messages, on its own clock, instead of the server's own timer
   --ignoreClients <n>    start even with this many connections already open, such as a page left open on a live service (default 0)
 
 A step is PASS, SLOW (nothing lost, too late), BROKEN (messages lost, consumers dropped or refused), or INVALID (did not pass
-and a process was overloaded, so add processes or machines). Each step prints its window, for load/railway-metrics.ts.
+and a process was overloaded, so add processes or machines). Each step prints its window, for load-tests/railway-metrics.ts.
 
 Reconnects use ?since=, so a missed message counts as a gap, and a message held up by a reconnect counts towards p99.
 A storm keeps the server up, so its buffer survives, unlike a real restart.
@@ -117,7 +117,7 @@ if (burst && holdSec < burstEverySec * 3) throw new Error('--hold must be at lea
 
 const localServer = values.host
   ? null
-  : Bun.spawn(['bun', 'load/server.ts'], {
+  : Bun.spawn(['bun', 'load-tests/server.ts'], {
       env: { ...process.env, PORT: String(port), LISTENERS: String(listeners), CHANNELS: values.channels },
       stdout: 'ignore',
       stderr: 'inherit',
@@ -146,7 +146,7 @@ const getGenerator = async (): Promise<GeneratorStats> =>
   (await fetch(`${source}/stats`, { signal: AbortSignal.timeout(30_000) })).json() as Promise<GeneratorStats>
 const getStats = async (): Promise<Stats> => (await fetch(`${control}/stats`, { signal: AbortSignal.timeout(30_000) })).json() as Promise<Stats>
 
-/** A process on another machine, driven through its load/agent.ts. Commands stay in order, as they do over IPC. */
+/** A process on another machine, driven through its load-tests/agent.ts. Commands stay in order, as they do over IPC. */
 function remoteProcess(machine: string, i: number): ConsumerProcess {
   let sent: Promise<unknown> = Promise.resolve()
   return {

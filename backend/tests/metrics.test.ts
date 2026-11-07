@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, mock, spyOn } from 'bun:test'
-import { formatMetrics, pushMetrics, type Snapshot } from '../metrics.ts'
+import { createHub } from '../hub.ts'
+import { log } from '../log.ts'
+import { formatMetrics, pushMetrics, readSnapshot, type Snapshot } from '../metrics.ts'
 
 const out = spyOn(console, 'log').mockImplementation(() => {})
 afterEach(() => out.mockClear())
@@ -50,6 +52,19 @@ describe('pushMetrics', () => {
       })
 
       expect(JSON.parse(String(out.mock.calls[0]?.[0]))).toMatchObject({ event: 'metrics_push_failed', error: 'getaddrinfo ENOTFOUND' })
+    })
+  })
+})
+
+describe('readSnapshot', () => {
+  describe('when the hub and the logs have activity', () => {
+    it('should read clients and messages from the hub and totals from the log counts when called', () => {
+      const hub = createHub(10)
+      hub.subscribe('1301000000000000001', () => {})
+      const dropped = log.count('client_dropped')
+      log.warn('client_dropped', { requestId: 'a1b2c3' })
+
+      expect(readSnapshot(hub, true)).toMatchObject({ gatewayConnected: true, sseClients: 1, messagesTotal: 0, clientsDroppedTotal: dropped + 1 })
     })
   })
 })

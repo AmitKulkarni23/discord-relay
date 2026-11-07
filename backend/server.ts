@@ -112,20 +112,8 @@ export function main(): void {
   log.info('server_started', { url: server.url.href })
 
   // Developer-only metrics, pushed to Grafana Cloud; nothing is served or shown on the page.
-  const stopMetrics = config.metrics
-    ? startMetrics({
-        push: config.metrics,
-        deployment: process.env.RAILWAY_DEPLOYMENT_ID ?? 'local',
-        read: () => ({
-          gatewayConnected: discord.isConnected(),
-          sseClients: hub.subscriberCount(),
-          messagesTotal: hub.publishedTotal(),
-          clientsDroppedTotal: log.count('client_dropped'),
-          rejectedTotal: log.count('client_rejected'),
-          watchdogRestartsTotal: log.count('watchdog_expired'),
-        }),
-      })
-    : () => {}
+  const deployment = process.env.RAILWAY_DEPLOYMENT_ID ?? 'local'
+  const stopMetrics = config.metrics ? startMetrics({ push: config.metrics, deployment, hub, isConnected: discord.isConnected }) : () => {}
 
   process.on('SIGTERM', async () => {
     log.info('shutdown', { signal: 'SIGTERM' })

@@ -1,4 +1,5 @@
 import type { MetricsPush } from './config.ts'
+import type { Hub } from './hub.ts'
 import { errorMessage, log } from './log.ts'
 
 /** One reading of every metric. Totals count up from process start. */
@@ -51,8 +52,27 @@ export async function pushMetrics(push: MetricsPush, body: string, fetch: Fetch 
   }
 }
 
+/** Reads every metric now. Drops, 429s and watchdog restarts are counted from their log events. */
+export function readSnapshot(hub: Pick<Hub, 'subscriberCount' | 'publishedTotal'>, gatewayConnected: boolean): Snapshot {
+  return {
+    gatewayConnected,
+    sseClients: hub.subscriberCount(),
+    messagesTotal: hub.publishedTotal(),
+    clientsDroppedTotal: log.count('client_dropped'),
+    rejectedTotal: log.count('client_rejected'),
+    watchdogRestartsTotal: log.count('watchdog_expired'),
+  }
+}
+
 /** Pushes a snapshot every `intervalMs`. Returns a function that stops it. */
-export function startMetrics(opts: { push: MetricsPush; deployment: string; read: () => Snapshot; intervalMs?: number }): () => void {
-  const timer = setInterval(() => void pushMetrics(opts.push, formatMetrics(opts.read(), opts.deployment)), opts.intervalMs ?? 60_000)
+export function startMetrics(opts: {
+  push: MetricsPush
+  deployment: string
+  hub: Pick<Hub, 'subscriberCount' | 'publishedTotal'>
+  isConnected: () => boolean
+  intervalMs?: number
+}): () => void {
+  const send = (): Promise<void> => pushMetrics(opts.push, formatMetrics(readSnapshot(opts.hub, opts.isConnected()), opts.deployment))
+  const timer = setInterval(() => void send(), opts.intervalMs ?? 60_000)
   return () => clearInterval(timer)
 }

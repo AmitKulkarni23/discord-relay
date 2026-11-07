@@ -1,0 +1,35 @@
+flowchart TD
+  discord["<b>Discord</b><br/>source of truth"]
+
+  subgraph svc["Railway service · one replica · one Bun process"]
+    watchdog["<b>Watchdog</b><br/>fresh client every 5 min<br/>while the Gateway is down"]
+    ingest["<b>Discord ingestion</b>"]
+    hub["<b>Hub</b><br/>latest messages per channel<br/>+ subscribers"]
+    http["<b>HTTP server</b><br/>/ · /events · /health · /config"]
+    watchdog -. "fresh client" .-> ingest
+    ingest -- "publish(msg)" --> hub
+    hub -- "subscriber callbacks" --> http
+  end
+
+  edge["<b>Railway edge proxy</b>"]
+  b1["<b>Browser</b>"]
+  b2["<b>Browser</b>"]
+  b3["<b>Browser</b>"]
+
+  discord -- "Gateway WebSocket (live) + REST (history at startup)" --> ingest
+  http -- "HTML page + SSE streams" --> edge
+  discord ~~~ watchdog
+  edge --> b1
+  edge --> b2
+  edge --> b3
+
+  classDef ext fill:#f1ecff,stroke:#7c5cd6,color:#1f2328
+  classDef our fill:#e8f1ff,stroke:#2f6fdb,color:#1f2328
+  classDef aux fill:#e8f1ff,stroke:#2f6fdb,color:#1f2328,stroke-dasharray:5 5
+  classDef inf fill:#fff4e0,stroke:#d48a12,color:#1f2328
+  classDef usr fill:#e7f7ee,stroke:#2e9a5b,color:#1f2328
+  class discord ext
+  class ingest,hub,http our
+  class watchdog aux
+  class edge inf
+  class b1,b2,b3 usr

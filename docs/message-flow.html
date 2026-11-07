@@ -1,0 +1,33 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Message Flow</title><style>
+:root{--bg:#fff;--fg:#1f2328;--muted:#5b636e;--line:#8a929c;--ext-bg:#f1ecff;--ext-bd:#7c5cd6;--our-bg:#e8f1ff;--our-bd:#2f6fdb;--inf-bg:#fff4e0;--inf-bd:#d48a12;--usr-bg:#e7f7ee;--usr-bd:#2e9a5b;--grp-bd:#9aa3ad}
+@media (prefers-color-scheme:dark){:root{--bg:#191919;--fg:#e6e6e6;--muted:#a0a7b0;--line:#7d858f;--ext-bg:#2a2340;--ext-bd:#9b82ea;--our-bg:#1b2a42;--our-bd:#5b93ee;--inf-bg:#3a2c12;--inf-bd:#e0a33a;--usr-bg:#173324;--usr-bd:#4cc27f;--grp-bd:#5e666f}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:13px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,sans-serif}
+.wrap{max-width:760px;margin:0 auto;padding:16px}
+.steps{display:grid;grid-template-columns:210px 1fr;column-gap:18px}
+.n{border:1.5px solid;border-radius:10px;padding:8px 12px;text-align:center}.n b{display:block;font-size:13.5px}.n small{display:block;color:var(--muted);font-size:11.5px;margin-top:2px}
+.ext{background:var(--ext-bg);border-color:var(--ext-bd)}.our{background:var(--our-bg);border-color:var(--our-bd)}.inf{background:var(--inf-bg);border-color:var(--inf-bd)}.usr{background:var(--usr-bg);border-color:var(--usr-bd)}
+.num{display:inline-block;width:18px;height:18px;line-height:18px;border-radius:50%;background:var(--fg);color:var(--bg);font-size:11px;margin-right:6px;text-align:center}
+.d{align-self:center;font-size:12.5px}
+.v{position:relative;height:34px;display:flex;justify-content:center}.v>.ln{width:2px;background:var(--line);position:relative}
+.v>.ln::after{content:"";position:absolute;bottom:0;left:-5px;border-left:6px solid transparent;border-right:6px solid transparent;border-top:8px solid var(--line)}
+.t{align-self:center}.chip{display:inline-block;font-size:11px;color:var(--muted);border:1px solid var(--grp-bd);border-radius:999px;padding:1px 9px}
+code{font:11.5px ui-monospace,Menlo,monospace;background:rgba(127,127,127,.15);padding:0 4px;border-radius:4px;white-space:nowrap}
+</style></head><body><div class="wrap"><div class="steps">
+<div class="n ext"><b><span class="num">1</span>Discord</b><small>a user posts "hello"</small></div>
+<div class="d">Discord stores the message and emits <code>messageCreate</code> to the bot's Gateway session.</div>
+<div class="v"><span class="ln"></span></div><div class="t"><span class="chip">Gateway WebSocket · messageCreate</span></div>
+<div class="n our"><b><span class="num">2</span>Discord bot</b><small>sources/discord.ts</small></div>
+<div class="d">Ignores channels not in <code>CHANNEL_ID</code>, converts the discord.js object to a plain message object (id, channelId, author, content, createdAt, attachments).</div>
+<div class="v"><span class="ln"></span></div><div class="t"><span class="chip">publish(msg) · in-process call</span></div>
+<div class="n our"><b><span class="num">3</span>Hub</b><small>hub.ts</small></div>
+<div class="d">Drops it if the ID is already buffered, else inserts in ID order and evicts the oldest past <code>BUFFER_SIZE</code>. Calls every subscriber of that <code>channelId</code>.</div>
+<div class="v"><span class="ln"></span></div><div class="t"><span class="chip">subscriber callback · one per open tab</span></div>
+<div class="n our"><b><span class="num">4</span>SSE stream</b><small>events.ts · GET /events</small></div>
+<div class="d">Writes <code>id: &lt;snowflake&gt;</code> + <code>data: &lt;message JSON&gt;</code>. A client more than 1 MiB behind is dropped so it can't grow server memory.</div>
+<div class="v"><span class="ln"></span></div><div class="t"><span class="chip">bytes on the open HTTP response</span></div>
+<div class="n inf"><b><span class="num">5</span>Railway edge</b><small>public proxy</small></div>
+<div class="d">Passes the stream through. Cuts it at 15 min; the page reconnects with <code>?since=&lt;newest id&gt;</code> and gets only newer messages.</div>
+<div class="v"><span class="ln"></span></div><div class="t"><span class="chip">text/event-stream · EventSource</span></div>
+<div class="n usr"><b><span class="num">6</span>Browser</b><small>use-event-stream.ts</small></div>
+<div class="d">Dedupes by ID, keeps the newest 500, renders content as text (React escapes it, no HTML injection).</div>
+</div></div></body></html>

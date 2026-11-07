@@ -15,7 +15,7 @@ Link: discord-relay-production-262e.up.railway.app
 | MessageContent intent | Discord permission the bot needs to read message text. Without it, Discord closes the Gateway (code 4014). |
 | SSE | Server-Sent Events: a one-way server-to-browser stream over plain HTTP, read with `EventSource`. Served on `GET /events`. |
 | Pub/Sub | Publish/subscribe (Observer pattern): publishers send messages without knowing who receives them; subscribers get every message published. |
-| Hub | The in-memory core (`backend/hub.ts`): the latest messages per channel plus Pub/Sub. The bot publishes, each open browser stream subscribes. |
+| Hub | The in-memory core (`backend/hub.ts`): a buffer of messages per channel plus Pub/Sub. The bot publishes, each open browser stream subscribes. |
 | Edge | Railway's public proxy. Cuts requests at 15 min and caps in-flight requests per domain. |
 | SIGTERM | The signal Railway sends to stop the process. The server closes open streams and the Discord client, then exits. |
 
@@ -26,7 +26,7 @@ Link: discord-relay-production-262e.up.railway.app
 One Railway service, with one replica, runs three components in a single Bun process:
 
 - **Discord ingestion**: connects to Discord as a read-only bot, loads recent history over Discord's REST API at startup, and receives new messages live over the gateway, Discord's real-time WebSocket
-- **Hub**: keeps the latest messages per channel in memory. Each open browser stream registers a callback; when a message arrives, the hub calls every callback for that channel
+- **Hub**: keeps an in-memory buffer of messages per channel, sized by `BUFFER_SIZE`. Each open browser stream registers a callback; when a message arrives, the hub calls every callback for that channel
 - **HTTP Server**: serves the web page, streams messages to browsers over SSE
 
 
@@ -36,12 +36,9 @@ One Railway service, with one replica, runs three components in a single Bun pro
 
 | Component | What it does |
 | --- | --- |
-| Discord ingestion | Connects to the Gateway, loads recent history at startup, turns each Discord message into a `Msg` and publishes it to the hub. Replaces the client if the Gateway stays down for 5 minutes. |
-| Hub | Keeps the latest messages per channel, sorted by ID, and drops duplicates. Calls each subscriber's callback when a message arrives or is deleted. |
-| HTTP server | Serves the page, the SSE streams, `/health` and `/config`. Limits streams per IP, drops clients that stop reading and closes streams on SIGTERM. |
-| Config | Reads and checks the env vars once at startup. Exits with a log line naming any bad variable. |
-| Feature flags | Reads Railway Feature Flags. Every flag is off if Railway or the token is unavailable. |
-| Frontend | Opens one `EventSource` for the selected channel, keeps up to 500 messages by ID, shows the connection status and reconnects on its own. |
+| Discord ingestion | Connects to the Gateway, loads recent history at startup, converts each Discord message to a plain object and publishes it to the hub. Replaces the client if the Gateway stays down for 5 minutes. |
+| Hub | An in-memory buffer per channel. Its size is set by the `BUFFER_SIZE` env var (default 100, max 500); when it is full, the oldest message is dropped. Messages are sorted by ID and duplicates are dropped. Calls each subscriber's callback when a message arrives or is deleted. |
+| HTTP server | Serves the page, the SSE streams, `/health` and `/config`. Allows at most 20 open browser connections per IP address; the 21st gets a 429 Too Many Requests with a `Retry-After` header. Drops clients that stop reading and closes streams on SIGTERM. |
 
 ### HTTP API
 
@@ -51,3 +48,88 @@ One Railway service, with one replica, runs three components in a single Bun pro
 | `GET /events?channel=<id>&since=<id>` | An SSE stream: the Discord connection status, then the buffered messages (only those newer than `since`, if given), then live messages, deletes and a ping every 25 s. |
 | `GET /config` | The feature flags and the list of channels with their names. |
 | `GET /health` | 200 when the Gateway is connected, 503 otherwise. The body has `discord`, `clients`, `buffered`, `lastEventAt`, `unavailableChannels` and `uptimeSec`. |
+
+
+## System
+
+### How one message flows from Discord to a browser
+
+![How one message flows from Discord to a browser](docs/message-flow.png)
+
+1. **Discord to bot.** A user posts. Discord sends `messageCreate` over the Gateway WebSocket the bot holds open.
+2. **Normalize.** The bot ignores channels not in `CHANNEL_ID` and converts the discord.js object to a plain object (`id`, `channelId`, `author`, `content`, `note`, `createdAt`, `editedAt`, `attachments`).
+3. **Hub.** `publish(msg)` inserts it into that channel's buffer, drops it if the ID is already there, and evicts the oldest message past `BUFFER_SIZE`. Then it calls every subscriber callback for that channel.
+4. **SSE write.** Each open `/events` stream is one subscriber. It writes `id: <snowflake>` and `data: <JSON>`. A stream more than 1 MiB behind is dropped, so one slow client cannot grow server memory.
+5. **Edge to browser.** The bytes go through Railway's proxy to the browser's `EventSource`.
+6. **Render.** The page drops duplicate IDs, keeps the newest 500 messages and renders content as text, so message content cannot inject HTML.
+
+
+## Failure Modes
+
+### Discord to bot (Gateway)
+
+```mermaid
+flowchart LR
+  discord[Discord] == "Gateway WebSocket + REST" ==> bot[Discord bot] --> hub[Hub] --> sse[SSE stream] --> edge[Railway edge] --> browser[Browser]
+  classDef hot fill:#fde8e8,stroke:#d64545,color:#1f2328
+  class discord,bot hot
+```
+
+| Failure | User sees | Detection | Handling |
+| --- | --- | --- | --- |
+| Gateway drops (Discord restart, network blip) | Nothing, or a short gap | `shardDisconnect` / `shardReconnecting` | discord.js reconnects. A resume replays missed events; a fresh session reloads the buffer from REST |
+| Gateway stays down while the process is alive | The page goes quiet, amber chip "Waiting for Discord" | `watchdog_expired` log every 5 min; `/health` returns 503 | The watchdog builds a fresh client every 5 min and keeps the buffer |
+| MessageContent intent off | Empty page; the deploy never goes live | Gateway close 4014, `Used disallowed intents` | Exit 1. Fix it in the Discord developer portal |
+| Token invalid or revoked | Empty page; the deploy never goes live | `discord_login_failed` at startup | Exit 1. After 10 restarts Railway marks the deployment `Crashed` and emails project members |
+| Discord outage at startup, history rate-limited, or no channel permission | Empty or partial history, chip "Channel unavailable" | `history_failed`; `unavailableChannels` in `/health` | Retry each channel with backoff, up to every 5 min |
+| Message deleted while the `edits-deletes` flag is off | It stays on the page | Compare the page with Discord | It ages out of the buffer, or turn the flag on |
+
+### Bot to hub (in process)
+
+```mermaid
+flowchart LR
+  discord[Discord] --> bot[Discord bot] == "publish(msg)" ==> hub[Hub] --> sse[SSE stream] --> edge[Railway edge] --> browser[Browser]
+  classDef hot fill:#fde8e8,stroke:#d64545,color:#1f2328
+  class bot,hub hot
+```
+
+| Failure | User sees | Detection | Handling |
+| --- | --- | --- | --- |
+| A message cannot be converted | That message is missing | `message_skipped` error log | Skip it and keep relaying |
+| History overlaps live events and repeats a message | Nothing | None | Duplicate IDs are dropped in the hub and in the browser |
+| The buffer grows without limit | A crash from running out of memory | None | Fixed-size buffer, at most 500 messages per channel |
+| One subscriber throws | Nothing for the other browsers | `subscriber_failed` log | Each subscriber call is caught on its own |
+
+### Hub to SSE stream to edge to browser
+
+```mermaid
+flowchart LR
+  discord[Discord] --> bot[Discord bot] --> hub[Hub] == "subscriber callback" ==> sse[SSE stream] == "text/event-stream" ==> edge[Railway edge] ==> browser[Browser]
+  classDef hot fill:#fde8e8,stroke:#d64545,color:#1f2328
+  class hub,sse,edge,browser hot
+```
+
+| Failure | User sees | Detection | Handling |
+| --- | --- | --- | --- |
+| The edge cuts the request at 15 min | A brief "Reconnecting…" | `EventSource` error | Reconnect after a random delay with `?since=` |
+| The edge closes a stream idle for 5 min | Same | Same | `event: ping` every 25 s |
+| The browser loses its network or the laptop sleeps | "Reconnecting…" | Error event, or 60 s of silence | Reconnect with backoff and `?since=`. Messages older than the buffer are skipped |
+| A client stops reading or falls too far behind | That client reconnects | `client_dropped` warn log | Drop the stream once it has 1 MiB queued |
+| One machine opens many streams | "Connection limit" on that machine | HTTP 429 in Railway's logs | 20 streams per IP. Many IPs (a botnet, an IPv6 range) get past it |
+| More than 10,000 in-flight requests per edge node | New visitors cannot connect (502 `too many upstream connections for host`) | Railway HTTP logs | Nothing yet. Replicas do not raise this limit |
+| Dead clients that never close | Nothing, but they hold server memory | `clients` in `/health` stays high | Freed when a write fails |
+| Script injection in message content | Nothing | None | React renders text; `dangerouslySetInnerHTML` is never used |
+| Malicious attachment URL | Nothing | None | Only Discord CDN hosts are rendered |
+| Attachment URLs expire after about 24 h | Broken images in a long-open tab | None | A reload fetches fresh URLs |
+
+### Process and Railway
+
+| Failure | User sees | Detection | Handling |
+| --- | --- | --- | --- |
+| The process crashes | "Reconnecting…" for a few seconds | `unhandled_error` log | Restart on failure; history is fetched again at startup |
+| An env var is missing or invalid | The deploy never goes live | `config_invalid` | Exit 1 with a log naming the variable |
+| A deploy drops every client at once | Up to about 1 s of "Reconnecting…" | `clients` on `/health` | SIGTERM handler, 30 s of overlap and draining, reconnects with jitter |
+| Two bots run during the deploy overlap | Nothing | None | Harmless, because the bot only reads |
+| Healthchecks only run at deploy time | A broken but running app keeps serving | None | The Gateway watchdog |
+| Railway drops logs above 500 lines/s | Missing logs | None | Per-client logs are `debug`, off by default |
+| Railway Feature Flags are unreachable | Flagged features are off | `flags_unavailable` | Every flag falls back to off |

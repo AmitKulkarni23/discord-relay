@@ -30,7 +30,7 @@ One Railway service, with one replica, runs three components in a single Bun pro
 - **HTTP Server**: serves the web page, streams messages to browsers over SSE
 
 
-![High-level design](docs/system-overview.png)
+![High-level design](docs/system-diagram.png)
 
 ### Components
 
@@ -126,7 +126,7 @@ Both alternatives solve the same problem: running more than one web replica. In 
 
 ### A. Bot service, Redis Pub/Sub and web replicas
 
-![Alternative A: bot service, Redis Pub/Sub and web replicas](docs/alternative-a-redis.png)
+![Alternative A: bot service, Redis Pub/Sub and web replicas](docs/alt-a-redis.png)
 
 One bot publishes each message to Redis. Every web replica subscribes and fans messages out to its own SSE clients. The buffer for new visitors lives in Redis (a capped list or a Stream) or is rebuilt in each replica. `publish` and `subscribe` keep their signatures, so only `hub.ts` changes.
 
@@ -141,7 +141,7 @@ Build it when a few seconds of downtime on a crash stops being acceptable, when 
 
 ### B. Postgres for storage, Redis for fan-out
 
-![Alternative B: Postgres for storage, Redis for fan-out, web replicas](docs/alternative-b-postgres-redis.png)
+![Alternative B: Postgres for storage, Redis for fan-out, web replicas](docs/alt-b-postgres-redis.png)
 
 The bot writes every message to Postgres and publishes it to Redis. Web replicas read history and `?since=` replays from Postgres, and live messages from Redis.
 

@@ -236,6 +236,40 @@ The numbers are in [Appendix G: Load test results](#g-load-test-results).
 
 ## Observability
 
+Railway's Hobby plan has no custom metrics, dashboards or alerts, so the app sends its own numbers to Grafana Cloud's free tier. Every 60 seconds it pushes one line of metrics over HTTPS. Nothing new is served or shown on the page, and a failed push is logged and does not affect the relay. CPU and memory stay in Railway's own metrics.
+
+### Metrics
+
+| Metric | What it counts |
+| --- | --- |
+| `relay_gateway_connected` | 1 while the bot is connected to Discord, 0 otherwise |
+| `relay_sse_clients` | Open browser streams |
+| `relay_messages_total` | Messages relayed |
+| `relay_clients_dropped_total` | Clients dropped for falling 1 MiB behind |
+| `relay_rejected_total` | Streams refused with 429 by the per-IP cap |
+| `relay_watchdog_restarts_total` | Fresh Discord clients started after a long Gateway outage |
+| `relay_http_errors_total` | 500s from a route that threw |
+
+Each line carries a `deployment` tag, so the old and new process keep separate totals while they overlap during a deploy.
+
+### Dashboard
+
+One Grafana dashboard with a panel per metric: Gateway status, viewers, messages per second, 500s, clients dropped, 429s and watchdog restarts.
+
+### Alarms
+
+Alarms post to a private Discord channel.
+
+| Alarm | Fires when |
+| --- | --- |
+| App down | No metrics arrive for 3 minutes |
+| Discord Gateway down | The bot stays disconnected for 2 minutes |
+| HTTP 500 errors | Any 500 in 5 minutes |
+| Near the edge cap | More than 8,000 open streams for 5 minutes |
+| Drop spike | More than 1% of clients dropped in 5 minutes |
+
+The dashboard and alarms are code in `.grafana/apply.ts`. Running it again updates them in place.
+
 
 ## Appendix
 

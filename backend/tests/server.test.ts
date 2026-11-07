@@ -99,6 +99,22 @@ describe('server', () => {
     })
   })
 
+  describe('when a route throws', () => {
+    it('should answer 500 and log request_failed when /config fails', async () => {
+      const logs = captureLogs()
+      const { url } = start(createHub(), {
+        flags: () => {
+          throw new Error('flag store returned an invalid payload')
+        },
+      })
+
+      const res = await fetch(new URL('/config', url))
+
+      expect(res.status).toBe(500)
+      expect(logs.find(l => l.event === 'request_failed')).toMatchObject({ level: 'error', error: 'flag store returned an invalid payload' })
+    })
+  })
+
   describe('when / is requested', () => {
     it('should serve the HTML page with the React mount point when the browser opens the site', async () => {
       const { url } = start(createHub())

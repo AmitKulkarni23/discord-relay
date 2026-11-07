@@ -54,6 +54,11 @@ export function startServer(deps: ServerDeps): { url: URL; stop: () => void } {
       '/config': () => Response.json({ ...flags(), channels: channels() }),
     },
     fetch: () => new Response('Not found', { status: 404 }),
+    // A route that throws is a bug: log it (counted as relay_http_errors_total) and fail only that request.
+    error: err => {
+      log.error('request_failed', { error: errorMessage(err), stack: err.stack })
+      return new Response('Internal error', { status: 500 })
+    },
   })
 
   return {

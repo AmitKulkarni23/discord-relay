@@ -7,14 +7,22 @@ const out = spyOn(console, 'log').mockImplementation(() => {})
 afterEach(() => out.mockClear())
 
 const PUSH = { url: 'https://prometheus-prod-67-prod-us-west-0.grafana.net/api/v1/push/influx/write', user: '3747868', token: 'glc_fake_token' }
-const SNAPSHOT: Snapshot = { gatewayConnected: true, sseClients: 42, messagesTotal: 318, clientsDroppedTotal: 2, rejectedTotal: 5, watchdogRestartsTotal: 0 }
+const SNAPSHOT: Snapshot = {
+  gatewayConnected: true,
+  sseClients: 42,
+  messagesTotal: 318,
+  clientsDroppedTotal: 2,
+  rejectedTotal: 5,
+  watchdogRestartsTotal: 0,
+  httpErrorsTotal: 1,
+}
 const DEPLOYMENT = '6f1c2a9e-0b7d-4f3e-9a51-2c8d7e4b1f60'
 
 describe('formatMetrics', () => {
   describe('when given a snapshot', () => {
     it('should write one Influx line tagged with the deployment when called', () => {
       expect(formatMetrics(SNAPSHOT, DEPLOYMENT)).toBe(
-        `relay,deployment=${DEPLOYMENT} gateway_connected=1,sse_clients=42,messages_total=318,clients_dropped_total=2,rejected_total=5,watchdog_restarts_total=0`,
+        `relay,deployment=${DEPLOYMENT} gateway_connected=1,sse_clients=42,messages_total=318,clients_dropped_total=2,rejected_total=5,watchdog_restarts_total=0,http_errors_total=1`,
       )
     })
 

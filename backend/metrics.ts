@@ -10,6 +10,7 @@ export type Snapshot = {
   clientsDroppedTotal: number
   rejectedTotal: number
   watchdogRestartsTotal: number
+  httpErrorsTotal: number
 }
 
 type Fetch = (url: string, init: RequestInit) => Promise<Response>
@@ -30,6 +31,7 @@ export function formatMetrics(s: Snapshot, deployment: string): string {
     clients_dropped_total: s.clientsDroppedTotal,
     rejected_total: s.rejectedTotal,
     watchdog_restarts_total: s.watchdogRestartsTotal,
+    http_errors_total: s.httpErrorsTotal,
   }
   const values = Object.entries(fields)
     .map(([k, v]) => `${k}=${v}`)
@@ -52,7 +54,7 @@ export async function pushMetrics(push: MetricsPush, body: string, fetch: Fetch 
   }
 }
 
-/** Reads every metric now. Drops, 429s and watchdog restarts are counted from their log events. */
+/** Reads every metric now. Drops, 429s, watchdog restarts and 500s are counted from their log events. */
 export function readSnapshot(hub: Pick<Hub, 'subscriberCount' | 'publishedTotal'>, gatewayConnected: boolean): Snapshot {
   return {
     gatewayConnected,
@@ -61,6 +63,7 @@ export function readSnapshot(hub: Pick<Hub, 'subscriberCount' | 'publishedTotal'
     clientsDroppedTotal: log.count('client_dropped'),
     rejectedTotal: log.count('client_rejected'),
     watchdogRestartsTotal: log.count('watchdog_expired'),
+    httpErrorsTotal: log.count('request_failed'),
   }
 }
 

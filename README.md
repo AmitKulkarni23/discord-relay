@@ -161,5 +161,4 @@ Build it for search, history beyond 500 messages, many channels, or many replica
 | A bot in every replica, no Redis | It works because the bot only reads, but each replica keeps its own buffer and its own Gateway session |
 | WebSockets instead of SSE | Two-way, which we don't need. They are exempt from the 15-minute cut, so they are worth another look for the edge cap |
 | Polling | More lag and more requests |
-| Next.js or a separate frontend service | A long-lived bot fits badly, and it means two deploys and CORS |
 | A managed push service (Pusher, Ably) | The way past the edge cap, at the cost of a bill and a vendor |

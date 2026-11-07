@@ -34,6 +34,8 @@ export type Hub = {
   recent(channelId: string): Msg[]
   /** Returns the number of subscribers across all channels. */
   subscriberCount(): number
+  /** Returns how many new messages were stored since the hub was created, history included; duplicates do not count. */
+  publishedTotal(): number
 }
 
 /**
@@ -43,6 +45,7 @@ export type Hub = {
  */
 export function createHub(capacity = 100): Hub {
   const channels = new Map<string, Channel>()
+  let published = 0
 
   /** Returns the channel's state, creating it on first use. */
   function channel(channelId: string): Channel {
@@ -89,6 +92,7 @@ export function createHub(capacity = 100): Hub {
       c.buffer.splice(at, 0, msg)
       // shift() is O(n), fine at the 500 maximum; use a circular array if capacity grows to thousands
       if (c.buffer.length > capacity) c.buffer.shift()
+      published++
 
       notify(c, msg.channelId, s => s.onMessage(msg))
     },
@@ -132,6 +136,10 @@ export function createHub(capacity = 100): Hub {
       let n = 0
       for (const c of channels.values()) n += c.subscribers.size
       return n
+    },
+
+    publishedTotal() {
+      return published
     },
   }
 }

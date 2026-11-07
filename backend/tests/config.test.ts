@@ -62,4 +62,28 @@ describe('loadConfig', () => {
       }
     })
   })
+
+  describe('when the Grafana metrics variables are set', () => {
+    const METRICS = {
+      GRAFANA_METRICS_URL: 'https://prometheus-prod-67-prod-us-west-0.grafana.net/api/v1/push/influx/write',
+      GRAFANA_METRICS_USER: '3747868',
+      GRAFANA_METRICS_TOKEN: 'glc_fake_token',
+    }
+
+    it('should turn metrics off when none of them is set', () => {
+      expect(loadConfig(VALID_ENV).metrics).toBeNull()
+    })
+
+    it('should return all three when all are set', () => {
+      expect(loadConfig({ ...VALID_ENV, ...METRICS }).metrics).toEqual({ url: METRICS.GRAFANA_METRICS_URL, user: '3747868', token: 'glc_fake_token' })
+    })
+
+    it('should name the missing variable when only some are set', () => {
+      expect(() => loadConfig({ ...VALID_ENV, ...METRICS, GRAFANA_METRICS_TOKEN: '' })).toThrow('GRAFANA_METRICS_TOKEN')
+    })
+
+    it('should reject a URL that is not https when one is given', () => {
+      expect(() => loadConfig({ ...VALID_ENV, ...METRICS, GRAFANA_METRICS_URL: 'prometheus-prod-67' })).toThrow('GRAFANA_METRICS_URL')
+    })
+  })
 })

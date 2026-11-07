@@ -28,6 +28,8 @@ A bot connects to the Discord Gateway and listens to one or more channels. Every
 ```
 discord-relay/
 ├── .claude/rules/         # coding rules, loaded by path (see Rules below)
+├── .grafana/
+│   └── apply.ts           # Grafana dashboard and alert rules as code (alerts go to Discord)
 ├── .railway/
 │   └── railway.ts         # Railway IaC (service, healthcheck, start command, non-secret vars)
 ├── backend/
@@ -35,6 +37,7 @@ discord-relay/
 │   ├── events.ts          # GET /events: SSE streams, limits and their timers
 │   ├── config.ts          # env vars: read and validated once at startup
 │   ├── flags.ts           # Railway Feature Flags reader (railway SDK)
+│   ├── metrics.ts         # pushes developer metrics to Grafana Cloud every 60 s (nothing served or shown)
 │   ├── log.ts             # structured JSON logs: log.debug/info/warn/error
 │   ├── hub.ts             # Observer: ring buffer + publish/subscribe, keyed by channelId
 │   ├── types.ts           # Msg type shared with the frontend
@@ -99,6 +102,7 @@ They are not in `.railway/railway.ts`, because Railway IaC does not support flag
 - `BUFFER_SIZE`: messages kept per channel and loaded at startup (1 to 500, default 100).
 - `LOG_LEVEL`: set to `debug` to log each client connecting in production, during an incident. Off by default, because a deploy would flood the logs.
 - `RAILWAY_TOKEN`: a Railway project token so the server can read feature flags. Secret: sealed Railway variable.
+- `GRAFANA_METRICS_URL`, `GRAFANA_METRICS_USER`, `GRAFANA_METRICS_TOKEN`: Grafana Cloud's Influx push endpoint (`.../api/v1/push/influx/write`), the Prometheus instance ID and a `metrics:write` token. All three turn the metrics push on, none turns it off, and only some is a startup error. The token is a sealed Railway variable.
 - `PORT`: injected by Railway.
 
 The MessageContent intent MUST be enabled for the bot in the Discord developer portal. The bot requests it, so without it Discord closes the Gateway with code 4014.
@@ -121,6 +125,10 @@ bun test           # unit + integration, no network
 bun test --coverage  # per-file floor in bunfig.toml
 bun audit          # known vulnerabilities
 bun load-tests/run.ts --consumers 1000,5000 --rate 5   # local load test. Production only with approval, as docs/load_test_plan.md says. Knobs: --help. Plan: docs/load_test_plan.md
+```
+
+```bash
+GRAFANA_TOKEN=<service account token, Admin> bun .grafana/apply.ts   # create or update the Grafana dashboard and alert rules
 ```
 
 ```bash

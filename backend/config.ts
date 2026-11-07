@@ -1,5 +1,11 @@
 /** Everything the process needs from its environment. */
-export type Config = { token: string; channelIds: string[]; port: number; bufferSize: number }
+export type Config = { token: string; channelIds: string[]; port: number; bufferSize: number; metrics: MetricsPush | null }
+
+/** Where and how to push metrics to Grafana Cloud. */
+export type MetricsPush = { url: string; user: string; token: string }
+
+/** All three turn the metrics push on; none turns it off. */
+const METRICS_VARS = ['GRAFANA_METRICS_URL', 'GRAFANA_METRICS_USER', 'GRAFANA_METRICS_TOKEN'] as const
 
 /** Discord IDs (snowflakes) are 17 to 20 digits. */
 const SNOWFLAKE = /^\d{17,20}$/
@@ -34,5 +40,16 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     channelIds,
     port,
     bufferSize,
+    metrics: loadMetrics(env),
   }
+}
+
+/** Reads the Grafana push settings: null when none are set, an error naming the first missing one when only some are. */
+function loadMetrics(env: Record<string, string | undefined>): MetricsPush | null {
+  const [url, user, token] = METRICS_VARS.map(name => env[name])
+  if (!url && !user && !token) return null
+  const missing = METRICS_VARS.find(name => !env[name])
+  if (missing || !url || !user || !token) throw new Error(`${missing} is required when any GRAFANA_METRICS_* variable is set`)
+  if (!URL.canParse(url) || new URL(url).protocol !== 'https:') throw new Error(`GRAFANA_METRICS_URL must be an https URL, got "${url}"`)
+  return { url, user, token }
 }

@@ -184,8 +184,11 @@ type Msg = {
 | `LOG_LEVEL` | no | `debug` logs each client connecting and disconnecting in production. Off by default, because a deploy reconnecting every client would exceed Railway's log limit. |
 | `PORT` | injected | Set by Railway. |
 | `RAILWAY_TOKEN` | no | Project token for reading feature flags. Without it every flag is off. |
+| `GRAFANA_METRICS_URL`, `GRAFANA_METRICS_USER`, `GRAFANA_METRICS_TOKEN` | no | Grafana Cloud push endpoint, instance ID and `metrics:write` token. With all three set, `backend/metrics.ts` pushes `relay_*` metrics every 60 s; with none, nothing is pushed; with only some, startup fails naming the missing one. |
 
 The server reads these once at startup; changing one in Railway redeploys the service.
+
+Metrics are for the developer only: the app pushes one Influx line protocol line to Grafana Cloud every 60 s and serves no `/metrics` route. The series are `relay_gateway_connected`, `relay_sse_clients`, `relay_messages_total`, `relay_clients_dropped_total`, `relay_rejected_total` (429s) and `relay_watchdog_restarts_total`, tagged with `deployment` so two processes overlapping during a deploy never mix their totals. Drops, 429s and watchdog restarts are counted from their log events (`log.count`). A failed push logs `metrics_push_failed` and never affects the relay. The dashboard and alert rules live in `.grafana/apply.ts`; alerts go to a Discord contact point.
 
 Feature flags are Railway Feature Flags, not variables: `attachments`, `edits-deletes` and `debug-panel` (all bool, default off). `backend/flags.ts` reads them through the `railway` SDK, which polls Railway, and `/config` reads them on every request, so a change applies on the next page load without a redeploy.
 

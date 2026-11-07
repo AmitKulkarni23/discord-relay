@@ -15,16 +15,26 @@ function write(level: Level, event: string, fields: Record<string, unknown>): vo
   console.log(JSON.stringify({ ...fields, time: new Date().toISOString(), level, event }))
 }
 
+/** How many times each event was logged. Keys are the event names written in the code, so the map stays small. */
+const counts = new Map<string, number>()
+
+/** Counts the event, then writes it unless its level is off. */
+function emit(level: Level, event: string, fields: Record<string, unknown>, on = true): void {
+  counts.set(event, (counts.get(event) ?? 0) + 1)
+  if (on) write(level, event, fields)
+}
+
 /**
  * Structured logger: `log.info('server_started', { url })`.
  * Never pass the bot token or message content in `fields`.
  */
 export const log = {
-  debug: (event: string, fields: Record<string, unknown> = {}): void => {
-    // Off in production: a deploy reconnecting 12k clients would write 24k lines and bury real errors past Railway's 500 lines/s.
-    if (process.env.NODE_ENV !== 'production' || process.env.LOG_LEVEL === 'debug') write('debug', event, fields)
-  },
-  info: (event: string, fields: Record<string, unknown> = {}): void => write('info', event, fields),
-  warn: (event: string, fields: Record<string, unknown> = {}): void => write('warn', event, fields),
-  error: (event: string, fields: Record<string, unknown> = {}): void => write('error', event, fields),
+  // Off in production: a deploy reconnecting 12k clients would write 24k lines and bury real errors past Railway's 500 lines/s.
+  debug: (event: string, fields: Record<string, unknown> = {}): void =>
+    emit('debug', event, fields, process.env.NODE_ENV !== 'production' || process.env.LOG_LEVEL === 'debug'),
+  info: (event: string, fields: Record<string, unknown> = {}): void => emit('info', event, fields),
+  warn: (event: string, fields: Record<string, unknown> = {}): void => emit('warn', event, fields),
+  error: (event: string, fields: Record<string, unknown> = {}): void => emit('error', event, fields),
+  /** How many times `event` was logged since the process started, debug lines included even when they are off. Feeds the metrics push. */
+  count: (event: string): number => counts.get(event) ?? 0,
 }

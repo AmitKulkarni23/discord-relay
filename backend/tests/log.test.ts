@@ -77,6 +77,28 @@ describe('log', () => {
   })
 })
 
+describe('log.count', () => {
+  describe('when events are logged', () => {
+    it('should count every call per event when debug lines are not written', () => {
+      const before = { NODE_ENV: process.env.NODE_ENV, LOG_LEVEL: process.env.LOG_LEVEL }
+      process.env.NODE_ENV = 'production'
+      delete process.env.LOG_LEVEL
+      const rejected = log.count('client_rejected')
+      const dropped = log.count('client_dropped')
+
+      log.debug('client_rejected', { requestId: 'a1b2c3' })
+      log.debug('client_rejected', { requestId: 'd4e5f6' })
+      log.warn('client_dropped', { requestId: 'a1b2c3' })
+
+      expect(log.count('client_rejected')).toBe(rejected + 2)
+      expect(log.count('client_dropped')).toBe(dropped + 1)
+      expect(log.count('never_logged_event')).toBe(0)
+      process.env.NODE_ENV = before.NODE_ENV
+      if (before.LOG_LEVEL !== undefined) process.env.LOG_LEVEL = before.LOG_LEVEL
+    })
+  })
+})
+
 describe('errorMessage', () => {
   describe('when given an Error', () => {
     it('should return its message alone', () => {

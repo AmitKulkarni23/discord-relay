@@ -8,8 +8,8 @@
   "scripts": {
     "dev": "bun --hot backend/server.ts",
     "start": "bun run backend/server.ts",
-    "format": "prettier --write \"{backend,frontend,load-tests,.railway}/**/*.{ts,tsx}\"",
-    "format:check": "prettier --check \"{backend,frontend,load-tests,.railway}/**/*.{ts,tsx}\"",
+    "format": "prettier --write \"{backend,frontend,load-tests,.railway,.grafana}/**/*.{ts,tsx}\"",
+    "format:check": "prettier --check \"{backend,frontend,load-tests,.railway,.grafana}/**/*.{ts,tsx}\"",
     "lint": "eslint frontend",
     "typecheck": "tsc --noEmit",
     "test": "bun test"

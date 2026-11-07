@@ -284,4 +284,17 @@ describe('hub', () => {
       expect(removed.at(-1)).toBe('1302000000000000500')
     })
   })
+
+  describe('when counting published messages', () => {
+    it('should count each new message once when duplicates and deleted IDs are published', () => {
+      const hub = createHub(10)
+      hub.publish(makeMsg('1302000000000000001'))
+      hub.publish(makeMsg('1302000000000000001'))
+      hub.publish(makeMsg('1302000000000000002'))
+      hub.remove(GENERAL, '1302000000000000003')
+      hub.publish(makeMsg('1302000000000000003'))
+
+      expect(hub.publishedTotal()).toBe(2)
+    })
+  })
 })

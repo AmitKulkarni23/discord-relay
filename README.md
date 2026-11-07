@@ -118,3 +118,48 @@ One Railway service, with one replica, runs three components in a single Bun pro
 | Healthchecks only run at deploy time | A broken but running app keeps serving | None | The Gateway watchdog |
 | Railway drops logs above 500 lines/s | Missing logs | None | Per-client logs are `debug`, off by default |
 | Railway Feature Flags are unreachable | Flagged features are off | `flags_unavailable` | Every flag falls back to off |
+
+
+## Alternatives Considered
+
+Both alternatives solve the same problem: running more than one web replica. In the current design, every extra replica would start its own bot with its own buffer.
+
+### A. Bot service, Redis Pub/Sub and web replicas
+
+![Alternative A: bot service, Redis Pub/Sub and web replicas](docs/alternative-a-redis.png)
+
+One bot publishes each message to Redis. Every web replica subscribes and fans messages out to its own SSE clients. The buffer for new visitors lives in Redis (a capped list or a Stream) or is rebuilt in each replica. `publish` and `subscribe` keep their signatures, so only `hub.ts` changes.
+
+Why it isn't built yet:
+
+- More replicas would not let more people in. Railway's edge caps a domain at 10,000 in-flight requests per edge node, counted across all replicas, and each SSE stream is a long-lived request. The public load test hit that cap at about 15,000 clients, while one replica held 16,300 clients at 10 msg/s over the private network.
+- One replica covers the load we expect. It held 55,000 clients at 1 msg/s over the private network.
+- Redis adds a service, a bill, a network hop and a new way to fail: if Redis is down, no messages get through. Pub/Sub also drops messages for a subscriber that is disconnected, so the replicas would need their own reconnect and replay logic.
+- A crash already recovers in a few seconds, through restart on failure and a history refetch. At this size that is enough for the single point of failure.
+
+Build it when a few seconds of downtime on a crash stops being acceptable, when one CPU core becomes the limit, or once WebSockets or a push service get past the edge cap.
+
+### B. Postgres for storage, Redis for fan-out
+
+![Alternative B: Postgres for storage, Redis for fan-out, web replicas](docs/alternative-b-postgres-redis.png)
+
+The bot writes every message to Postgres and publishes it to Redis. Web replicas read history and `?since=` replays from Postgres, and live messages from Redis.
+
+Why it wasn't chosen:
+
+- Discord already stores every message. A second copy brings sync problems (edits, deletes, events missed during downtime) and does nothing for someone watching live.
+- Nothing in the product needs search or history beyond 500 messages yet.
+- It costs the most of the three options and takes the most work to run: two stateful services, migrations and backups.
+- SQLite on a Railway volume was ruled out separately, because volumes cannot be used with replicas.
+
+Build it for search, history beyond 500 messages, many channels, or many replicas all calling Discord's REST API at startup.
+
+### Other options
+
+| Option | Why not |
+| --- | --- |
+| A bot in every replica, no Redis | It works because the bot only reads, but each replica keeps its own buffer and its own Gateway session |
+| WebSockets instead of SSE | Two-way, which we don't need. They are exempt from the 15-minute cut, so they are worth another look for the edge cap |
+| Polling | More lag and more requests |
+| Next.js or a separate frontend service | A long-lived bot fits badly, and it means two deploys and CORS |
+| A managed push service (Pusher, Ably) | The way past the edge cap, at the cost of a bill and a vendor |

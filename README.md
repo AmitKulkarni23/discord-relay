@@ -31,3 +31,23 @@ One Railway service, with one replica, runs three components in a single Bun pro
 
 
 ![High-level design](docs/high-level-design.png)
+
+### Components
+
+| Component | What it does |
+| --- | --- |
+| Discord ingestion | Connects to the Gateway, loads recent history at startup, turns each Discord message into a `Msg` and publishes it to the hub. Replaces the client if the Gateway stays down for 5 minutes. |
+| Hub | Keeps the latest messages per channel, sorted by ID, and drops duplicates. Calls each subscriber's callback when a message arrives or is deleted. |
+| HTTP server | Serves the page, the SSE streams, `/health` and `/config`. Limits streams per IP, drops clients that stop reading and closes streams on SIGTERM. |
+| Config | Reads and checks the env vars once at startup. Exits with a log line naming any bad variable. |
+| Feature flags | Reads Railway Feature Flags. Every flag is off if Railway or the token is unavailable. |
+| Frontend | Opens one `EventSource` for the selected channel, keeps up to 500 messages by ID, shows the connection status and reconnects on its own. |
+
+### HTTP API
+
+| Route | Returns |
+| --- | --- |
+| `GET /` | The React page, bundled by Bun. |
+| `GET /events?channel=<id>&since=<id>` | An SSE stream: the Discord connection status, then the buffered messages (only those newer than `since`, if given), then live messages, deletes and a ping every 25 s. |
+| `GET /config` | The feature flags and the list of channels with their names. |
+| `GET /health` | 200 when the Gateway is connected, 503 otherwise. The body has `discord`, `clients`, `buffered`, `lastEventAt`, `unavailableChannels` and `uptimeSec`. |

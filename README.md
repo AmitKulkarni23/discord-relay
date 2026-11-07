@@ -68,12 +68,7 @@ One Railway service, with one replica, runs three components in a single Bun pro
 
 ### Discord to bot (Gateway)
 
-```mermaid
-flowchart LR
-  discord[Discord] == "Gateway WebSocket + REST" ==> bot[Discord bot] --> hub[Hub] --> sse[SSE stream] --> edge[Railway edge] --> browser[Browser]
-  classDef hot fill:#fde8e8,stroke:#d64545,color:#1f2328
-  class discord,bot hot
-```
+![Discord to bot hop](docs/failure-hop-0.png)
 
 | Failure | User sees | Detection | Handling |
 | --- | --- | --- | --- |
@@ -86,12 +81,7 @@ flowchart LR
 
 ### Bot to hub (in process)
 
-```mermaid
-flowchart LR
-  discord[Discord] --> bot[Discord bot] == "publish(msg)" ==> hub[Hub] --> sse[SSE stream] --> edge[Railway edge] --> browser[Browser]
-  classDef hot fill:#fde8e8,stroke:#d64545,color:#1f2328
-  class bot,hub hot
-```
+![Bot to hub hop](docs/failure-hop-1.png)
 
 | Failure | User sees | Detection | Handling |
 | --- | --- | --- | --- |
@@ -102,12 +92,7 @@ flowchart LR
 
 ### Hub to SSE stream to edge to browser
 
-```mermaid
-flowchart LR
-  discord[Discord] --> bot[Discord bot] --> hub[Hub] == "subscriber callback" ==> sse[SSE stream] == "text/event-stream" ==> edge[Railway edge] ==> browser[Browser]
-  classDef hot fill:#fde8e8,stroke:#d64545,color:#1f2328
-  class hub,sse,edge,browser hot
-```
+![Hub to browser hops](docs/failure-hop-2.png)
 
 | Failure | User sees | Detection | Handling |
 | --- | --- | --- | --- |

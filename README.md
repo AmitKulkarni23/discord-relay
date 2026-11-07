@@ -30,7 +30,7 @@ One Railway service, with one replica, runs three components in a single Bun pro
 - **HTTP Server**: serves the web page, streams messages to browsers over SSE
 
 
-![High-level design](docs/architecture.png)
+![High-level design](docs/system-overview.png)
 
 ### Components
 

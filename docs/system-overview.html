@@ -2,7 +2,7 @@
 :root{--bg:#fff;--fg:#1f2328;--muted:#5b636e;--line:#8a929c;--ext-bg:#f1ecff;--ext-bd:#7c5cd6;--our-bg:#e8f1ff;--our-bd:#2f6fdb;--inf-bg:#fff4e0;--inf-bd:#d48a12;--usr-bg:#e7f7ee;--usr-bd:#2e9a5b;--grp-bd:#9aa3ad;--warn:#c43d3d}
 @media (prefers-color-scheme:dark){:root{--bg:#191919;--fg:#e6e6e6;--muted:#a0a7b0;--line:#7d858f;--ext-bg:#2a2340;--ext-bd:#9b82ea;--our-bg:#1b2a42;--our-bd:#5b93ee;--inf-bg:#3a2c12;--inf-bd:#e0a33a;--usr-bg:#173324;--usr-bd:#4cc27f;--grp-bd:#5e666f;--warn:#ff7b7b}}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:13px/1.35 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,sans-serif}
-.wrap{max-width:880px;margin:0 auto;padding:16px}
+.wrap{max-width:840px;margin:0 auto;padding:16px}
 .n{border:1.5px solid;border-radius:10px;padding:8px 12px;text-align:center}.n b{display:block;font-size:13.5px}.n small{display:block;color:var(--muted);font-size:11.5px;margin-top:2px}
 .ext{background:var(--ext-bg);border-color:var(--ext-bd)}.our{background:var(--our-bg);border-color:var(--our-bd)}.inf{background:var(--inf-bg);border-color:var(--inf-bd)}.usr{background:var(--usr-bg);border-color:var(--usr-bd)}.dash{border-style:dashed}
 .center{max-width:320px;margin:0 auto}
@@ -17,21 +17,21 @@
 .fan,.merge{display:flex;position:relative}.fan>div,.merge>div{flex:1;padding:0 8px;display:flex;flex-direction:column}
 .fan::before{content:"";position:absolute;top:0;height:2px;background:var(--line);left:calc(50%/var(--n));right:calc(50%/var(--n))}
 .legend{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;margin-top:16px;font-size:11px;color:var(--muted)}.legend i{display:inline-block;width:10px;height:10px;border-radius:3px;border:1.5px solid;margin-right:5px;vertical-align:-1px}
+.col{display:grid;grid-template-columns:1fr 260px 1fr;align-items:center}.side{display:flex;align-items:center}.side>.n{flex:1}.side>.h{width:84px}
 </style></head><body><div class="wrap">
-<div class="n ext center"><b>Discord</b><small>source of truth</small></div>
+<div class="n ext center" style="max-width:260px"><b>Discord</b><small>source of truth</small></div>
 <div class="v"><span class="ln"></span><span class="lbl">Gateway WebSocket (live) + REST (history at startup)</span></div>
 <div class="grp"><span class="gl">Railway service · one replica · one Bun process</span>
-<div class="g5">
-<div class="n our"><b>Discord ingestion</b></div>
-<div class="h"><span class="lbl">publish(msg)</span><span class="ln"></span></div>
-<div class="n our"><b>Hub</b><small>latest messages per channel<br>+ subscribers</small></div>
-<div class="h"><span class="lbl">subscriber callbacks</span><span class="ln"></span></div>
-<div class="n our"><b>HTTP server</b><small>/ · /events · /health · /config</small></div>
-<div class="v up"><span class="ln"></span><span class="lbl">fresh client</span></div><div></div><div></div><div></div><div></div>
-<div class="n our dash"><b>Watchdog</b><small>fresh client every 5 min<br>while the Gateway is down</small></div><div></div><div></div><div></div><div></div>
+<div class="col">
+<div class="side"><div class="n our dash"><b>Watchdog</b><small>fresh client every 5 min<br>while the Gateway is down</small></div><div class="h"><span class="lbl">fresh client</span><span class="ln"></span></div></div>
+<div class="n our" style="align-self:stretch;display:flex;align-items:center;justify-content:center"><b>Discord ingestion</b></div><div></div>
+<div></div><div class="v"><span class="ln"></span><span class="lbl">publish(msg)</span></div><div></div>
+<div></div><div class="n our"><b>Hub</b><small>latest messages per channel<br>+ subscribers</small></div><div></div>
+<div></div><div class="v"><span class="ln"></span><span class="lbl">subscriber callbacks</span></div><div></div>
+<div></div><div class="n our"><b>HTTP server</b><small>/ · /events · /health · /config</small></div><div></div>
 </div></div>
 <div class="v"><span class="ln"></span><span class="lbl">HTML page + SSE streams</span></div>
-<div class="n inf center"><b>Railway edge proxy</b></div>
+<div class="n inf center" style="max-width:260px"><b>Railway edge proxy</b></div>
 <div class="v nohead"><span class="ln"></span></div>
 <div class="fan" style="--n:3">
 <div><div class="v"><span class="ln"></span></div><div class="n usr"><b>Browser</b></div></div>

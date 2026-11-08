@@ -48,6 +48,7 @@ describe('EmptyState', () => {
       ['discord', 'Waiting for Discord'],
       ['full', 'Connection limit reached'],
       ['channel', 'Channel unavailable'],
+      ['failed', 'Relay is down'],
     ] as Array<[Status, string]>) {
       it(`should say ${title} when the status is ${status}`, () => {
         expect(settled(status).getByText(title)).toBeDefined()

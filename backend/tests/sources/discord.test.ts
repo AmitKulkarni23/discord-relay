@@ -447,6 +447,7 @@ describe('startDiscord', () => {
       await waitFor(() => fake.fatal.length > 0)
 
       expect(fake.fatal).toEqual([error])
+      expect(fake.discord.loginFailed()).toBe(true)
     })
 
     it('should give up when the MessageContent intent is not allowed', async () => {
@@ -466,6 +467,7 @@ describe('startDiscord', () => {
       await waitFor(() => fake.logs.some(l => l.event === 'discord_login_failed'))
 
       expect(fake.fatal).toEqual([])
+      expect(fake.discord.loginFailed()).toBe(false)
     })
   })
 

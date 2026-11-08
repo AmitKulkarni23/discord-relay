@@ -22,10 +22,10 @@ Each row lists what can break, what a user would report, how we notice, and what
 |---|---|---|---|---|---|
 | 7 | Gateway drops because Discord restarts or the network blips | Nothing, or a short gap | `shardDisconnect` and `shardReconnecting` events | discord.js reconnects. A resume replays what was missed; a fresh session reloads the latest `BUFFER_SIZE` messages per channel | Mitigated |
 | 8 | Gateway stays down while the process is alive | The page goes quiet and its chip turns amber, "Waiting for Discord" | `watchdog_expired` every 5 min; `/health` returns 503 | The bot reconnects with a fresh client every 5 min, keeping the buffer | Mitigated |
-| 9 | MessageContent intent is not enabled in the Discord developer portal | Empty page, and the deploy never goes live | The bot requests the intent, so Discord closes the Gateway with 4014 and discord.js reports `Used disallowed intents` | Exit 1 from the login failure or the watchdog. The fix is in the portal. `message_content_missing` logs once per process and only suggests the intent: sticker-only and embed-only messages trigger it too | Detected |
+| 9 | MessageContent intent is not enabled in the Discord developer portal | "Relay is down" page saying the maintainer was notified; a new deploy fails its healthcheck and never goes live | The bot requests the intent, so Discord closes the Gateway with 4014 and discord.js reports `Used disallowed intents`; the Grafana "Discord Gateway down" alarm | The server stays up and the watchdog retries every 5 min, so fixing it in the portal recovers with no redeploy. `message_content_missing` logs once per process and only suggests the intent: sticker-only and embed-only messages trigger it too | Detected |
 | 9b | A message is deleted in Discord with the `edits-deletes` flag off | It stays on the public page | Compare the page with Discord | It leaves when it ages out of the buffer or the server restarts. Turn the flag on to remove deletions live | Accepted until the flag is on |
 | 9c | With the flag on, a message is deleted while the server is restarting | The page already open keeps showing it until reloaded | None | A new visitor never sees it, because the restarted server reloads from Discord. An open page keeps it, because the list of recent deletions is in memory and did not survive the restart | Accepted |
-| 10 | Token is invalid or revoked | Empty page, and the deploy never goes live | Login error at startup | Exit 1 with a clear log. After 10 restarts Railway marks the deployment `Crashed` and emails project members | Detected |
+| 10 | Token is invalid or revoked | "Relay is down" page saying the maintainer was notified; a new deploy fails its healthcheck and never goes live | `discord_login_failed`; the Grafana "Discord Gateway down" alarm | The server stays up instead of crash-looping and tells open pages (`event: discord`, `data: failed`). Fix `DISCORD_TOKEN` and redeploy | Detected |
 | 11 | Discord outage at startup, a rate limit on the history fetch, or a bot that cannot read the channel | Empty or partial history, chip "Channel unavailable" | `history_failed` in the logs; `unavailableChannels` in `/health` | Retries each channel with backoff, up to every 5 min, until it loads. A login failing on the network retries too | Mitigated |
 | 12 | Attachment URLs expire after about 24 h | Broken images in a long-open tab | None | Restarts and page reloads get fresh URLs | Accepted |
 
@@ -57,7 +57,7 @@ Each row lists what can break, what a user would report, how we notice, and what
 
 ## Runbook: "messages stopped showing up"
 
-1. Check the Railway deployment status. If it says `Crashed`, read the last logs for a bad token or a missing env var.
+1. Check the Railway deployment status. If it says `Crashed`, read the last logs for a missing env var. If the page says "Relay is down", look for `discord_login_failed`: a bad token or a disallowed intent.
 2. Open `/health`. A 503 means the Gateway is down; look in the logs for `gateway_disconnected` and whether the watchdog fired.
 3. Turn on the `debug-panel` flag and look at Gateway status, client count and the last event time.
 4. If the logs show `Used disallowed intents`, the MessageContent intent is off in the Discord developer portal.

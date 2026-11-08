@@ -8,6 +8,8 @@ export type EventStreamDeps = {
   /** The channels this server relays; the first is the default for /events. */
   channelIds: string[]
   isDiscordConnected: () => boolean
+  /** True after a login that needs a person to fix it, such as a revoked token. */
+  isLoginFailed: () => boolean
   /** False while the bot cannot load a channel, usually for lack of access. */
   isChannelAvailable: (channelId: string) => boolean
   /** Heartbeat interval. Railway closes streams idle for 5 minutes. */
@@ -40,11 +42,12 @@ const encoder = new TextEncoder()
 const CONNECTED = encoder.encode(': connected\n\n')
 // A named event, not a comment: EventSource hides comments, and the page needs to see these to notice a dead stream.
 const PING = encoder.encode('event: ping\ndata: 1\n\n')
-type DiscordState = 'connected' | 'disconnected' | 'unavailable'
+type DiscordState = 'connected' | 'disconnected' | 'unavailable' | 'failed'
 const DISCORD_EVENTS: Record<DiscordState, Uint8Array> = {
   connected: encoder.encode('event: discord\ndata: connected\n\n'),
   disconnected: encoder.encode('event: discord\ndata: disconnected\n\n'),
   unavailable: encoder.encode('event: discord\ndata: unavailable\n\n'),
+  failed: encoder.encode('event: discord\ndata: failed\n\n'),
 }
 /** How often the server checks the Gateway and each channel, to tell open pages when one changes. */
 const DISCORD_CHECK_MS = 1000
@@ -100,7 +103,7 @@ type StreamClient = {
  * Owns GET /events: one SSE stream per browser, its limits, and the timers that keep them all informed.
  */
 export function createEventStreams(deps: EventStreamDeps): EventStreams {
-  const { hub, channelIds, isDiscordConnected, isChannelAvailable, pingMs = 25_000 } = deps
+  const { hub, channelIds, isDiscordConnected, isLoginFailed, isChannelAvailable, pingMs = 25_000 } = deps
   const defaultChannel = channelIds[0]
   if (defaultChannel === undefined) throw new Error('startServer needs at least one channel')
   /** Every open /events stream: pinged by the one timer below, closed by `stop`. */
@@ -112,7 +115,7 @@ export function createEventStreams(deps: EventStreamDeps): EventStreams {
   }, pingMs)
   /** What a page on this channel should say. A lost Gateway comes first, because it explains everything else. */
   const discordState = (channelId: string): DiscordState => {
-    if (!isDiscordConnected()) return 'disconnected'
+    if (!isDiscordConnected()) return isLoginFailed() ? 'failed' : 'disconnected'
     return isChannelAvailable(channelId) ? 'connected' : 'unavailable'
   }
   const lastState = new Map(channelIds.map(id => [id, discordState(id)]))

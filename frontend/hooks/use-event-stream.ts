@@ -146,6 +146,15 @@ export function useEventStream(channel: string | null): EventStream {
   }, [channel])
 
   const messages = useMemo(() => sortMsgs(msgs), [msgs])
-  const status: Status = connection !== 'live' ? connection : discord === 'disconnected' ? 'discord' : discord === 'unavailable' ? 'channel' : 'live'
+  const status: Status =
+    connection !== 'live'
+      ? connection
+      : discord === 'disconnected'
+        ? 'discord'
+        : discord === 'unavailable'
+          ? 'channel'
+          : discord === 'failed'
+            ? 'failed'
+            : 'live'
   return { messages, status, recovered }
 }

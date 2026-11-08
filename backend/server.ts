@@ -73,8 +73,8 @@ export function startServer(deps: ServerDeps): { url: URL; stop: () => void } {
 /**
  * Entry point and the only place dependencies are wired: validates config,
  * creates the hub, starts the HTTP server and the Discord source, and shuts
- * down cleanly on SIGTERM. Exits with code 1 on invalid config or a login
- * that cannot work, such as a bad token.
+ * down cleanly on SIGTERM. Exits with code 1 on invalid config. A login that
+ * cannot work, such as a bad token, keeps the server up so the page can say so.
  */
 export function main(): void {
   let config: Config
@@ -99,10 +99,8 @@ export function main(): void {
     remove: hub.remove,
     buffered: channelId => hub.recent(channelId).map(m => m.id),
     deletesEnabled: () => readFlags().editsDeletes,
-    onFatal: err => {
-      log.error('discord_login_failed', { error: errorMessage(err) })
-      process.exit(1)
-    },
+    // Stay up: the page tells viewers the maintainer was notified, and relay_gateway_connected = 0 fires the Grafana alarm.
+    onFatal: err => log.error('discord_login_failed', { error: errorMessage(err), hint: 'Check DISCORD_TOKEN and the MessageContent intent' }),
   })
   const server = startServer({
     port: config.port,
@@ -111,6 +109,7 @@ export function main(): void {
     // Flags start at their defaults and switch to Railway's values once the SDK syncs, so startup never waits on it.
     flags: () => readFlags(),
     isDiscordConnected: discord.isConnected,
+    isLoginFailed: discord.loginFailed,
     isChannelAvailable: discord.isChannelAvailable,
     channels: discord.channels,
   })

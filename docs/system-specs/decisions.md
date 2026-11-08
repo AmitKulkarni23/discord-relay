@@ -80,7 +80,7 @@ Revisit if more than one person deploys, or if a bad deploy becomes costly.
 
 ## D11. Gateway watchdog
 
-If the Gateway stays disconnected for more than 5 minutes, the bot replaces its discord.js client inside the process, and repeats that until one connects. Railway only runs healthchecks at deploy time, so nothing else would notice a stalled connection. It does not exit: a restart would lose the buffer, which cannot be reloaded while Discord is down, and use up Railway's limit of 10 restarts during a long outage. It exits only for a login no retry can fix, such as a bad token.
+If the Gateway stays disconnected for more than 5 minutes, the bot replaces its discord.js client inside the process, and repeats that until one connects. Railway only runs healthchecks at deploy time, so nothing else would notice a stalled connection. It does not exit: a restart would lose the buffer, which cannot be reloaded while Discord is down, and use up Railway's limit of 10 restarts during a long outage. A login that needs a person, such as a bad token, does not exit either: the page says the relay is down and the maintainer was notified, the Grafana Gateway alarm fires, and the watchdog keeps retrying, so a fixed intent recovers on its own.
 
 We could have trusted discord.js reconnects alone, or added an external uptime monitor that hits `/health`.
 

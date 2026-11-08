@@ -35,7 +35,7 @@ paths:
 ## Reliability
 
 - `/health` MUST return 200 only when the Discord gateway is connected, 503 otherwise.
-- If the gateway stays disconnected for more than 5 minutes, the process MUST reconnect with a fresh client and keep its buffer. It MUST exit with code 1 only for a login that retrying cannot fix, such as a bad token.
+- If the gateway stays disconnected for more than 5 minutes, the process MUST reconnect with a fresh client and keep its buffer. A login that needs a person to fix it, such as a bad token, MUST NOT exit: the server stays up, tells open pages (`event: discord`, `data: failed`) and keeps retrying through the watchdog.
 - A SIGTERM handler MUST close SSE streams and destroy the Discord client before exiting.
 - The start command MUST be `bun run backend/server.ts`, never a package script (scripts swallow SIGTERM).
 

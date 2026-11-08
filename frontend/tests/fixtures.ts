@@ -64,7 +64,7 @@ export class FakeEventSource {
   sendDelete(id: string): void {
     this.listeners.get('delete')?.({ data: JSON.stringify({ id, channelId: '1566584977829900002' }) })
   }
-  sendDiscord(state: 'connected' | 'disconnected' | 'unavailable'): void {
+  sendDiscord(state: 'connected' | 'disconnected' | 'unavailable' | 'failed'): void {
     this.listeners.get('discord')?.({ data: state })
   }
 }

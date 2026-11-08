@@ -70,7 +70,7 @@ afterEach(() => {
 /** Starts a server on a random port with test defaults. */
 export function start(
   hub: Hub,
-  overrides: { connected?: boolean; available?: boolean; pingMs?: number; channelName?: string | null; flags?: () => Flags } = {},
+  overrides: { connected?: boolean; loginFailed?: boolean; available?: boolean; pingMs?: number; channelName?: string | null; flags?: () => Flags } = {},
 ) {
   const server = startServer({
     port: 0,
@@ -79,6 +79,7 @@ export function start(
     flags: overrides.flags ?? (() => ({ attachments: true, editsDeletes: false, debugPanel: false })),
     isDiscordConnected: () => overrides.connected ?? true,
     isChannelAvailable: () => overrides.available ?? true,
+    isLoginFailed: () => overrides.loginFailed ?? false,
     channels: () => [
       { id: CHANNEL, name: overrides.channelName === undefined ? 'relay-test' : overrides.channelName },
       { id: CHANNEL_2, name: 'announcements' },

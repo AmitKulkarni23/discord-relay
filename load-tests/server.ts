@@ -23,6 +23,7 @@ for (let i = 0; i < listeners; i++) {
     channelIds,
     flags: () => DEFAULT_FLAGS,
     isDiscordConnected: () => true,
+    isLoginFailed: () => false,
     isChannelAvailable: () => true,
     channels: () => channelIds.map((id, i) => ({ id, name: `load-test-${i}` })),
   })

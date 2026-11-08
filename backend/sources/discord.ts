@@ -18,7 +18,7 @@ export type DiscordDeps = {
   deletesEnabled: () => boolean
   /** How many recent messages to load at startup; matches the hub's buffer size. */
   historyLimit?: number
-  /** Called when logging in cannot work however often it is retried: a bad token or a disallowed intent. */
+  /** Called when logging in needs a person to fix it: a bad token or a disallowed intent. The watchdog still retries every 5 minutes. */
   onFatal: (err: unknown) => void
   /** How long the Gateway may stay disconnected before reconnecting with a fresh client. */
   watchdogMs?: number
@@ -68,6 +68,8 @@ export type DiscordSource = {
   login: Promise<void>
   /** True while the Gateway connection is up. */
   isConnected(): boolean
+  /** True after a login that needs a person to fix it, until a later login succeeds. */
+  loginFailed(): boolean
   /** False while a channel's history cannot be loaded, usually because the bot cannot read it. */
   isChannelAvailable(channelId: string): boolean
   /** Every relayed channel, with its name once its history has loaded. */
@@ -86,6 +88,7 @@ export function startDiscord(deps: DiscordDeps): DiscordSource {
   const { token, channelIds, publish, remove, buffered, deletesEnabled, historyLimit = 100, onFatal, watchdogMs = 5 * 60_000, historyRetryMs = 5_000 } = deps
   const watchdog = createWatchdog({ limitMs: watchdogMs, onExpire: () => void reconnect() })
   let connected = false
+  let loginFailed = false
   const wanted = new Set(channelIds)
   /** Channel names, filled in as each channel's history loads. */
   const names = new Map<string, string>()
@@ -102,6 +105,7 @@ export function startDiscord(deps: DiscordDeps): DiscordSource {
   function setConnected(next: boolean, event: string): void {
     connected = next
     if (next) {
+      loginFailed = false
       watchdog.connected()
       log.info(event)
     } else {
@@ -230,8 +234,10 @@ export function startDiscord(deps: DiscordDeps): DiscordSource {
     try {
       await next.login(token)
     } catch (err) {
-      if (isFatalLogin(err)) onFatal(err)
-      else log.error('discord_login_failed', { error: errorMessage(err) })
+      if (isFatalLogin(err)) {
+        loginFailed = true
+        onFatal(err)
+      } else log.error('discord_login_failed', { error: errorMessage(err) })
     }
   }
 
@@ -266,6 +272,7 @@ export function startDiscord(deps: DiscordDeps): DiscordSource {
   return {
     login: login(client),
     isConnected: () => connected,
+    loginFailed: () => loginFailed,
     isChannelAvailable: channelId => !unavailable.has(channelId),
     channels: () => channelIds.map(id => ({ id, name: names.get(id) ?? null })),
     async stop() {

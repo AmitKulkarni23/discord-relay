@@ -179,6 +179,15 @@ describe('useEventStream', () => {
       expect(result.current.status).toBe('live')
     })
 
+    it('should say the relay has failed when the bot cannot log in to Discord', () => {
+      const { result } = renderHook(() => useEventStream(CHANNEL))
+      const es = FakeEventSource.latest()
+      open(es)
+
+      act(() => es.sendDiscord('failed'))
+      expect(result.current.status).toBe('failed')
+    })
+
     it('should say so when the bot cannot read this channel', () => {
       const { result } = renderHook(() => useEventStream(CHANNEL))
       const es = FakeEventSource.latest()

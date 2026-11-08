@@ -34,6 +34,7 @@ describe('StatusChip', () => {
       ['discord', 'Waiting for Discord'],
       ['full', 'Connection limit'],
       ['channel', 'Channel unavailable'],
+      ['failed', 'Relay down'],
     ] as Array<[Status, string]>) {
       it(`should say ${label} when the status is ${status}`, () => {
         const { container } = render(<StatusChip status={status} newestId={null} recovered={null} />)

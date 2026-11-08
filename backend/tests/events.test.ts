@@ -76,6 +76,14 @@ describe('the discord status event', () => {
     stream.abort()
   })
 
+  it('should say the relay has failed when the bot cannot log in, so the page can say a person is needed', async () => {
+    const { url } = start(createHub(10), { connected: false, loginFailed: true })
+    const stream = await openEvents(url)
+
+    expect(await stream.readUntil(t => t.includes('event: discord'))).toContain('event: discord\ndata: failed\n\n')
+    stream.abort()
+  })
+
   it('should say a channel the bot cannot read is unavailable', async () => {
     const { url } = start(createHub(10), { available: false })
     const stream = await openEvents(url)

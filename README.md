@@ -86,7 +86,7 @@ The two that matter most: Railway's edge caps public viewers at about 10,000, an
 #### 4. One CPU core does all the fan-out
 
 - **Problem**: Every message is written separately to every open page, and Bun runs that work on a single thread, so one CPU core does it all.
-- **Impact**: The more messages per second, the fewer viewers one server can hold: 16,300 viewers at 10 msg/s, but only 2,000 at 200 msg/s. At 4,000 viewers and 200 msg/s the server stalled for 33.6 s.
+- **Impact**: The more messages per second, the fewer viewers one server can hold: 16,300 viewers at 10 msg/s, but only 2,000 at 200 msg/s. The two tend to rise together: a busy moment brings more posters and more viewers at once, so the load multiplies. 4,000 viewers at 200 msg/s froze the server for 33.6 s.
 - **Behavior Today**: Each message is turned into bytes once and the same bytes are reused for every viewer. A viewer more than 1 MiB behind is dropped, which protects memory but not CPU.
 - **Long Term Fix**:
   - **Batch writes**: today, 200 messages a second means 200 separate writes to each open page. Instead, the server would collect the messages that arrive in a short window (for example 50 ms) and send them to each page as one write. At 200 msg/s that is about 20 writes per page per second instead of 200, in exchange for up to 50 ms of extra delay.

@@ -33,7 +33,7 @@
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.1",
     "@mui/material": "^9.5.0",
-    "discord.js": "^14.28.0",
+    "discord.js": "^14.28.1",
     "railway": "^3.16.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"

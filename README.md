@@ -358,7 +358,7 @@ Why it wasn't chosen:
 | --- | --- |
 | A bot in every replica, no Redis | It works because the bot only reads, but each replica keeps its own buffer and its own Gateway session |
 | WebSockets instead of SSE | Two-way, which we don't need. They are exempt from the 15-minute cut, so they are worth another look for the edge cap |
-| Polling | More lag and more requests |
+| Polling | • More lag<br>• Load even when the channel is quiet: 10,000 viewers polling every 2 s is 5,000 requests a second<br>• Every poll is a full HTTP request, which costs far more CPU than a write to an open stream<br>• Empty answers still send headers, and Railway bills that traffic |
 | A managed push service (Pusher, Ably) | The way past the edge cap, at the cost of a bill and a vendor |
 
 

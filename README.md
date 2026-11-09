@@ -331,7 +331,7 @@ Both alternatives solve the same problem: running more than one web replica. In 
 
 ![Alternative A: bot service, Redis Pub/Sub and web replicas](docs/alt-a-redis.png)
 
-One bot publishes each message to Redis. Every web replica subscribes and fans messages out to its own SSE clients. The buffer for new visitors lives in Redis (a capped list or a Stream) or is rebuilt in each replica. `publish` and `subscribe` keep their signatures, so only `hub.ts` changes.
+One bot publishes each message to Redis. Every web replica subscribes and fans messages out to its own SSE clients.
 
 Why it isn't built yet:
 
@@ -339,8 +339,6 @@ Why it isn't built yet:
 - One replica covers the load we expect. It held 55,000 clients at 1 msg/s over the private network.
 - Redis adds a service, a bill, a network hop and a new way to fail: if Redis is down, no messages get through. Pub/Sub also drops messages for a subscriber that is disconnected, so the replicas would need their own reconnect and replay logic.
 - A crash already recovers in a few seconds, through restart on failure and a history refetch. At this size that is enough for the single point of failure.
-
-Build it when a few seconds of downtime on a crash stops being acceptable, when one CPU core becomes the limit, or once WebSockets or a push service get past the edge cap.
 
 ### B. Postgres for storage, Redis for fan-out
 
@@ -353,9 +351,6 @@ Why it wasn't chosen:
 - Discord already stores every message. A second copy brings sync problems (edits, deletes, events missed during downtime) and does nothing for someone watching live.
 - Nothing in the product needs search or history beyond 500 messages yet.
 - It costs the most of the three options and takes the most work to run: two stateful services, migrations and backups.
-- SQLite on a Railway volume was ruled out separately, because volumes cannot be used with replicas.
-
-Build it for search, history beyond 500 messages, many channels, or many replicas all calling Discord's REST API at startup.
 
 ### Other options
 

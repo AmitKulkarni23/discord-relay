@@ -26,35 +26,35 @@ function fakeChannel(count: number) {
 describe('collectHistory', () => {
   describe('when the limit fits in one page', () => {
     it('should make one request and return messages oldest first when the limit is 100 or less', async () => {
-      const ch = fakeChannel(150)
+      const channel = fakeChannel(150)
 
-      const got = await collectHistory(ch.fetchPage, 40)
+      const got = await collectHistory(channel.fetchPage, 40)
 
-      expect(ch.calls).toEqual([{ before: undefined, limit: 40 }])
-      expect(got.map(m => m.id)).toEqual(ch.ids.slice(-40))
+      expect(channel.calls).toEqual([{ before: undefined, limit: 40 }])
+      expect(got.map(msg => msg.id)).toEqual(channel.ids.slice(-40))
     })
   })
 
   describe('when the limit spans several pages', () => {
     it('should page back with before and return the newest messages oldest first when the limit is 250', async () => {
-      const ch = fakeChannel(400)
+      const channel = fakeChannel(400)
 
-      const got = await collectHistory(ch.fetchPage, 250)
+      const got = await collectHistory(channel.fetchPage, 250)
 
-      expect(ch.calls.map(c => c.limit)).toEqual([100, 100, 50])
-      expect(ch.calls[1]?.before).toBe(ch.ids[300])
-      expect(got.map(m => m.id)).toEqual(ch.ids.slice(-250))
+      expect(channel.calls.map(call => call.limit)).toEqual([100, 100, 50])
+      expect(channel.calls[1]?.before).toBe(channel.ids[300])
+      expect(got.map(msg => msg.id)).toEqual(channel.ids.slice(-250))
     })
   })
 
   describe('when the channel has fewer messages than the limit', () => {
     it('should stop after a short page when the channel runs out', async () => {
-      const ch = fakeChannel(130)
+      const channel = fakeChannel(130)
 
-      const got = await collectHistory(ch.fetchPage, 500)
+      const got = await collectHistory(channel.fetchPage, 500)
 
-      expect(ch.calls).toHaveLength(2)
-      expect(got.map(m => m.id)).toEqual(ch.ids)
+      expect(channel.calls).toHaveLength(2)
+      expect(got.map(msg => msg.id)).toEqual(channel.ids)
     })
   })
 })
@@ -104,7 +104,7 @@ function startFakeDiscord(
   const discord = startDiscord({
     token: 'token',
     channelIds: [CHANNEL],
-    publish: m => published.push(m),
+    publish: msg => published.push(msg),
     remove: (channelId, id) => removed.push([channelId, id]),
     buffered: () => buffered.ids,
     deletesEnabled: () => options.deletesOn ?? true,
@@ -122,7 +122,7 @@ function startFakeDiscord(
     messages: {
       fetch: async () => {
         fetching.run()
-        return new Map([...history].reverse().map(m => [m.id, m]))
+        return new Map([...history].reverse().map(msg => [msg.id, msg]))
       },
     },
   }
@@ -168,7 +168,7 @@ describe('startDiscord', () => {
       fake.client.emit(Events.MessageCreate, makeDiscordMessage({ id: '1302000000000000001', ...MALFORMED }) as never)
       fake.client.emit(Events.MessageCreate, makeDiscordMessage({ id: '1302000000000000002' }) as never)
 
-      expect(fake.published.map(m => m.id)).toEqual(['1302000000000000002'])
+      expect(fake.published.map(msg => msg.id)).toEqual(['1302000000000000002'])
       expect(fake.logs).toContainEqual(expect.objectContaining({ level: 'error', event: 'message_skipped', messageId: '1302000000000000001' }))
     })
 
@@ -182,9 +182,9 @@ describe('startDiscord', () => {
       stop = fake.discord.stop
 
       fake.client.emit(Events.ClientReady, fake.client as never)
-      await waitFor(() => fake.logs.some(l => l.event === 'history_loaded' || l.event === 'history_failed'))
+      await waitFor(() => fake.logs.some(entry => entry.event === 'history_loaded' || entry.event === 'history_failed'))
 
-      expect(fake.published.map(m => m.id)).toEqual(['1302000000000000001', '1302000000000000003'])
+      expect(fake.published.map(msg => msg.id)).toEqual(['1302000000000000001', '1302000000000000003'])
       expect(fake.logs).not.toContainEqual(expect.objectContaining({ event: 'history_failed' }))
     })
   })
@@ -197,7 +197,7 @@ describe('startDiscord', () => {
       // discord.js emits these in this order on the first connection.
       fake.client.emit(Events.ShardReady, 0, undefined)
       fake.client.emit(Events.ClientReady, fake.client as never)
-      await waitFor(() => fake.logs.some(l => l.event === 'history_loaded'))
+      await waitFor(() => fake.logs.some(entry => entry.event === 'history_loaded'))
       return fake
     }
 
@@ -213,7 +213,7 @@ describe('startDiscord', () => {
       history.push(makeDiscordMessage({ id: '1302000000000000002' }))
 
       fake.client.emit(Events.ShardReady, 0, undefined)
-      await waitFor(() => fake.published.some(m => m.id === '1302000000000000002'))
+      await waitFor(() => fake.published.some(msg => msg.id === '1302000000000000002'))
 
       expect(fake.fetchChannel).toHaveBeenCalledTimes(2)
     })
@@ -282,7 +282,7 @@ describe('startDiscord', () => {
       stop = fake.discord.stop
       fake.buffered.ids = bufferedIds
       fake.client.emit(Events.ClientReady, fake.client as never)
-      await waitFor(() => fake.logs.some(l => l.event === 'history_loaded' || l.event === 'history_failed'))
+      await waitFor(() => fake.logs.some(entry => entry.event === 'history_loaded' || entry.event === 'history_failed'))
       return fake
     }
     const [A, B, C] = ['1302000000000000001', '1302000000000000002', '1302000000000000003']
@@ -310,7 +310,7 @@ describe('startDiscord', () => {
         throw new Error('Service Unavailable')
       })
       fake.client.emit(Events.ClientReady, fake.client as never)
-      await waitFor(() => fake.logs.some(l => l.event === 'history_failed'))
+      await waitFor(() => fake.logs.some(entry => entry.event === 'history_failed'))
 
       expect(fake.removed).toEqual([])
     })
@@ -323,7 +323,7 @@ describe('startDiscord', () => {
         fake.buffered.ids = [A, B]
       }
       fake.client.emit(Events.ClientReady, fake.client as never)
-      await waitFor(() => fake.logs.some(l => l.event === 'history_loaded'))
+      await waitFor(() => fake.logs.some(entry => entry.event === 'history_loaded'))
 
       expect(fake.removed).toEqual([])
     })
@@ -347,7 +347,7 @@ describe('startDiscord', () => {
       stop = fake.discord.stop
       fake.buffered.ids = [A, B]
       fake.client.emit(Events.ClientReady, fake.client as never)
-      await waitFor(() => fake.logs.some(l => l.event === 'history_loaded'))
+      await waitFor(() => fake.logs.some(entry => entry.event === 'history_loaded'))
 
       expect(fake.removed).toEqual([])
     })
@@ -360,7 +360,7 @@ describe('startDiscord', () => {
       stop = fake.discord.stop
       fake.buffered.ids = [OLDER, A, GONE, C]
       fake.client.emit(Events.ClientReady, fake.client as never)
-      await waitFor(() => fake.logs.some(l => l.event === 'history_loaded'))
+      await waitFor(() => fake.logs.some(entry => entry.event === 'history_loaded'))
 
       expect(fake.removed).toEqual([[CHANNEL, GONE]])
     })
@@ -376,7 +376,7 @@ describe('startDiscord', () => {
       expect(fake.destroyed).toContain(fake.client)
       expect(fake.fatal).toEqual([])
       expect(fake.discord.isConnected()).toBe(false)
-      expect(fake.logs.some(l => l.event === 'watchdog_expired')).toBe(true)
+      expect(fake.logs.some(entry => entry.event === 'watchdog_expired')).toBe(true)
     })
 
     it('should keep trying until one attempt connects', async () => {
@@ -464,7 +464,7 @@ describe('startDiscord', () => {
       const fake = startFakeDiscord([], { loginError: new Error('getaddrinfo ENOTFOUND discord.com') })
       stop = fake.discord.stop
 
-      await waitFor(() => fake.logs.some(l => l.event === 'discord_login_failed'))
+      await waitFor(() => fake.logs.some(entry => entry.event === 'discord_login_failed'))
 
       expect(fake.fatal).toEqual([])
       expect(fake.discord.loginFailed()).toBe(false)
@@ -492,7 +492,7 @@ describe('startDiscord', () => {
       fake.fetchChannel.mockImplementation(denied)
 
       fake.client.emit(Events.ClientReady, fake.client as never)
-      await waitFor(() => fake.logs.some(l => l.event === 'history_failed'))
+      await waitFor(() => fake.logs.some(entry => entry.event === 'history_failed'))
 
       expect(fake.discord.isChannelAvailable(CHANNEL)).toBe(false)
     })
@@ -502,7 +502,7 @@ describe('startDiscord', () => {
       fake.fetchChannel.mockResolvedValue({ isTextBased: () => false } as never)
 
       fake.client.emit(Events.ClientReady, fake.client as never)
-      await waitFor(() => fake.logs.some(l => l.event === 'history_failed'))
+      await waitFor(() => fake.logs.some(entry => entry.event === 'history_failed'))
 
       expect(fake.discord.isChannelAvailable(CHANNEL)).toBe(false)
     })
@@ -512,12 +512,12 @@ describe('startDiscord', () => {
       fake.fetchChannel.mockImplementation(denied)
 
       fake.client.emit(Events.ClientReady, fake.client as never)
-      await waitFor(() => fake.logs.filter(l => l.event === 'history_failed').length >= 2)
+      await waitFor(() => fake.logs.filter(entry => entry.event === 'history_failed').length >= 2)
       fake.fetchChannel.mockResolvedValue(fake.channel as never)
-      await waitFor(() => fake.logs.some(l => l.event === 'history_loaded'))
+      await waitFor(() => fake.logs.some(entry => entry.event === 'history_loaded'))
 
       expect(fake.discord.isChannelAvailable(CHANNEL)).toBe(true)
-      expect(fake.published.map(m => m.id)).toEqual(['1302000000000000001'])
+      expect(fake.published.map(msg => msg.id)).toEqual(['1302000000000000001'])
     })
 
     it('should wait longer between retries, not hammer Discord', async () => {
@@ -536,7 +536,7 @@ describe('startDiscord', () => {
       const fake = await start({ historyRetryMs: 1 })
       fake.fetchChannel.mockImplementation(denied)
       fake.client.emit(Events.ClientReady, fake.client as never)
-      await waitFor(() => fake.logs.some(l => l.event === 'history_failed'))
+      await waitFor(() => fake.logs.some(entry => entry.event === 'history_failed'))
 
       await fake.discord.stop()
       const calls = fake.fetchChannel.mock.calls.length
@@ -575,8 +575,8 @@ describe('startDiscord', () => {
       fake.client.emit(Events.MessageCreate, makeDiscordMessage({ id: '1302000000000000001', cleanContent: '', system: true }) as never)
       fake.client.emit(Events.MessageCreate, makeDiscordMessage({ id: '1302000000000000002' }) as never)
 
-      expect(fake.published.map(m => m.id)).toEqual(['1302000000000000002'])
-      expect(fake.logs.filter(l => l.event === 'message_content_missing')).toHaveLength(0)
+      expect(fake.published.map(msg => msg.id)).toEqual(['1302000000000000002'])
+      expect(fake.logs.filter(entry => entry.event === 'message_content_missing')).toHaveLength(0)
     })
 
     it('should leave it out of history too', async () => {
@@ -585,9 +585,9 @@ describe('startDiscord', () => {
       stop = fake.discord.stop
 
       fake.client.emit(Events.ClientReady, fake.client as never)
-      await waitFor(() => fake.logs.some(l => l.event === 'history_loaded'))
+      await waitFor(() => fake.logs.some(entry => entry.event === 'history_loaded'))
 
-      expect(fake.published.map(m => m.id)).toEqual(['1302000000000000002'])
+      expect(fake.published.map(msg => msg.id)).toEqual(['1302000000000000002'])
     })
   })
 
@@ -600,7 +600,7 @@ describe('startDiscord', () => {
         fake.client.emit(Events.MessageCreate, makeDiscordMessage({ id, cleanContent: '' }) as never)
       }
 
-      expect(fake.logs.filter(l => l.event === 'message_content_missing')).toHaveLength(1)
+      expect(fake.logs.filter(entry => entry.event === 'message_content_missing')).toHaveLength(1)
       expect(fake.published).toHaveLength(2)
     })
   })

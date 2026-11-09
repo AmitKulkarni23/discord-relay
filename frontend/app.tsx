@@ -11,11 +11,11 @@ export default function App(): ReactElement {
   const [selected, setSelected] = useState<string | null>(() => new URLSearchParams(window.location.search).get('channel'))
 
   // Until /config answers, trust the URL; after, an unknown ID falls back to the default channel.
-  const streamChannel = channels.length === 0 || channels.some(c => c.id === selected) ? selected : null
+  const streamChannel = channels.length === 0 || channels.some(channel => channel.id === selected) ? selected : null
   const { messages, status, recovered } = useEventStream(streamChannel)
 
   const activeId = streamChannel ?? channels[0]?.id ?? null
-  const active = channels.find(c => c.id === activeId)
+  const active = channels.find(channel => channel.id === activeId)
   const channelName = active ? (active.name ?? active.id) : null
 
   useEffect(() => {

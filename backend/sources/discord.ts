@@ -9,7 +9,7 @@ export type DiscordDeps = {
   token: string
   /** Every channel to relay. */
   channelIds: string[]
-  publish: (m: Msg) => void
+  publish: (msg: Msg) => void
   /** Removes a message deleted in Discord. */
   remove: (channelId: string, id: string) => void
   /** The IDs of a channel's buffered messages. */
@@ -40,8 +40,8 @@ function isFatalLogin(err: unknown): boolean {
 const PAGE_SIZE = 100
 
 /**
- * Loads the newest `limit` messages, oldest first. `fetchPage(before, n)`
- * returns up to `n` messages older than `before` (all when undefined), newest
+ * Loads the newest `limit` messages, oldest first. `fetchPage(before, size)`
+ * returns up to `size` messages older than `before` (all when undefined), newest
  * first, as Discord does; this walks back page by page until it has `limit`
  * or a page comes back short.
  */
@@ -52,11 +52,11 @@ export async function collectHistory<T extends { id: string }>(
   const out: T[] = []
   let before: string | undefined
   while (out.length < limit) {
-    const n = Math.min(PAGE_SIZE, limit - out.length)
-    const page = await fetchPage(before, n)
+    const size = Math.min(PAGE_SIZE, limit - out.length)
+    const page = await fetchPage(before, size)
     out.push(...page)
     const oldest = page.at(-1)
-    if (page.length < n || !oldest) break
+    if (page.length < size || !oldest) break
     before = oldest.id
   }
   return out.reverse()
@@ -119,10 +119,10 @@ export function startDiscord(deps: DiscordDeps): DiscordSource {
    * cannot be converted is logged and skipped, so it costs one message, not a restart (a throw on
    * the live path is uncaught) or the rest of the channel's history.
    */
-  function handle(m: MessageLike): void {
-    if (m.system) return
+  function handle(message: MessageLike): void {
+    if (message.system) return
     try {
-      const msg = toMsg(m)
+      const msg = toMsg(message)
       // Once per process: a history load alone can log BUFFER_SIZE of these in one burst, and one line says it all.
       if (!warnedMissingContent && isMissingContent(msg)) {
         warnedMissingContent = true
@@ -133,7 +133,7 @@ export function startDiscord(deps: DiscordDeps): DiscordSource {
       }
       publish(msg)
     } catch (err) {
-      log.error('message_skipped', { channelId: m.channelId, messageId: m.id, error: errorMessage(err) })
+      log.error('message_skipped', { channelId: message.channelId, messageId: message.id, error: errorMessage(err) })
     }
   }
 
@@ -143,7 +143,7 @@ export function startDiscord(deps: DiscordDeps): DiscordSource {
    */
   function removeMissing(channelId: string, held: string[], fetched: Array<{ id: string }>): void {
     if (!deletesEnabled()) return
-    const kept = new Set(fetched.map(m => m.id))
+    const kept = new Set(fetched.map(msg => msg.id))
     const oldest = fetched.length < historyLimit ? undefined : fetched[0]?.id
     for (const id of held) {
       if (!kept.has(id) && (oldest === undefined || compareIds(id, oldest) > 0)) remove(channelId, id)
@@ -176,7 +176,7 @@ export function startDiscord(deps: DiscordDeps): DiscordSource {
       const held = buffered(channelId)
       const messages = await collectHistory(async (before, limit) => [...(await channel.messages.fetch({ limit, before })).values()], historyLimit)
       removeMissing(channelId, held, messages)
-      for (const m of messages) handle(m)
+      for (const message of messages) handle(message)
       unavailable.delete(channelId)
       retries.delete(channelId)
       log.info('history_loaded', { channelId, count: messages.length })
@@ -214,11 +214,11 @@ export function startDiscord(deps: DiscordDeps): DiscordSource {
       started = true
       void loadHistory()
     })
-    client.on(Events.MessageCreate, m => {
-      if (wanted.has(m.channelId)) handle(m)
+    client.on(Events.MessageCreate, message => {
+      if (wanted.has(message.channelId)) handle(message)
     })
-    client.on(Events.MessageDelete, m => {
-      if (deletesEnabled() && wanted.has(m.channelId)) remove(m.channelId, m.id)
+    client.on(Events.MessageDelete, message => {
+      if (deletesEnabled() && wanted.has(message.channelId)) remove(message.channelId, message.id)
     })
     client.on(Events.ChannelUpdate, (_, channel) => {
       if (wanted.has(channel.id) && 'name' in channel && typeof channel.name === 'string') names.set(channel.id, channel.name)

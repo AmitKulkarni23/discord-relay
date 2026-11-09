@@ -141,8 +141,8 @@ export function startLoadControl(hub: Hub, channelIds: string[], bufferSize: num
       // Separate from /stats, because reading that resets its counters.
       if (url.pathname === '/clock') return Response.json({ now: Date.now() })
       if (url.pathname === '/rate' && req.method === 'POST') {
-        const q = url.searchParams
-        control.setRate(Number(q.get('perSec')), Number(q.get('msgBytes')), Number(q.get('burst')), Number(q.get('everySec')))
+        const query = url.searchParams
+        control.setRate(Number(query.get('perSec')), Number(query.get('msgBytes')), Number(query.get('burst')), Number(query.get('everySec')))
         return new Response('ok')
       }
       if (url.pathname === '/publish' && req.method === 'POST') {

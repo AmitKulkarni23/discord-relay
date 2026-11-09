@@ -23,18 +23,18 @@ const escapeTag = (value: string): string => value.replace(/[ ,=]/g, '\\$&')
  * `relay` as the Prometheus metric `relay_x`. The deployment tag keeps the old and new process apart
  * while they overlap during a deploy, so their totals never mix.
  */
-export function formatMetrics(s: Snapshot, deployment: string): string {
+export function formatMetrics(snapshot: Snapshot, deployment: string): string {
   const fields = {
-    gateway_connected: s.gatewayConnected ? 1 : 0,
-    sse_clients: s.sseClients,
-    messages_total: s.messagesTotal,
-    clients_dropped_total: s.clientsDroppedTotal,
-    rejected_total: s.rejectedTotal,
-    watchdog_restarts_total: s.watchdogRestartsTotal,
-    http_errors_total: s.httpErrorsTotal,
+    gateway_connected: snapshot.gatewayConnected ? 1 : 0,
+    sse_clients: snapshot.sseClients,
+    messages_total: snapshot.messagesTotal,
+    clients_dropped_total: snapshot.clientsDroppedTotal,
+    rejected_total: snapshot.rejectedTotal,
+    watchdog_restarts_total: snapshot.watchdogRestartsTotal,
+    http_errors_total: snapshot.httpErrorsTotal,
   }
   const values = Object.entries(fields)
-    .map(([k, v]) => `${k}=${v}`)
+    .map(([name, value]) => `${name}=${value}`)
     .join(',')
   return `relay,deployment=${escapeTag(deployment)} ${values}`
 }

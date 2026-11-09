@@ -22,31 +22,31 @@ function makeMsg(id: string, at: string, author = 'relay_tester', overrides: Par
 describe('addMsg', () => {
   describe('when a new message arrives', () => {
     it('should store it keyed by ID when it was not held before', () => {
-      const m = makeMsg('1566588496691400001', '2026-11-01T23:03:23.418Z')
+      const msg = makeMsg('1566588496691400001', '2026-11-01T23:03:23.418Z')
 
-      const next = addMsg(new Map(), m)
+      const next = addMsg(new Map(), msg)
 
-      expect(next.get(m.id)).toEqual(m)
+      expect(next.get(msg.id)).toEqual(msg)
     })
   })
 
   describe('when the same message is resent on reconnect', () => {
     it('should return the same map when nothing changed', () => {
-      const m = makeMsg('1566588496691400001', '2026-11-01T23:03:23.418Z')
-      const held = addMsg(new Map(), m)
+      const msg = makeMsg('1566588496691400001', '2026-11-01T23:03:23.418Z')
+      const held = addMsg(new Map(), msg)
 
-      expect(addMsg(held, { ...m })).toBe(held)
+      expect(addMsg(held, { ...msg })).toBe(held)
     })
 
     it('should replace the stored copy when the message was edited', () => {
-      const m = makeMsg('1566588496691400001', '2026-11-01T23:03:23.418Z')
-      const held = addMsg(new Map(), m)
-      const edited = { ...m, content: 'fixed typo', editedAt: '2026-11-01T23:05:00.000Z' }
+      const msg = makeMsg('1566588496691400001', '2026-11-01T23:03:23.418Z')
+      const held = addMsg(new Map(), msg)
+      const edited = { ...msg, content: 'fixed typo', editedAt: '2026-11-01T23:05:00.000Z' }
 
       const next = addMsg(held, edited)
 
       expect(next.size).toBe(1)
-      expect(next.get(m.id)?.content).toBe('fixed typo')
+      expect(next.get(msg.id)?.content).toBe('fixed typo')
     })
   })
 
@@ -66,13 +66,13 @@ describe('addMsg', () => {
 })
 
 describe('removeMsg', () => {
-  const m = makeMsg('1566588496691400001', '2026-11-01T23:03:23.418Z')
+  const msg = makeMsg('1566588496691400001', '2026-11-01T23:03:23.418Z')
 
   describe('when the message is held', () => {
     it('should return a list without it', () => {
-      const held = addMsg(new Map(), m)
+      const held = addMsg(new Map(), msg)
 
-      const next = removeMsg(held, m.id)
+      const next = removeMsg(held, msg.id)
 
       expect(next.size).toBe(0)
       expect(held.size).toBe(1)
@@ -81,7 +81,7 @@ describe('removeMsg', () => {
 
   describe('when the message is not held', () => {
     it('should return the same list, so nothing re-renders', () => {
-      const held = addMsg(new Map(), m)
+      const held = addMsg(new Map(), msg)
 
       expect(removeMsg(held, '1566588496691400009')).toBe(held)
     })
@@ -107,9 +107,9 @@ describe('parseDeletedId', () => {
 describe('parseMsg', () => {
   describe('when the event data is a valid message', () => {
     it('should return the message when every field has the right type', () => {
-      const m = makeMsg('1566588496691400001', '2026-11-01T23:03:23.418Z')
+      const msg = makeMsg('1566588496691400001', '2026-11-01T23:03:23.418Z')
 
-      expect(parseMsg(JSON.stringify(m))).toEqual(m)
+      expect(parseMsg(JSON.stringify(msg))).toEqual(msg)
     })
   })
 
@@ -150,9 +150,9 @@ describe('parseMsg', () => {
     })
 
     it('should return null when attachments is not a list', () => {
-      const m = makeMsg('1566588496691400001', '2026-11-01T23:03:23.418Z')
+      const msg = makeMsg('1566588496691400001', '2026-11-01T23:03:23.418Z')
 
-      expect(parseMsg(JSON.stringify({ ...m, attachments: attachment }))).toBeNull()
+      expect(parseMsg(JSON.stringify({ ...msg, attachments: attachment }))).toBeNull()
     })
   })
 
@@ -162,22 +162,22 @@ describe('parseMsg', () => {
     })
 
     it('should return null when the note is mistyped', () => {
-      const m = makeMsg('1566588496691400001', '2026-11-01T23:03:23.418Z')
+      const msg = makeMsg('1566588496691400001', '2026-11-01T23:03:23.418Z')
 
-      expect(parseMsg(JSON.stringify({ ...m, note: 7 }))).toBeNull()
+      expect(parseMsg(JSON.stringify({ ...msg, note: 7 }))).toBeNull()
     })
 
     it('should return null when a date is not a date, since formatting it would throw during render', () => {
-      const m = makeMsg('1566588496691400001', '2026-11-01T23:03:23.418Z')
+      const msg = makeMsg('1566588496691400001', '2026-11-01T23:03:23.418Z')
 
-      expect(parseMsg(JSON.stringify({ ...m, createdAt: 'not a date' }))).toBeNull()
-      expect(parseMsg(JSON.stringify({ ...m, editedAt: 'not a date' }))).toBeNull()
+      expect(parseMsg(JSON.stringify({ ...msg, createdAt: 'not a date' }))).toBeNull()
+      expect(parseMsg(JSON.stringify({ ...msg, editedAt: 'not a date' }))).toBeNull()
     })
 
     it('should return null when a required field is missing or mistyped', () => {
-      const m = makeMsg('1566588496691400001', '2026-11-01T23:03:23.418Z')
-      expect(parseMsg(JSON.stringify({ ...m, author: { name: 'relay_tester' } }))).toBeNull()
-      expect(parseMsg(JSON.stringify({ ...m, id: 42 }))).toBeNull()
+      const msg = makeMsg('1566588496691400001', '2026-11-01T23:03:23.418Z')
+      expect(parseMsg(JSON.stringify({ ...msg, author: { name: 'relay_tester' } }))).toBeNull()
+      expect(parseMsg(JSON.stringify({ ...msg, id: 42 }))).toBeNull()
     })
   })
 })
@@ -193,7 +193,7 @@ describe('buildRows', () => {
 
       const rows = buildRows(msgs)
 
-      expect(rows.filter(r => r.kind === 'msg').map(r => r.kind === 'msg' && r.head)).toEqual([true, false, false])
+      expect(rows.filter(row => row.kind === 'msg').map(row => row.kind === 'msg' && row.head)).toEqual([true, false, false])
     })
   })
 
@@ -204,13 +204,13 @@ describe('buildRows', () => {
         makeMsg('1566588496691400002', '2026-11-01T23:00:30.000Z', 'ana_r'),
       ])
 
-      expect(rows.filter(r => r.kind === 'msg').map(r => r.kind === 'msg' && r.head)).toEqual([true, true])
+      expect(rows.filter(row => row.kind === 'msg').map(row => row.kind === 'msg' && row.head)).toEqual([true, true])
     })
 
     it('should start a new group when more than five minutes pass', () => {
       const rows = buildRows([makeMsg('1566588496691400001', '2026-11-01T23:00:00.000Z'), makeMsg('1566588496691400002', '2026-11-01T23:05:01.000Z')])
 
-      expect(rows.filter(r => r.kind === 'msg').map(r => r.kind === 'msg' && r.head)).toEqual([true, true])
+      expect(rows.filter(row => row.kind === 'msg').map(row => row.kind === 'msg' && row.head)).toEqual([true, true])
     })
   })
 
@@ -221,7 +221,7 @@ describe('buildRows', () => {
 
       const rows = buildRows([makeMsg('1566588496691400001', first), makeMsg('1566588496691400002', second)])
 
-      expect(rows.map(r => r.kind)).toEqual(['day', 'msg', 'day', 'msg'])
+      expect(rows.map(row => row.kind)).toEqual(['day', 'msg', 'day', 'msg'])
     })
   })
 })

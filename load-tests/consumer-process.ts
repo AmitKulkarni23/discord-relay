@@ -5,11 +5,11 @@
 import type { ConsumerCommand, ConsumerReply } from './consumer.ts'
 
 /** A process's replies arrive on one queue, in order. */
-export type ConsumerProcess = { command: (c: ConsumerCommand) => void; next: () => Promise<ConsumerReply>; kill: () => void }
+export type ConsumerProcess = { command: (command: ConsumerCommand) => void; next: () => Promise<ConsumerReply>; kill: () => void }
 
 export function spawnProcess(): ConsumerProcess {
   const replies: ConsumerReply[] = []
-  const waiting: Array<(r: ConsumerReply) => void> = []
+  const waiting: Array<(reply: ConsumerReply) => void> = []
   const proc = Bun.spawn(['bun', 'load-tests/consumer.ts'], {
     stdout: 'inherit',
     stderr: 'inherit',
@@ -20,7 +20,7 @@ export function spawnProcess(): ConsumerProcess {
     },
   })
   return {
-    command: c => proc.send(c),
+    command: cmd => proc.send(cmd),
     next: () => {
       const queued = replies.shift()
       return queued ? Promise.resolve(queued) : new Promise(resolve => waiting.push(resolve))

@@ -24,10 +24,12 @@ export type StepOutcome = {
 }
 
 /** Judges one step. A busy process only matters when the step did not pass, since it can only make delivery look worse. */
-export function classifyStep(o: StepOutcome, limits: { maxP99Ms: number; maxSlowestMs: number }): Verdict {
-  const broken = o.received !== o.expected || o.dropped > 0 || o.gaps > 0 || o.live !== o.healthy || o.generatorFailed > 0
-  if (!broken && o.p99 <= limits.maxP99Ms && o.slowest <= limits.maxSlowestMs) return 'PASS'
-  if (o.busiestProcessCpu > MAX_PROCESS_CPU_PCT || o.processLagMs > MAX_PROCESS_LAG_MS || o.generatorLagMs > MAX_PROCESS_LAG_MS) return 'INVALID'
+export function classifyStep(outcome: StepOutcome, limits: { maxP99Ms: number; maxSlowestMs: number }): Verdict {
+  const broken =
+    outcome.received !== outcome.expected || outcome.dropped > 0 || outcome.gaps > 0 || outcome.live !== outcome.healthy || outcome.generatorFailed > 0
+  if (!broken && outcome.p99 <= limits.maxP99Ms && outcome.slowest <= limits.maxSlowestMs) return 'PASS'
+  if (outcome.busiestProcessCpu > MAX_PROCESS_CPU_PCT || outcome.processLagMs > MAX_PROCESS_LAG_MS || outcome.generatorLagMs > MAX_PROCESS_LAG_MS)
+    return 'INVALID'
   return broken ? 'BROKEN' : 'SLOW'
 }
 

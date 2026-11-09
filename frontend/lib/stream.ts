@@ -61,12 +61,14 @@ export type PageConfig = { attachments: boolean; channels: ChannelInfo[] }
  * Narrows the untrusted GET /config body. Anything unexpected falls back to
  * attachments off and no channels, and malformed channel entries are dropped.
  */
-export function parseConfig(v: unknown): PageConfig {
-  if (!isRecord(v)) return { attachments: false, channels: [] }
-  const channels = Array.isArray(v.channels)
-    ? v.channels.filter((c): c is ChannelInfo => isRecord(c) && typeof c.id === 'string' && (c.name === null || typeof c.name === 'string'))
+export function parseConfig(value: unknown): PageConfig {
+  if (!isRecord(value)) return { attachments: false, channels: [] }
+  const channels = Array.isArray(value.channels)
+    ? value.channels.filter(
+        (channel): channel is ChannelInfo => isRecord(channel) && typeof channel.id === 'string' && (channel.name === null || typeof channel.name === 'string'),
+      )
     : []
-  return { attachments: v.attachments === true, channels: channels.map(c => ({ id: c.id, name: c.name })) }
+  return { attachments: value.attachments === true, channels: channels.map(channel => ({ id: channel.id, name: channel.name })) }
 }
 
 /**

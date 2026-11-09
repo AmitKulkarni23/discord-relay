@@ -34,47 +34,47 @@ export type MessageLike = {
 }
 
 /** The title and description of a message's first embed that has either, as text. */
-function embedText(m: MessageLike): string {
-  const embed = m.embeds.find(e => e.title || e.description)
+function embedText(message: MessageLike): string {
+  const embed = message.embeds.find(item => item.title || item.description)
   return embed ? [embed.title, embed.description].filter(Boolean).join('\n') : ''
 }
 
 /** Says what a message carries besides typed text, or null when nothing. A link preview on typed text does not count. */
-function describeExtras(m: MessageLike, forwarded: boolean, typed: boolean): string | null {
+function describeExtras(message: MessageLike, forwarded: boolean, typed: boolean): string | null {
   const parts: string[] = []
   if (forwarded) parts.push('Forwarded')
-  for (const sticker of m.stickers.values()) parts.push(`Sticker: ${sticker.name}`)
-  if (m.poll?.question.text) parts.push(`Poll: ${m.poll.question.text}`)
-  if (!typed && !forwarded && m.embeds.length > 0) parts.push('Embed')
+  for (const sticker of message.stickers.values()) parts.push(`Sticker: ${sticker.name}`)
+  if (message.poll?.question.text) parts.push(`Poll: ${message.poll.question.text}`)
+  if (!typed && !forwarded && message.embeds.length > 0) parts.push('Embed')
   return parts.length > 0 ? parts.join(' · ') : null
 }
 
 /** Converts a discord.js message to the `Msg` shape the hub and browser use. */
-export function toMsg(m: MessageLike): Msg {
-  const forward = m.messageSnapshots.first()
-  const typed = m.cleanContent ?? m.content ?? ''
+export function toMsg(message: MessageLike): Msg {
+  const forward = message.messageSnapshots.first()
+  const typed = message.cleanContent ?? message.content ?? ''
   return {
-    id: m.id,
-    channelId: m.channelId,
+    id: message.id,
+    channelId: message.channelId,
     author: {
-      id: m.author.id,
-      name: m.author.globalName ?? m.author.username,
-      avatarUrl: m.author.displayAvatarURL(),
-      bot: m.author.bot,
+      id: message.author.id,
+      name: message.author.globalName ?? message.author.username,
+      avatarUrl: message.author.displayAvatarURL(),
+      bot: message.author.bot,
     },
     // Mentions and custom emoji become @name, #name and :name:. An uncached mention stays raw.
     // ponytail: a forward's text stays raw, because cleanContent can throw on a channel the bot has not cached.
-    content: forward ? (forward.content ?? '') : typed || embedText(m),
-    note: describeExtras(m, forward !== undefined, typed !== ''),
-    createdAt: m.createdAt.toISOString(),
-    editedAt: m.editedAt ? m.editedAt.toISOString() : null,
-    attachments: [...(forward ?? m).attachments.values()].map(a => ({
-      url: a.url,
-      name: a.name,
-      contentType: a.contentType,
-      size: a.size,
-      width: a.width,
-      height: a.height,
+    content: forward ? (forward.content ?? '') : typed || embedText(message),
+    note: describeExtras(message, forward !== undefined, typed !== ''),
+    createdAt: message.createdAt.toISOString(),
+    editedAt: message.editedAt ? message.editedAt.toISOString() : null,
+    attachments: [...(forward ?? message).attachments.values()].map(attachment => ({
+      url: attachment.url,
+      name: attachment.name,
+      contentType: attachment.contentType,
+      size: attachment.size,
+      width: attachment.width,
+      height: attachment.height,
     })),
   }
 }

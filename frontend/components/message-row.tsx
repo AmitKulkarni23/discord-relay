@@ -95,7 +95,7 @@ function MessageBody({ msg, attachmentsOn, scroll }: MessageBodyProps): ReactEle
   }, [expanded, msg.content])
 
   const toggle = (): void => {
-    flushSync(() => setExpanded(v => !v))
+    flushSync(() => setExpanded(wasExpanded => !wasExpanded))
     // Collapsing can leave the reader far below the message, so bring it back into view.
     if (expanded) text.current?.closest('article')?.scrollIntoView({ block: 'nearest' })
     // The page changed height without a scroll event, and a reader mid-message must not be pinned by the next one.

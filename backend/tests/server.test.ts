@@ -111,7 +111,7 @@ describe('server', () => {
       const res = await fetch(new URL('/config', url))
 
       expect(res.status).toBe(500)
-      expect(logs.find(l => l.event === 'request_failed')).toMatchObject({ level: 'error', error: 'flag store returned an invalid payload' })
+      expect(logs.find(entry => entry.event === 'request_failed')).toMatchObject({ level: 'error', error: 'flag store returned an invalid payload' })
     })
   })
 

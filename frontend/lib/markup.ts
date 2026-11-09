@@ -43,35 +43,35 @@ function linkLength(url: string): number {
 export function parseMarkup(text: string): Part[] {
   const parts: Part[] = []
   let at = 0
-  const addText = (t: string): void => {
+  const addText = (chunk: string): void => {
     const last = parts.at(-1)
-    if (last?.kind === 'text') last.text += t
-    else if (t) parts.push({ kind: 'text', text: t })
+    if (last?.kind === 'text') last.text += chunk
+    else if (chunk) parts.push({ kind: 'text', text: chunk })
   }
   for (const match of text.matchAll(TOKEN)) {
-    const g = match.groups ?? {}
+    const groups = match.groups ?? {}
     const before = text.slice(at, match.index)
-    addText(g.block !== undefined ? before.replace(/\n$/, '') : before)
+    addText(groups.block !== undefined ? before.replace(/\n$/, '') : before)
     at = match.index + match[0].length
-    if (g.block !== undefined && text[at] === '\n') at++
-    if (g.escaped !== undefined) addText(g.escaped)
-    else if (g.block !== undefined) parts.push({ kind: 'block', text: g.block })
-    else if (g.code !== undefined) parts.push({ kind: 'code', text: g.code })
-    else if (g.wrapped !== undefined) parts.push({ kind: 'link', href: g.wrapped })
-    else if (g.url !== undefined) {
-      const href = g.url.slice(0, linkLength(g.url))
+    if (groups.block !== undefined && text[at] === '\n') at++
+    if (groups.escaped !== undefined) addText(groups.escaped)
+    else if (groups.block !== undefined) parts.push({ kind: 'block', text: groups.block })
+    else if (groups.code !== undefined) parts.push({ kind: 'code', text: groups.code })
+    else if (groups.wrapped !== undefined) parts.push({ kind: 'link', href: groups.wrapped })
+    else if (groups.url !== undefined) {
+      const href = groups.url.slice(0, linkLength(groups.url))
       // Trimming punctuation can leave only the scheme, which is not an address.
-      if (href.endsWith('://')) addText(g.url)
+      if (href.endsWith('://')) addText(groups.url)
       else {
         at = match.index + href.length
         parts.push({ kind: 'link', href })
       }
-    } else if (g.time !== undefined) parts.push({ kind: 'time', iso: new Date(Number(g.time) * 1000).toISOString() })
-    else if (g.bold !== undefined) parts.push({ kind: 'bold', parts: parseMarkup(g.bold) })
-    else if (g.underline !== undefined) parts.push({ kind: 'underline', parts: parseMarkup(g.underline) })
-    else if (g.strike !== undefined) parts.push({ kind: 'strike', parts: parseMarkup(g.strike) })
-    else if (g.spoiler !== undefined) parts.push({ kind: 'spoiler', parts: parseMarkup(g.spoiler) })
-    else parts.push({ kind: 'italic', parts: parseMarkup(g.star ?? g.under ?? '') })
+    } else if (groups.time !== undefined) parts.push({ kind: 'time', iso: new Date(Number(groups.time) * 1000).toISOString() })
+    else if (groups.bold !== undefined) parts.push({ kind: 'bold', parts: parseMarkup(groups.bold) })
+    else if (groups.underline !== undefined) parts.push({ kind: 'underline', parts: parseMarkup(groups.underline) })
+    else if (groups.strike !== undefined) parts.push({ kind: 'strike', parts: parseMarkup(groups.strike) })
+    else if (groups.spoiler !== undefined) parts.push({ kind: 'spoiler', parts: parseMarkup(groups.spoiler) })
+    else parts.push({ kind: 'italic', parts: parseMarkup(groups.star ?? groups.under ?? '') })
   }
   addText(text.slice(at))
   return parts

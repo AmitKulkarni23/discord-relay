@@ -147,22 +147,22 @@ const getGenerator = async (): Promise<GeneratorStats> =>
 const getStats = async (): Promise<Stats> => (await fetch(`${control}/stats`, { signal: AbortSignal.timeout(30_000) })).json() as Promise<Stats>
 
 /** A process on another machine, driven through its load-tests/agent.ts. Commands stay in order, as they do over IPC. */
-function remoteProcess(machine: string, i: number): ConsumerProcess {
+function remoteProcess(machine: string, index: number): ConsumerProcess {
   let sent: Promise<unknown> = Promise.resolve()
   return {
-    command: c => {
-      sent = sent.then(() => fetch(`${machine}/command?i=${i}`, { method: 'POST', body: JSON.stringify(c) }))
+    command: cmd => {
+      sent = sent.then(() => fetch(`${machine}/command?i=${index}`, { method: 'POST', body: JSON.stringify(cmd) }))
     },
-    next: async () => (await (await fetch(`${machine}/next?i=${i}`, { signal: AbortSignal.timeout(MACHINE_TIMEOUT_MS) })).json()) as ConsumerReply,
+    next: async () => (await (await fetch(`${machine}/next?i=${index}`, { signal: AbortSignal.timeout(MACHINE_TIMEOUT_MS) })).json()) as ConsumerReply,
     kill: () => {},
   }
 }
 
-function percentile(hist: Map<number, number>, total: number, p: number): number {
+function percentile(hist: Map<number, number>, total: number, fraction: number): number {
   let seen = 0
   for (const ms of [...hist.keys()].sort((a, b) => a - b)) {
     seen += hist.get(ms) ?? 0
-    if (seen >= total * p) return ms
+    if (seen >= total * fraction) return ms
   }
   return Number.NaN
 }
@@ -182,11 +182,11 @@ for (const machine of machines) await fetch(`${machine}/start?count=${processesP
 const processes = machines.length
   ? machines.flatMap(machine => Array.from({ length: processesPerMachine }, (_, i) => remoteProcess(machine, i)))
   : Array.from({ length: processCount }, spawnProcess)
-const all = <T>(fn: (w: ConsumerProcess, i: number) => Promise<T>) => Promise.all(processes.map(fn))
+const all = <T>(fn: (worker: ConsumerProcess, i: number) => Promise<T>) => Promise.all(processes.map(fn))
 
 /** Stops every process, here and on other machines, so no connection outlives the run. */
 async function stop(code: number): Promise<never> {
-  for (const w of processes) w.kill()
+  for (const worker of processes) worker.kill()
   // A server on another service outlives the run, and it must not keep receiving messages.
   await Promise.allSettled([fetch(`${source}/rate?perSec=0`, { method: 'POST', signal: AbortSignal.timeout(5000) })])
   await Promise.allSettled(machines.map(machine => fetch(`${machine}/stop`, { method: 'POST', signal: AbortSignal.timeout(5000) })))
@@ -223,7 +223,7 @@ const machineOffsets = await Promise.all(
   machines.map(async machine => ((await (await fetch(`${machine}/offset?control=${encodeURIComponent(source)}`)).json()) as { offsetMs: number }).offsetMs),
 )
 const offsets = machines.length
-  ? machines.flatMap((_, m) => Array.from({ length: processesPerMachine }, () => machineOffsets[m] ?? 0))
+  ? machines.flatMap((_, machineIndex) => Array.from({ length: processesPerMachine }, () => machineOffsets[machineIndex] ?? 0))
   : processes.map(() => localOffset)
 await fetch(`${source}/rate?perSec=0`, { method: 'POST' })
 await Bun.sleep(1000)
@@ -267,9 +267,9 @@ const results = []
 for (const target of consumerLevels) {
   const toOpen = target - opened
   const connectStart = performance.now()
-  await all((w, i) => {
+  await all((worker, i) => {
     const count = Math.floor(toOpen / processCount) + (i < toOpen % processCount ? 1 : 0)
-    w.command({
+    worker.command({
       type: 'open',
       host,
       ports,
@@ -282,12 +282,13 @@ for (const target of consumerLevels) {
       slowPct: Number(values.slowPct),
       slowMode: values.slowMode as string,
     })
-    return w.next()
+    return worker.next()
   }).then(replies => {
-    const failed = replies.reduce((n, r) => n + (r.type === 'opened' ? r.failed : 0), 0)
+    const failed = replies.reduce((sum, reply) => sum + (reply.type === 'opened' ? reply.failed : 0), 0)
     const statuses: Record<string, number> = {}
-    for (const r of replies) if (r.type === 'opened') for (const [k, v] of Object.entries(r.statuses)) statuses[k] = (statuses[k] ?? 0) + v
-    if (failed || Object.keys(statuses).some(s => s !== '200')) console.log(JSON.stringify({ event: 'connect_problems', target, failed, statuses }))
+    for (const reply of replies)
+      if (reply.type === 'opened') for (const [status, count] of Object.entries(reply.statuses)) statuses[status] = (statuses[status] ?? 0) + count
+    if (failed || Object.keys(statuses).some(status => status !== '200')) console.log(JSON.stringify({ event: 'connect_problems', target, failed, statuses }))
   })
   opened = target
   const connectSec = (performance.now() - connectStart) / 1000
@@ -299,15 +300,15 @@ for (const target of consumerLevels) {
   // Reading the generator here also clears what it counted before the window.
   const from =
     (values.generator ? await getGenerator() : await getStats()).seq + (burst ? burst * Math.max(1, Math.ceil(2 / burstEverySec)) : Math.ceil(rate * 2))
-  processes.forEach((w, i) => w.command({ type: 'window', from, offsetMs: offsets[i] ?? 0 }))
+  processes.forEach((worker, i) => worker.command({ type: 'window', from, offsetMs: offsets[i] ?? 0 }))
   const windowStart = performance.now()
   const windowStartIso = new Date().toISOString()
   const churnPerSec = Number(values.churnPerSec)
-  if (churnPerSec) for (const w of processes) w.command({ type: 'churn', perSec: churnPerSec / processCount })
+  if (churnPerSec) for (const worker of processes) worker.command({ type: 'churn', perSec: churnPerSec / processCount })
   if (values.storm) {
     setTimeout(
       () => {
-        for (const w of processes) w.command({ type: 'storm', jitterMs: Number(values.stormJitterMs) })
+        for (const worker of processes) worker.command({ type: 'storm', jitterMs: Number(values.stormJitterMs) })
       },
       (holdSec * 1000) / 2,
     )
@@ -317,11 +318,11 @@ for (const target of consumerLevels) {
   let generatorLagMs = 0
   let generatorSendMsMax = 0
   const readGenerator = async (): Promise<number> => {
-    const g = await getGenerator()
-    generatorFailed += g.failed
-    generatorLagMs = Math.max(generatorLagMs, g.lagMsMax)
-    generatorSendMsMax = Math.max(generatorSendMsMax, g.sendMsMax)
-    return g.seq
+    const generator = await getGenerator()
+    generatorFailed += generator.failed
+    generatorLagMs = Math.max(generatorLagMs, generator.lagMsMax)
+    generatorSendMsMax = Math.max(generatorSendMsMax, generator.sendMsMax)
+    return generator.seq
   }
   const holdEnd = performance.now() + holdSec * 1000
   while (performance.now() < holdEnd) {
@@ -333,9 +334,9 @@ for (const target of consumerLevels) {
   samples.push(last)
   const windowEndIso = new Date().toISOString()
   const to = values.generator ? await readGenerator() : last.seq
-  const reports = await all(w => {
-    w.command({ type: 'end', to, graceMs: GRACE_MS })
-    return w.next()
+  const reports = await all(worker => {
+    worker.command({ type: 'end', to, graceMs: GRACE_MS })
+    return worker.next()
   })
 
   const windowSec = (performance.now() - windowStart) / 1000
@@ -353,22 +354,22 @@ for (const target of consumerLevels) {
   let reconnects = 0
   let reconnectFailed = 0
   let reconnectMsMax = 0
-  for (const r of reports) {
-    if (r.type !== 'report') continue
-    live += r.live
-    dropped += r.closed
-    received += r.received
-    gaps += r.gaps
-    dups += r.dups
-    behind += r.behind
-    processLag = Math.max(processLag, r.lagMsMax)
-    busiestProcessCpu = Math.max(busiestProcessCpu, r.cpuPct)
-    rxBytes += r.rxBytes
-    slowTotal += r.slowTotal
-    reconnects += r.reconnects
-    reconnectFailed += r.reconnectFailed
-    reconnectMsMax = Math.max(reconnectMsMax, r.reconnectMsMax)
-    for (const [ms, n] of Object.entries(r.histMs)) hist.set(Number(ms), (hist.get(Number(ms)) ?? 0) + n)
+  for (const report of reports) {
+    if (report.type !== 'report') continue
+    live += report.live
+    dropped += report.closed
+    received += report.received
+    gaps += report.gaps
+    dups += report.dups
+    behind += report.behind
+    processLag = Math.max(processLag, report.lagMsMax)
+    busiestProcessCpu = Math.max(busiestProcessCpu, report.cpuPct)
+    rxBytes += report.rxBytes
+    slowTotal += report.slowTotal
+    reconnects += report.reconnects
+    reconnectFailed += report.reconnectFailed
+    reconnectMsMax = Math.max(reconnectMsMax, report.reconnectMsMax)
+    for (const [ms, count] of Object.entries(report.histMs)) hist.set(Number(ms), (hist.get(Number(ms)) ?? 0) + count)
   }
 
   const healthy = target - slowTotal
@@ -380,10 +381,10 @@ for (const target of consumerLevels) {
   const p50 = percentile(hist, received, 0.5)
   const p99 = percentile(hist, received, 0.99)
   const max = Math.max(...hist.keys())
-  const cpuAvg = samples.reduce((n, s) => n + s.cpuPct, 0) / samples.length
-  const cpuMax = Math.max(...samples.map(s => s.cpuPct))
-  const rssMax = Math.max(...samples.map(s => s.rssMaxMb))
-  const lagMax = Math.max(...samples.map(s => s.lagMsMax))
+  const cpuAvg = samples.reduce((sum, sample) => sum + sample.cpuPct, 0) / samples.length
+  const cpuMax = Math.max(...samples.map(sample => sample.cpuPct))
+  const rssMax = Math.max(...samples.map(sample => sample.rssMaxMb))
+  const lagMax = Math.max(...samples.map(sample => sample.lagMsMax))
   const kbPerClient = ((last.rssMb - baseline.rssMb) * 1024) / target
   const verdict: Verdict = classifyStep(
     { received, expected, dropped, gaps, live, healthy, p99, slowest: max, busiestProcessCpu, processLagMs: processLag, generatorFailed, generatorLagMs },
@@ -423,7 +424,7 @@ for (const target of consumerLevels) {
     live,
     serverClients: last.clients,
     publishMsAvg: last.publishMsAvg,
-    publishMsMax: Math.max(...samples.map(s => s.publishMsMax)),
+    publishMsMax: Math.max(...samples.map(sample => sample.publishMsMax)),
     verdict,
   }
   results.push(row)
@@ -458,4 +459,4 @@ for (const target of consumerLevels) {
 }
 
 console.log(JSON.stringify({ event: 'done', ...summarizeRamp(results) }))
-await stop(results.every(r => r.verdict === 'PASS') ? 0 : 1)
+await stop(results.every(result => result.verdict === 'PASS') ? 0 : 1)

@@ -18,7 +18,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
   const token = env.DISCORD_TOKEN
   if (!token) throw new Error('DISCORD_TOKEN is required')
   if (!env.CHANNEL_ID) throw new Error('CHANNEL_ID is required')
-  const entries = env.CHANNEL_ID.split(',').map(s => s.trim())
+  const entries = env.CHANNEL_ID.split(',').map(entry => entry.trim())
   const invalid = entries.find(id => !SNOWFLAKE.test(id))
   if (invalid !== undefined) {
     throw new Error(`CHANNEL_ID must be one or more comma-separated Discord channel IDs, got "${invalid}"`)

@@ -18,44 +18,44 @@ const MAX_H = 320
 export default function Attachments({ items }: { items: Attachment[] }): ReactElement {
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 1, mt: 0.75 }}>
-      {items.map(a => (
-        <AttachmentItem key={a.url} a={a} />
+      {items.map(attachment => (
+        <AttachmentItem key={attachment.url} attachment={attachment} />
       ))}
     </Box>
   )
 }
 
 /** One attachment, picked by type. URLs off Discord's CDN never get a src or href. */
-function AttachmentItem({ a }: { a: Attachment }): ReactElement {
+function AttachmentItem({ attachment }: { attachment: Attachment }): ReactElement {
   const [failed, setFailed] = useState(false)
-  const kind = attachmentKind(a.contentType)
-  const safe = isDiscordCdn(a.url)
+  const kind = attachmentKind(attachment.contentType)
+  const safe = isDiscordCdn(attachment.url)
 
-  if (!safe || kind === 'file') return <FileCard a={a} href={safe ? a.url : null} />
-  if (failed) return <Unavailable a={a} />
+  if (!safe || kind === 'file') return <FileCard attachment={attachment} href={safe ? attachment.url : null} />
+  if (failed) return <Unavailable attachment={attachment} />
 
-  const box = fitBox(a.width, a.height, MAX_W, MAX_H)
+  const box = fitBox(attachment.width, attachment.height, MAX_W, MAX_H)
   const sized = { width: box?.width ?? MAX_W, maxWidth: '100%', height: 'auto', aspectRatio: box ? `${box.width} / ${box.height}` : undefined }
   const onError = (): void => setFailed(true)
 
   return (
-    <Spoiler hidden={a.name.startsWith('SPOILER_')}>
+    <Spoiler hidden={attachment.name.startsWith('SPOILER_')}>
       {kind === 'audio' ? (
         <Box
           component="audio"
           controls
           preload="metadata"
-          src={a.url}
+          src={attachment.url}
           onError={onError}
-          aria-label={a.name}
+          aria-label={attachment.name}
           sx={{ display: 'block', width: MAX_W, maxWidth: '100%' }}
         />
       ) : kind === 'image' ? (
-        <Link href={a.url} target="_blank" rel="noopener noreferrer" sx={{ display: 'block', borderRadius: 1 }}>
+        <Link href={attachment.url} target="_blank" rel="noopener noreferrer" sx={{ display: 'block', borderRadius: 1 }}>
           <Box
             component="img"
-            src={a.url}
-            alt={a.name}
+            src={attachment.url}
+            alt={attachment.name}
             loading="lazy"
             onError={onError}
             sx={{ ...sized, display: 'block', borderRadius: 1, bgcolor: 'background.paper', objectFit: 'cover' }}
@@ -64,12 +64,12 @@ function AttachmentItem({ a }: { a: Attachment }): ReactElement {
       ) : (
         <Box
           component="video"
-          src={a.url}
+          src={attachment.url}
           controls
           playsInline
           preload="metadata"
           onError={onError}
-          aria-label={a.name}
+          aria-label={attachment.name}
           sx={{ ...sized, display: 'block', borderRadius: 1, bgcolor: 'background.paper' }}
         />
       )}
@@ -121,7 +121,7 @@ function FileIcon(): ReactElement {
 }
 
 /** A file as a bordered row: name (a link when the URL is safe), size and type. */
-function FileCard({ a, href }: { a: Attachment; href: string | null }): ReactElement {
+function FileCard({ attachment, href }: { attachment: Attachment; href: string | null }): ReactElement {
   return (
     <Box
       sx={{
@@ -149,16 +149,16 @@ function FileCard({ a, href }: { a: Attachment; href: string | null }): ReactEle
             underline="always"
             sx={{ display: 'block', fontSize: 14, fontWeight: 500, overflowWrap: 'anywhere' }}
           >
-            {a.name}
+            {attachment.name}
           </Link>
         ) : (
           <Typography variant="body2" sx={{ fontWeight: 500, overflowWrap: 'anywhere' }}>
-            {a.name}
+            {attachment.name}
           </Typography>
         )}
         <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-          {formatBytes(a.size)}
-          {a.contentType ? ` · ${a.contentType}` : ''}
+          {formatBytes(attachment.size)}
+          {attachment.contentType ? ` · ${attachment.contentType}` : ''}
         </Typography>
       </Box>
     </Box>
@@ -166,11 +166,11 @@ function FileCard({ a, href }: { a: Attachment; href: string | null }): ReactEle
 }
 
 /** Shown when the CDN link no longer loads; Discord's signed URLs expire after about a day. */
-function Unavailable({ a }: { a: Attachment }): ReactElement {
+function Unavailable({ attachment }: { attachment: Attachment }): ReactElement {
   return (
     <Box sx={{ px: 1.5, py: 1, border: 1, borderColor: 'divider', borderRadius: 1, maxWidth: MAX_W }}>
       <Typography variant="body2" sx={{ color: 'text.secondary', overflowWrap: 'anywhere' }}>
-        {a.name}: no longer available
+        {attachment.name}: no longer available
       </Typography>
     </Box>
   )

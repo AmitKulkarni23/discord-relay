@@ -30,30 +30,30 @@ async function api(method: string, path: string, body?: unknown, ok: number[] = 
 /** Finds the stack's own Prometheus data source, where the app's pushed metrics land. */
 async function prometheusUid(): Promise<string> {
   const sources = (await api('GET', '/api/datasources')) as { uid: string; name: string; type: string }[]
-  const prom = sources.find(s => s.type === 'prometheus' && s.name.startsWith('grafanacloud-') && s.name.endsWith('-prom'))
-  if (!prom) throw new Error(`no grafanacloud-*-prom data source among: ${sources.map(s => s.name).join(', ')}`)
+  const prom = sources.find(source => source.type === 'prometheus' && source.name.startsWith('grafanacloud-') && source.name.endsWith('-prom'))
+  if (!prom) throw new Error(`no grafanacloud-*-prom data source among: ${sources.map(source => source.name).join(', ')}`)
   return prom.uid
 }
 
 /** A dashboard panel with one or more PromQL queries. */
-function panel(id: number, title: string, type: 'stat' | 'timeseries', x: number, y: number, ds: string, queries: Record<string, string>, extra = {}) {
+function panel(id: number, title: string, type: 'stat' | 'timeseries', x: number, y: number, dataSource: string, queries: Record<string, string>, extra = {}) {
   return {
     id,
     title,
     type,
     gridPos: { x, y, w: 12, h: 8 },
-    datasource: { type: 'prometheus', uid: ds },
+    datasource: { type: 'prometheus', uid: dataSource },
     targets: Object.entries(queries).map(([legendFormat, expr], i) => ({
       refId: String.fromCharCode(65 + i),
       expr,
       legendFormat,
-      datasource: { type: 'prometheus', uid: ds },
+      datasource: { type: 'prometheus', uid: dataSource },
     })),
     ...extra,
   }
 }
 
-function dashboard(ds: string) {
+function dashboard(dataSource: string) {
   return {
     uid: 'discord-relay',
     title: 'DiscordRelay',
@@ -68,7 +68,7 @@ function dashboard(ds: string) {
         'stat',
         0,
         0,
-        ds,
+        dataSource,
         { gateway: 'max(last_over_time(relay_gateway_connected[2m]))' },
         {
           fieldConfig: {
@@ -82,16 +82,16 @@ function dashboard(ds: string) {
         },
       ),
       // ponytail: max, not sum, so the old and new process overlapping in a deploy are not counted twice. Use sum once there are replicas.
-      panel(2, 'Viewers (open streams)', 'timeseries', 12, 0, ds, { viewers: 'max(last_over_time(relay_sse_clients[2m]))' }),
-      panel(3, 'Messages per second', 'timeseries', 0, 8, ds, { messages: 'sum(rate(relay_messages_total[5m]))' }),
-      panel(4, 'HTTP 500 errors (per 5 min)', 'timeseries', 12, 8, ds, { '500s': 'sum(increase(relay_http_errors_total[5m]))' }),
+      panel(2, 'Viewers (open streams)', 'timeseries', 12, 0, dataSource, { viewers: 'max(last_over_time(relay_sse_clients[2m]))' }),
+      panel(3, 'Messages per second', 'timeseries', 0, 8, dataSource, { messages: 'sum(rate(relay_messages_total[5m]))' }),
+      panel(4, 'HTTP 500 errors (per 5 min)', 'timeseries', 12, 8, dataSource, { '500s': 'sum(increase(relay_http_errors_total[5m]))' }),
       panel(
         5,
         'Clients dropped (per 5 min)',
         'timeseries',
         0,
         16,
-        ds,
+        dataSource,
         { dropped: 'sum(increase(relay_clients_dropped_total[5m]))' },
         { gridPos: { x: 0, y: 16, w: 8, h: 8 } },
       ),
@@ -101,7 +101,7 @@ function dashboard(ds: string) {
         'timeseries',
         8,
         16,
-        ds,
+        dataSource,
         { rejected: 'sum(increase(relay_rejected_total[5m]))' },
         { gridPos: { x: 8, y: 16, w: 8, h: 8 } },
       ),
@@ -111,7 +111,7 @@ function dashboard(ds: string) {
         'timeseries',
         16,
         16,
-        ds,
+        dataSource,
         { restarts: 'sum(increase(relay_watchdog_restarts_total[5m]))' },
         { gridPos: { x: 16, y: 16, w: 8, h: 8 } },
       ),
@@ -123,7 +123,7 @@ function dashboard(ds: string) {
 function rule(
   uid: string,
   title: string,
-  ds: string,
+  dataSource: string,
   expr: string,
   op: 'gt' | 'lt',
   threshold: number,
@@ -145,7 +145,7 @@ function rule(
     labels: {},
     notification_settings: { receiver: CONTACT_POINT },
     data: [
-      { refId: 'A', datasourceUid: ds, relativeTimeRange: { from: 600, to: 0 }, model: { refId: 'A', expr, instant: true } },
+      { refId: 'A', datasourceUid: dataSource, relativeTimeRange: { from: 600, to: 0 }, model: { refId: 'A', expr, instant: true } },
       {
         refId: 'C',
         datasourceUid: '__expr__',
@@ -156,13 +156,13 @@ function rule(
   }
 }
 
-function alertRules(ds: string) {
+function alertRules(dataSource: string) {
   return [
     // No pushes at all: the process is down, crashing or cannot reach Grafana.
     rule(
       'relay-app-down',
       'App down',
-      ds,
+      dataSource,
       'count(last_over_time(relay_gateway_connected[3m]))',
       'lt',
       1,
@@ -173,7 +173,7 @@ function alertRules(ds: string) {
     rule(
       'relay-gateway-down',
       'Discord Gateway down',
-      ds,
+      dataSource,
       'max(last_over_time(relay_gateway_connected[2m]))',
       'lt',
       1,
@@ -184,7 +184,7 @@ function alertRules(ds: string) {
     rule(
       'relay-edge-cap',
       'Near the edge cap',
-      ds,
+      dataSource,
       'max(last_over_time(relay_sse_clients[2m]))',
       'gt',
       8000,
@@ -195,7 +195,7 @@ function alertRules(ds: string) {
     rule(
       'relay-http-errors',
       'HTTP 500 errors',
-      ds,
+      dataSource,
       'sum(increase(relay_http_errors_total[5m]))',
       'gt',
       0,
@@ -206,7 +206,7 @@ function alertRules(ds: string) {
     rule(
       'relay-drop-spike',
       'Drop spike',
-      ds,
+      dataSource,
       'sum(increase(relay_clients_dropped_total[5m])) / clamp_min(max(last_over_time(relay_sse_clients[2m])), 1)',
       'gt',
       0.01,
@@ -217,10 +217,15 @@ function alertRules(ds: string) {
   ]
 }
 
-const ds = await prometheusUid()
+const dataSource = await prometheusUid()
 await api('POST', '/api/folders', { uid: FOLDER_UID, title: 'DiscordRelay' }, [409, 412])
-await api('POST', '/api/dashboards/db', { dashboard: dashboard(ds), folderUid: FOLDER_UID, overwrite: true })
-await api('PUT', `/api/v1/provisioning/folder/${FOLDER_UID}/rule-groups/relay`, { title: 'relay', folderUid: FOLDER_UID, interval: 60, rules: alertRules(ds) })
+await api('POST', '/api/dashboards/db', { dashboard: dashboard(dataSource), folderUid: FOLDER_UID, overwrite: true })
+await api('PUT', `/api/v1/provisioning/folder/${FOLDER_UID}/rule-groups/relay`, {
+  title: 'relay',
+  folderUid: FOLDER_UID,
+  interval: 60,
+  rules: alertRules(dataSource),
+})
 console.log(`Done: ${GRAFANA_URL}/d/discord-relay`)
 
 export {}

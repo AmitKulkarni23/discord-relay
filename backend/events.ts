@@ -159,12 +159,12 @@ export function createEventStreams(deps: EventStreamDeps): EventStreams {
           send(DISCORD_EVENTS[discordState(channelId)])
           // A reconnecting browser may hold messages deleted while it was away. A new one holds nothing.
           if (since > 0n) for (const id of hub.removed(channelId)) send(deleteEvent(id, channelId))
-          for (const m of hub.recent(channelId).filter(isNew)) send(encodeEvent(m))
+          for (const msg of hub.recent(channelId).filter(isNew)) send(encodeEvent(msg))
           // A restarted server refills its buffer through publish, so a live message can be one the browser holds.
           const unsubscribe = hub.subscribe(
             channelId,
-            m => {
-              if (isNew(m)) write(encodeEvent(m))
+            msg => {
+              if (isNew(msg)) write(encodeEvent(msg))
             },
             id => write(deleteEvent(id, channelId)),
           )

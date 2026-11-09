@@ -45,7 +45,7 @@ export function useEventStream(channel: string | null): EventStream {
 
   useEffect(() => {
     const abort = new AbortController()
-    let es: EventSource | undefined
+    let source: EventSource | undefined
     let retry: ReturnType<typeof setTimeout> | undefined
     let stable: ReturnType<typeof setTimeout> | undefined
     let recoveredNote: ReturnType<typeof setTimeout> | undefined
@@ -57,7 +57,7 @@ export function useEventStream(channel: string | null): EventStream {
     let catchUpUntil = 0
 
     const onDropped = (): void => {
-      es?.close()
+      source?.close()
       clearTimeout(stable)
       clearTimeout(recoveredNote)
       clearTimeout(silence)
@@ -77,8 +77,8 @@ export function useEventStream(channel: string | null): EventStream {
     // EventSource's own retry has a fixed delay and stops for good on an HTTP error (e.g. a 502
     // mid-deploy), so every error closes it and this loop reconnects with backoff and jitter.
     const connect = (): void => {
-      es = new EventSource(eventsUrl(channel, since))
-      es.onopen = () => {
+      source = new EventSource(eventsUrl(channel, since))
+      source.onopen = () => {
         heardFromServer()
         setConnection('live')
         if (everOpen && dropped) {
@@ -94,30 +94,30 @@ export function useEventStream(channel: string | null): EventStream {
           attempt = 0
         }, STABLE_MS)
       }
-      es.addEventListener('ping', heardFromServer)
-      es.addEventListener('discord', (e: MessageEvent<unknown>) => {
+      source.addEventListener('ping', heardFromServer)
+      source.addEventListener('discord', (event: MessageEvent<unknown>) => {
         heardFromServer()
-        setDiscord(e.data)
+        setDiscord(event.data)
       })
-      es.addEventListener('delete', (e: MessageEvent<unknown>) => {
+      source.addEventListener('delete', (event: MessageEvent<unknown>) => {
         heardFromServer()
-        const id = parseDeletedId(String(e.data))
+        const id = parseDeletedId(String(event.data))
         if (id) setMsgs(prev => removeMsg(prev, id))
       })
-      es.onmessage = (e: MessageEvent<unknown>) => {
+      source.onmessage = (event: MessageEvent<unknown>) => {
         heardFromServer()
-        const m = parseMsg(String(e.data))
-        if (!m) {
-          console.warn('message_dropped', e.data)
+        const msg = parseMsg(String(event.data))
+        if (!msg) {
+          console.warn('message_dropped', event.data)
           return
         }
-        if (since === null || compareIds(m.id, since) > 0) {
-          since = m.id
-          if (Date.now() < catchUpUntil) setRecovered(n => (n ?? 0) + 1)
+        if (since === null || compareIds(msg.id, since) > 0) {
+          since = msg.id
+          if (Date.now() < catchUpUntil) setRecovered(count => (count ?? 0) + 1)
         }
-        setMsgs(prev => addMsg(prev, m))
+        setMsgs(prev => addMsg(prev, msg))
       }
-      es.onerror = onDropped
+      source.onerror = onDropped
     }
 
     // A refused client keeps its reason and waits as told, instead of reconnecting forever with no explanation.
@@ -141,7 +141,7 @@ export function useEventStream(channel: string | null): EventStream {
       clearTimeout(retry)
       clearTimeout(stable)
       clearTimeout(recoveredNote)
-      es?.close()
+      source?.close()
     }
   }, [channel])
 

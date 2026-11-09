@@ -112,7 +112,7 @@ describe('isMissingContent', () => {
       )
 
       expect(msg.content).toBe('deploy finished for build 482')
-      expect(msg.attachments.map(a => a.name)).toEqual(['build-log.png'])
+      expect(msg.attachments.map(attachment => attachment.name)).toEqual(['build-log.png'])
       expect(msg.note).toBe('Forwarded')
     })
 

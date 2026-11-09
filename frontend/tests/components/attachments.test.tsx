@@ -38,11 +38,11 @@ describe('Attachments', () => {
 
   describe('when a URL is on the Discord CDN', () => {
     it('should load an image lazily and open it safely', () => {
-      const a = makeAttachment()
-      const { container } = render(<Attachments items={[a]} />)
+      const attachment = makeAttachment()
+      const { container } = render(<Attachments items={[attachment]} />)
       const link = container.querySelector('a')
 
-      expect(container.querySelector('img')?.getAttribute('src')).toBe(a.url)
+      expect(container.querySelector('img')?.getAttribute('src')).toBe(attachment.url)
       expect(container.querySelector('img')?.getAttribute('loading')).toBe('lazy')
       expect(link?.getAttribute('target')).toBe('_blank')
       expect(link?.getAttribute('rel')).toBe('noopener noreferrer')
@@ -55,10 +55,10 @@ describe('Attachments', () => {
     })
 
     it('should show other files as a card with their size', () => {
-      const a = makeAttachment({ name: 'report.pdf', contentType: 'application/pdf' })
-      const { getByRole, getByText } = render(<Attachments items={[a]} />)
+      const attachment = makeAttachment({ name: 'report.pdf', contentType: 'application/pdf' })
+      const { getByRole, getByText } = render(<Attachments items={[attachment]} />)
 
-      expect(getByRole('link', { name: 'report.pdf' }).getAttribute('href')).toBe(a.url)
+      expect(getByRole('link', { name: 'report.pdf' }).getAttribute('href')).toBe(attachment.url)
       expect(getByText('2.0 KB · application/pdf')).toBeDefined()
     })
   })

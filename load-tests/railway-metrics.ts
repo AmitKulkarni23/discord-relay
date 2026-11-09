@@ -27,15 +27,15 @@ for (const line of (await Bun.file(file).text()).split('\n')) {
       stderr: 'inherit',
     },
   )
-  const m = summarizeMetrics(JSON.parse(await new Response(proc.stdout).text()) as { measurements: Record<string, Sample[]> })
+  const summary = summarizeMetrics(JSON.parse(await new Response(proc.stdout).text()) as { measurements: Record<string, Sample[]> })
   console.log(
     [
       String(step.consumers).padStart(9),
       step.verdict.padEnd(7),
-      String(m.cpuAvg?.toFixed(2) ?? '-').padStart(12),
-      String(m.cpuMax?.toFixed(2) ?? '-').padStart(12),
-      String(m.memoryGbMax?.toFixed(2) ?? '-').padStart(13),
-      String(m.samples).padStart(7),
+      String(summary.cpuAvg?.toFixed(2) ?? '-').padStart(12),
+      String(summary.cpuMax?.toFixed(2) ?? '-').padStart(12),
+      String(summary.memoryGbMax?.toFixed(2) ?? '-').padStart(13),
+      String(summary.samples).padStart(7),
     ].join(' | '),
   )
 }

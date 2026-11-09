@@ -31,7 +31,7 @@ describe('hub', () => {
       hub.publish(makeMsg(LIVE))
       for (const id of OLD) hub.publish(makeMsg(id))
 
-      expect(hub.recent(GENERAL).map(m => m.id)).toEqual([...OLD, LIVE])
+      expect(hub.recent(GENERAL).map(msg => msg.id)).toEqual([...OLD, LIVE])
     })
 
     it('should keep the newest message when history overflows the buffer', () => {
@@ -40,7 +40,7 @@ describe('hub', () => {
       hub.publish(makeMsg(LIVE))
       for (const id of OLD) hub.publish(makeMsg(id))
 
-      expect(hub.recent(GENERAL).map(m => m.id)).toEqual([OLD[1], OLD[2], LIVE])
+      expect(hub.recent(GENERAL).map(msg => msg.id)).toEqual([OLD[1], OLD[2], LIVE])
     })
 
     it('should not store or send a message older than a full buffer', () => {
@@ -53,7 +53,7 @@ describe('hub', () => {
       hub.publish(makeMsg(OLD[0]))
 
       expect(fn).not.toHaveBeenCalled()
-      expect(hub.recent(GENERAL).map(m => m.id)).toEqual([OLD[1], OLD[2]])
+      expect(hub.recent(GENERAL).map(msg => msg.id)).toEqual([OLD[1], OLD[2]])
     })
   })
 
@@ -108,7 +108,7 @@ describe('hub', () => {
         hub.publish(makeMsg(id))
       }
 
-      expect(hub.recent(GENERAL).map(m => m.id)).toEqual(['1302000000000000002', '1302000000000000003', '1302000000000000004'])
+      expect(hub.recent(GENERAL).map(msg => msg.id)).toEqual(['1302000000000000002', '1302000000000000003', '1302000000000000004'])
     })
   })
 
@@ -216,7 +216,7 @@ describe('hub', () => {
 
       hub.remove(GENERAL, '1302000000000000001')
 
-      expect(hub.recent(GENERAL).map(m => m.id)).toEqual(['1302000000000000002'])
+      expect(hub.recent(GENERAL).map(msg => msg.id)).toEqual(['1302000000000000002'])
       expect(onRemove).toHaveBeenCalledWith('1302000000000000001')
       expect(other).not.toHaveBeenCalled()
     })

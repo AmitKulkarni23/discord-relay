@@ -57,64 +57,64 @@ export function buildRows(msgs: Msg[]): Row[] {
 
 /** Parses one SSE `data:` payload into a Msg, or null when it does not match the shape. */
 export function parseMsg(data: string): Msg | null {
-  let v: unknown
+  let value: unknown
   try {
-    v = JSON.parse(data)
+    value = JSON.parse(data)
   } catch {
     return null
   }
-  return isMsg(v) ? v : null
+  return isMsg(value) ? value : null
 }
 
 /** Parses one `delete` event's data into the deleted message's ID, or null when it does not match. */
 export function parseDeletedId(data: string): string | null {
   try {
-    const v: unknown = JSON.parse(data)
-    return isRecord(v) && typeof v.id === 'string' ? v.id : null
+    const value: unknown = JSON.parse(data)
+    return isRecord(value) && typeof value.id === 'string' ? value.id : null
   } catch {
     return null
   }
 }
 
 /** Narrows an unknown value to a plain object. */
-export function isRecord(v: unknown): v is Record<string, unknown> {
-  return typeof v === 'object' && v !== null
+export function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
 }
 
 /** Narrows an unknown value to an Attachment. */
-function isAttachment(v: unknown): v is Attachment {
+function isAttachment(value: unknown): value is Attachment {
   return (
-    isRecord(v) &&
-    typeof v.url === 'string' &&
-    typeof v.name === 'string' &&
-    (v.contentType === null || typeof v.contentType === 'string') &&
-    typeof v.size === 'number' &&
-    (v.width === null || typeof v.width === 'number') &&
-    (v.height === null || typeof v.height === 'number')
+    isRecord(value) &&
+    typeof value.url === 'string' &&
+    typeof value.name === 'string' &&
+    (value.contentType === null || typeof value.contentType === 'string') &&
+    typeof value.size === 'number' &&
+    (value.width === null || typeof value.width === 'number') &&
+    (value.height === null || typeof value.height === 'number')
   )
 }
 
 /** True for a string a Date can read. An invalid date would throw when formatted, during render. */
-function isDate(v: unknown): v is string {
-  return typeof v === 'string' && !Number.isNaN(Date.parse(v))
+function isDate(value: unknown): value is string {
+  return typeof value === 'string' && !Number.isNaN(Date.parse(value))
 }
 
 /** Narrows an unknown value to a Msg. */
-function isMsg(v: unknown): v is Msg {
-  if (!isRecord(v) || !isRecord(v.author)) return false
-  const a = v.author
+function isMsg(value: unknown): value is Msg {
+  if (!isRecord(value) || !isRecord(value.author)) return false
+  const author = value.author
   return (
-    typeof v.id === 'string' &&
-    typeof v.channelId === 'string' &&
-    typeof v.content === 'string' &&
-    (v.note === null || typeof v.note === 'string') &&
-    isDate(v.createdAt) &&
-    (v.editedAt === null || isDate(v.editedAt)) &&
-    Array.isArray(v.attachments) &&
-    v.attachments.every(isAttachment) &&
-    typeof a.id === 'string' &&
-    typeof a.name === 'string' &&
-    typeof a.bot === 'boolean' &&
-    (a.avatarUrl === null || typeof a.avatarUrl === 'string')
+    typeof value.id === 'string' &&
+    typeof value.channelId === 'string' &&
+    typeof value.content === 'string' &&
+    (value.note === null || typeof value.note === 'string') &&
+    isDate(value.createdAt) &&
+    (value.editedAt === null || isDate(value.editedAt)) &&
+    Array.isArray(value.attachments) &&
+    value.attachments.every(isAttachment) &&
+    typeof author.id === 'string' &&
+    typeof author.name === 'string' &&
+    typeof author.bot === 'boolean' &&
+    (author.avatarUrl === null || typeof author.avatarUrl === 'string')
   )
 }

@@ -28,7 +28,7 @@ export function DayDivider({ date }: { date: Date }): ReactElement {
   useEffect(() => {
     const now = new Date()
     const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1)
-    const timer = setTimeout(() => refresh(n => n + 1), midnight.getTime() - now.getTime())
+    const timer = setTimeout(() => refresh(count => count + 1), midnight.getTime() - now.getTime())
     return () => clearTimeout(timer)
   })
 
@@ -106,8 +106,8 @@ export function NewMessagesPill({ count, onClick }: { count: number; onClick: ()
           textTransform: 'none',
           fontWeight: 600,
         },
-        t => ({ boxShadow: `0 6px 20px ${alpha(t.palette.common.black, 0.45)}` }),
-        t => t.applyStyles('light', { boxShadow: `0 6px 20px ${alpha(t.palette.common.black, 0.18)}` }),
+        theme => ({ boxShadow: `0 6px 20px ${alpha(theme.palette.common.black, 0.45)}` }),
+        theme => theme.applyStyles('light', { boxShadow: `0 6px 20px ${alpha(theme.palette.common.black, 0.18)}` }),
       ]}
     >
       {count} new message{count === 1 ? '' : 's'}

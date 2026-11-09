@@ -52,18 +52,18 @@ function enqueue(count: number): void {
 }
 
 /** Starts sending, or stops at perSec=0. Works out what is owed from the elapsed time, so a late timer catches up. */
-function setRate(q: URLSearchParams): void {
+function setRate(query: URLSearchParams): void {
   clearInterval(publisher)
-  const perSec = Number(q.get('perSec'))
+  const perSec = Number(query.get('perSec'))
   if (perSec <= 0) return
-  target = q.get('target') ?? ''
-  channelIds = (q.get('channels') ?? '').split(',')
-  content = loadContent(Number(q.get('msgBytes')))
+  target = query.get('target') ?? ''
+  channelIds = (query.get('channels') ?? '').split(',')
+  content = loadContent(Number(query.get('msgBytes')))
   // Fills the server's buffer, so a new client's replay is full size.
   enqueue(bufferSize)
-  const burst = Number(q.get('burst'))
+  const burst = Number(query.get('burst'))
   if (burst) {
-    publisher = setInterval(() => enqueue(burst), Number(q.get('everySec')) * 1000)
+    publisher = setInterval(() => enqueue(burst), Number(query.get('everySec')) * 1000)
     return
   }
   const startedAt = performance.now()

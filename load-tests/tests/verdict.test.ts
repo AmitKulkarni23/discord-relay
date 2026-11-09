@@ -176,7 +176,7 @@ describe('findUsableMax', () => {
       const result = await findUsableMax({ usableMax: 20_000, firstNotPassing: 40_000 }, server.tryCount, OPTIONS)
 
       expect(result).toEqual({ usableMax: 25_000, confirmed: true, invalidAt: null })
-      expect(server.tried.filter(n => n === 25_000).length).toBeGreaterThanOrEqual(3)
+      expect(server.tried.filter(count => count === 25_000).length).toBeGreaterThanOrEqual(3)
     })
   })
 

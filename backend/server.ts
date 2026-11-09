@@ -30,7 +30,7 @@ export function startServer(deps: ServerDeps): { url: URL; stop: () => void } {
   function health(): Response {
     const connected = isDiscordConnected()
     const buffered = channelIds.flatMap(id => hub.recent(id))
-    const lastEventAt = buffered.reduce<string | null>((max, m) => (max === null || m.createdAt > max ? m.createdAt : max), null)
+    const lastEventAt = buffered.reduce<string | null>((max, msg) => (max === null || msg.createdAt > max ? msg.createdAt : max), null)
     return Response.json(
       {
         discord: connected ? 'connected' : 'disconnected',
@@ -97,7 +97,7 @@ export function main(): void {
     historyLimit: config.bufferSize,
     publish: hub.publish,
     remove: hub.remove,
-    buffered: channelId => hub.recent(channelId).map(m => m.id),
+    buffered: channelId => hub.recent(channelId).map(msg => msg.id),
     deletesEnabled: () => readFlags().editsDeletes,
     // Stay up: the page tells viewers the maintainer was notified, and relay_gateway_connected = 0 fires the Grafana alarm.
     onFatal: err => log.error('discord_login_failed', { error: errorMessage(err), hint: 'Check DISCORD_TOKEN and the MessageContent intent' }),

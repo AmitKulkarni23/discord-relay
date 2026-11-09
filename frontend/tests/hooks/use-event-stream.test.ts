@@ -10,9 +10,9 @@ const OLDER = makeMsg({ id: '1566588496691400001' })
 const NEWER = makeMsg({ id: '1566588496691400002' })
 const CHANNEL = '1566584977829900002'
 
-const open = (es: FakeEventSource): void => act(() => es.onopen?.())
-const fail = (es: FakeEventSource): void => act(() => es.onerror?.())
-const send = (es: FakeEventSource, ...msgs: Array<typeof OLDER>): void => act(() => msgs.forEach(m => es.sendMessage(m)))
+const open = (source: FakeEventSource): void => act(() => source.onopen?.())
+const fail = (source: FakeEventSource): void => act(() => source.onerror?.())
+const send = (source: FakeEventSource, ...msgs: Array<typeof OLDER>): void => act(() => msgs.forEach(msg => source.sendMessage(msg)))
 const waitFor = (ms: number): void =>
   act(() => {
     jest.advanceTimersByTime(ms)
@@ -56,7 +56,7 @@ describe('useEventStream', () => {
 
       send(FakeEventSource.latest(), NEWER, OLDER)
 
-      expect(result.current.messages.map(m => m.id)).toEqual([OLDER.id, NEWER.id])
+      expect(result.current.messages.map(msg => msg.id)).toEqual([OLDER.id, NEWER.id])
     })
 
     it('should keep one copy of a message sent twice', () => {
@@ -95,25 +95,25 @@ describe('useEventStream', () => {
 
     it('should stay live while pings keep arriving', () => {
       const { result } = renderHook(() => useEventStream(CHANNEL))
-      const es = FakeEventSource.latest()
-      open(es)
+      const source = FakeEventSource.latest()
+      open(source)
 
       for (let i = 0; i < 5; i++) {
         waitFor(25_000)
-        act(() => es.sendPing())
+        act(() => source.sendPing())
       }
 
-      expect(es.closed).toBe(false)
+      expect(source.closed).toBe(false)
       expect(result.current.status).toBe('live')
     })
 
     it('should count a message as a sign of life', () => {
       const { result } = renderHook(() => useEventStream(CHANNEL))
-      const es = FakeEventSource.latest()
-      open(es)
+      const source = FakeEventSource.latest()
+      open(source)
 
       waitFor(50_000)
-      send(es, OLDER)
+      send(source, OLDER)
       waitFor(50_000)
 
       expect(result.current.status).toBe('live')
@@ -145,21 +145,21 @@ describe('useEventStream', () => {
   describe('when a message is deleted', () => {
     it('should drop it from the list', () => {
       const { result } = renderHook(() => useEventStream(CHANNEL))
-      const es = FakeEventSource.latest()
-      send(es, OLDER, NEWER)
+      const source = FakeEventSource.latest()
+      send(source, OLDER, NEWER)
 
-      act(() => es.sendDelete(OLDER.id))
+      act(() => source.sendDelete(OLDER.id))
 
-      expect(result.current.messages.map(m => m.id)).toEqual([NEWER.id])
+      expect(result.current.messages.map(msg => msg.id)).toEqual([NEWER.id])
     })
 
     it('should keep asking only for newer messages after the newest is deleted', () => {
       renderHook(() => useEventStream(CHANNEL))
-      const es = FakeEventSource.latest()
-      send(es, NEWER)
-      act(() => es.sendDelete(NEWER.id))
+      const source = FakeEventSource.latest()
+      send(source, NEWER)
+      act(() => source.sendDelete(NEWER.id))
 
-      fail(es)
+      fail(source)
       waitFor(1000)
 
       expect(FakeEventSource.latest().url).toBe(`/events?channel=${CHANNEL}&since=${NEWER.id}`)
@@ -169,44 +169,44 @@ describe('useEventStream', () => {
   describe('when the bot loses Discord', () => {
     it('should wait for Discord while the stream stays open, then go live again', () => {
       const { result } = renderHook(() => useEventStream(CHANNEL))
-      const es = FakeEventSource.latest()
-      open(es)
+      const source = FakeEventSource.latest()
+      open(source)
 
-      act(() => es.sendDiscord('disconnected'))
+      act(() => source.sendDiscord('disconnected'))
       expect(result.current.status).toBe('discord')
 
-      act(() => es.sendDiscord('connected'))
+      act(() => source.sendDiscord('connected'))
       expect(result.current.status).toBe('live')
     })
 
     it('should say the relay has failed when the bot cannot log in to Discord', () => {
       const { result } = renderHook(() => useEventStream(CHANNEL))
-      const es = FakeEventSource.latest()
-      open(es)
+      const source = FakeEventSource.latest()
+      open(source)
 
-      act(() => es.sendDiscord('failed'))
+      act(() => source.sendDiscord('failed'))
       expect(result.current.status).toBe('failed')
     })
 
     it('should say so when the bot cannot read this channel', () => {
       const { result } = renderHook(() => useEventStream(CHANNEL))
-      const es = FakeEventSource.latest()
-      open(es)
+      const source = FakeEventSource.latest()
+      open(source)
 
-      act(() => es.sendDiscord('unavailable'))
+      act(() => source.sendDiscord('unavailable'))
       expect(result.current.status).toBe('channel')
 
-      act(() => es.sendDiscord('connected'))
+      act(() => source.sendDiscord('connected'))
       expect(result.current.status).toBe('live')
     })
 
     it('should say the stream is reconnecting, not Discord, when both are down', () => {
       const { result } = renderHook(() => useEventStream(CHANNEL))
-      const es = FakeEventSource.latest()
-      open(es)
-      act(() => es.sendDiscord('disconnected'))
+      const source = FakeEventSource.latest()
+      open(source)
+      act(() => source.sendDiscord('disconnected'))
 
-      fail(es)
+      fail(source)
 
       expect(result.current.status).toBe('reconnecting')
     })
@@ -367,21 +367,21 @@ describe('useEventStream', () => {
   })
 
   describe('when a reconnect succeeds', () => {
-    const reconnect = (): { result: { current: ReturnType<typeof useEventStream> }; es: FakeEventSource } => {
+    const reconnect = (): { result: { current: ReturnType<typeof useEventStream> }; source: FakeEventSource } => {
       const { result } = renderHook(() => useEventStream(CHANNEL))
       open(FakeEventSource.latest())
       fail(FakeEventSource.latest())
       waitFor(1000)
-      const es = FakeEventSource.latest()
-      open(es)
-      return { result, es }
+      const source = FakeEventSource.latest()
+      open(source)
+      return { result, source }
     }
 
     it('should count what it caught up on, for five seconds', () => {
-      const { result, es } = reconnect()
+      const { result, source } = reconnect()
       expect(result.current.recovered).toBe(0)
 
-      send(es, OLDER, NEWER)
+      send(source, OLDER, NEWER)
       expect(result.current.recovered).toBe(2)
 
       waitFor(5000)
@@ -389,10 +389,10 @@ describe('useEventStream', () => {
     })
 
     it('should not count a live message that lands after the catch-up window', () => {
-      const { result, es } = reconnect()
+      const { result, source } = reconnect()
 
       waitFor(1000)
-      send(es, NEWER)
+      send(source, NEWER)
 
       expect(result.current.recovered).toBe(0)
     })
@@ -428,8 +428,8 @@ describe('useEventStream', () => {
   describe('when the page unmounts', () => {
     it('should close the stream and stop retrying', () => {
       const { unmount } = renderHook(() => useEventStream(CHANNEL))
-      const es = FakeEventSource.latest()
-      fail(es)
+      const source = FakeEventSource.latest()
+      fail(source)
 
       unmount()
       waitFor(30_000)

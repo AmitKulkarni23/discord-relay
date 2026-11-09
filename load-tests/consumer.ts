@@ -4,7 +4,7 @@
  * because Bun's fetch allows 256 concurrent requests by default. Driven over IPC by run.ts.
  */
 type Conn = {
-  n: number
+  index: number
   tail: string
   responded: boolean
   live: boolean
@@ -120,8 +120,8 @@ function responded(conn: Conn, status: string): void {
   maybeOpened()
 }
 
-function onData(s: Socket, buf: Buffer): void {
-  const conn = s.data
+function onData(socket: Socket, buf: Buffer): void {
+  const conn = socket.data
   rxBytes += buf.length
   const text = conn.tail + buf.toString('latin1')
   if (!conn.responded) {
@@ -132,14 +132,14 @@ function onData(s: Socket, buf: Buffer): void {
     responded(conn, text.slice(9, 12))
     if (!conn.live) {
       conn.tail = ''
-      s.end()
+      socket.end()
       return
     }
   }
   if (conn.slow) {
     // Stay paused after each read: a stopped client never resumes, and a crawling one gets one read per crawl tick.
     conn.tail = ''
-    s.pause()
+    socket.pause()
     return
   }
 
@@ -147,9 +147,9 @@ function onData(s: Socket, buf: Buffer): void {
   const now = Date.now()
   let end = 0
   EVENT.lastIndex = 0
-  for (let m = EVENT.exec(body); m; m = EVENT.exec(body)) {
+  for (let match = EVENT.exec(body); match; match = EVENT.exec(body)) {
     end = EVENT.lastIndex
-    const seq = Number(m[1])
+    const seq = Number(match[1])
     if (conn.last && seq <= conn.last) conn.dups++
     else if (conn.last && seq !== conn.last + 1) conn.gaps += seq - conn.last - 1
     conn.last = Math.max(conn.last, seq)
@@ -157,7 +157,7 @@ function onData(s: Socket, buf: Buffer): void {
     conn.inWindow++
     if (seq !== cachedSeq) {
       cachedSeq = seq
-      cachedSentAt = Date.parse(m[2] as string)
+      cachedSentAt = Date.parse(match[2] as string)
     }
     const ms = Math.max(0, now + offsetMs - cachedSentAt)
     hist.set(ms, (hist.get(ms) ?? 0) + 1)
@@ -166,10 +166,10 @@ function onData(s: Socket, buf: Buffer): void {
   conn.tail = end ? body.slice(end) : body
 }
 
-function onGone(s: Socket): void {
-  const conn = s.data
+function onGone(socket: Socket): void {
+  const conn = socket.data
   if (conn.goneAt) {
-    conns.delete(s)
+    conns.delete(socket)
     if (conn.retry) return
     // A failed attempt backs off the way the page does; a deliberate close waits as it was told to.
     if (!conn.dropping) reconnectFailed++
@@ -181,12 +181,12 @@ function onGone(s: Socket): void {
     }, wait)
     return
   }
-  if (!s.data.responded) {
-    s.data.responded = true
+  if (!socket.data.responded) {
+    socket.data.responded = true
     failedOpen++
     awaitingResponse--
   }
-  if (conns.delete(s) && !s.data.slow) closed++
+  if (conns.delete(socket) && !socket.data.slow) closed++
   maybeOpened()
 }
 
@@ -197,18 +197,18 @@ async function open(cmd: OpenCommand): Promise<void> {
   if (cmd.slowMode === 'crawl') {
     clearInterval(crawler)
     crawler = setInterval(() => {
-      for (const s of conns) if (s.data.slow) s.resume()
+      for (const socket of conns) if (socket.data.slow) socket.resume()
     }, 1000)
   }
   target = cmd
   const pause = 1000 / cmd.perSec
   const started = performance.now()
   for (let i = 0; i < cmd.count; i++) {
-    const n = cmd.first + i
-    const slow = n % 100 < cmd.slowPct
+    const index = cmd.first + i
+    const slow = index % 100 < cmd.slowPct
     if (slow) slowTotal++
     awaitingResponse++
-    dial({ n, tail: '', responded: false, live: false, last: 0, inWindow: 0, gaps: 0, dups: 0, slow, goneAt: 0, dropping: false, redialMs: 0, attempt: 0 })
+    dial({ index, tail: '', responded: false, live: false, last: 0, inWindow: 0, gaps: 0, dups: 0, slow, goneAt: 0, dropping: false, redialMs: 0, attempt: 0 })
     const due = started + (i + 1) * pause
     const wait = due - performance.now()
     if (wait > 1) await Bun.sleep(wait)
@@ -220,46 +220,46 @@ async function open(cmd: OpenCommand): Promise<void> {
 /** Opens a connection. A reconnect passes ?since= with the newest message held, as the page does. */
 function dial(conn: Conn): void {
   const cmd = target as OpenCommand
-  const { n } = conn
+  const { index } = conn
   conn.tail = ''
   conn.responded = conn.live = false
   const since = conn.last ? `&since=${ID_PREFIX}${String(conn.last).padStart(10, '0')}` : ''
   const request =
-    `GET /events?channel=${cmd.channelIds[n % cmd.channelIds.length]}${since} HTTP/1.1\r\nHost: ${cmd.host}\r\nAccept: text/event-stream\r\n` +
+    `GET /events?channel=${cmd.channelIds[index % cmd.channelIds.length]}${since} HTTP/1.1\r\nHost: ${cmd.host}\r\nAccept: text/event-stream\r\n` +
     // Unique per connection so the per-IP cap does not apply. Only works without Railway's proxy in the path, which sets this header itself.
-    `X-Real-IP: 10.${cmd.processIndex}.${(n >> 8) & 255}.${n & 255}\r\nConnection: keep-alive\r\n\r\n`
+    `X-Real-IP: 10.${cmd.processIndex}.${(index >> 8) & 255}.${index & 255}\r\nConnection: keep-alive\r\n\r\n`
   Bun.connect<Conn>({
     hostname: cmd.host,
     tls: cmd.tls,
-    port: cmd.ports[n % cmd.ports.length] as number,
+    port: cmd.ports[index % cmd.ports.length] as number,
     data: conn,
     socket: {
-      open(s) {
-        conns.add(s)
-        s.write(request)
+      open(socket) {
+        conns.add(socket)
+        socket.write(request)
       },
       data: onData,
       close: onGone,
       error(_s, err) {
         console.error(JSON.stringify({ event: 'socket_error', error: err.message }))
       },
-      connectError(s) {
-        onGone(s)
+      connectError(socket) {
+        onGone(socket)
       },
     },
   }).catch(() => {})
 }
 
 /** Closes a connection that is reading normally and reconnects it after `redialMs`, as a browser does after a cut. */
-function drop(s: Socket, redialMs: number): void {
-  const conn = s.data
+function drop(socket: Socket, redialMs: number): void {
+  const conn = socket.data
   if (conn.slow || !conn.live) return
   conn.goneAt = performance.now()
   conn.dropping = true
   conn.redialMs = redialMs
   reconnecting++
-  conns.delete(s)
-  s.terminate()
+  conns.delete(socket)
+  socket.terminate()
 }
 
 let lagMsMax = 0
@@ -277,9 +277,9 @@ async function report(cmd: Extract<ConsumerCommand, { type: 'end' }>): Promise<v
   clearInterval(churn)
   const deadline = performance.now() + cmd.graceMs
   const lagging = () => {
-    let n = 0
-    for (const s of conns) if (!s.data.slow && s.data.last < to) n++
-    return n + reconnecting
+    let behind = 0
+    for (const socket of conns) if (!socket.data.slow && socket.data.last < to) behind++
+    return behind + reconnecting
   }
   while (lagging() > 0 && performance.now() < deadline) await Bun.sleep(100)
 
@@ -287,13 +287,13 @@ async function report(cmd: Extract<ConsumerCommand, { type: 'end' }>): Promise<v
   let gaps = 0
   let dups = 0
   let live = 0
-  for (const s of conns) {
-    if (s.data.slow) continue
+  for (const socket of conns) {
+    if (socket.data.slow) continue
     live++
-    received += s.data.inWindow
-    gaps += s.data.gaps
-    dups += s.data.dups
-    s.data.inWindow = s.data.gaps = s.data.dups = 0
+    received += socket.data.inWindow
+    gaps += socket.data.gaps
+    dups += socket.data.dups
+    socket.data.inWindow = socket.data.gaps = socket.data.dups = 0
   }
   const cpu = process.cpuUsage(cpuFrom)
   const cpuPct = ((cpu.user + cpu.system) / 1000 / (performance.now() - cpuAt)) * 100
@@ -336,15 +336,15 @@ process.on('message', (cmd: ConsumerCommand) => {
     // Closed connections rejoin at the end of the set, so this walks through every client in turn.
     churn = setInterval(() => {
       owed += cmd.perSec / 10
-      for (const s of [...conns]) {
+      for (const socket of [...conns]) {
         if (owed < 1) break
-        if (s.data.slow || !s.data.live) continue
-        drop(s, Math.random() * 1000)
+        if (socket.data.slow || !socket.data.live) continue
+        drop(socket, Math.random() * 1000)
         owed--
       }
     }, 100)
   }
-  if (cmd.type === 'storm') for (const s of [...conns]) drop(s, Math.random() * cmd.jitterMs)
+  if (cmd.type === 'storm') for (const socket of [...conns]) drop(socket, Math.random() * cmd.jitterMs)
   if (cmd.type === 'end') void report(cmd)
   if (cmd.type === 'close') process.exit(0)
 })

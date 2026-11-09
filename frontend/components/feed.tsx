@@ -15,7 +15,7 @@ type FeedProps = { messages: Msg[]; status: Status; channelName: string | null; 
 export function Feed({ messages, status, channelName, attachmentsOn }: FeedProps): ReactElement {
   const rows = useMemo(() => buildRows(messages), [messages])
   const { seenId, scroll, jumpToNewest } = useStickToBottom(messages.at(-1)?.id ?? null)
-  const unseen = seenId === null ? 0 : messages.filter(m => compareIds(m.id, seenId) > 0).length
+  const unseen = seenId === null ? 0 : messages.filter(msg => compareIds(msg.id, seenId) > 0).length
 
   return (
     <>
@@ -36,9 +36,13 @@ export function Feed({ messages, status, channelName, attachmentsOn }: FeedProps
           <EmptyState key={status} status={status} channelName={channelName} />
         ) : (
           <Box role="log" aria-label={channelName ? `Messages in #${channelName}` : 'Messages'} sx={{ mt: 'auto' }}>
-            {rows.map(r => (
-              <ErrorBoundary key={r.key} fallback={<MessageError />}>
-                {r.kind === 'day' ? <DayDivider date={r.date} /> : <MessageRow msg={r.msg} head={r.head} attachmentsOn={attachmentsOn} scroll={scroll} />}
+            {rows.map(row => (
+              <ErrorBoundary key={row.key} fallback={<MessageError />}>
+                {row.kind === 'day' ? (
+                  <DayDivider date={row.date} />
+                ) : (
+                  <MessageRow msg={row.msg} head={row.head} attachmentsOn={attachmentsOn} scroll={scroll} />
+                )}
               </ErrorBoundary>
             ))}
           </Box>

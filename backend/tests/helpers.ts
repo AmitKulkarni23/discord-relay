@@ -40,8 +40,8 @@ export async function openEvents(base: URL, path = '/events', headers: Record<st
   let text = ''
 
   /** Reads chunks until the accumulated text satisfies `pred`. */
-  async function readUntil(pred: (t: string) => boolean): Promise<string> {
-    while (!pred(text)) {
+  async function readUntil(isDone: (received: string) => boolean): Promise<string> {
+    while (!isDone(text)) {
       const { value, done } = await reader.read()
       if (done) throw new Error('stream ended')
       text += decoder.decode(value, { stream: true })

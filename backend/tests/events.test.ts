@@ -18,7 +18,7 @@ describe('the delete event', () => {
 
     hub.remove(CHANNEL, OLD)
 
-    expect(await stream.readUntil(t => t.includes('event: delete'))).toContain(deleted(OLD))
+    expect(await stream.readUntil(received => received.includes('event: delete'))).toContain(deleted(OLD))
     stream.abort()
   })
 
@@ -29,7 +29,7 @@ describe('the delete event', () => {
 
     const stream = await openEvents(url, `/events?since=${NEW}`)
 
-    expect(await stream.readUntil(t => t.includes('event: delete'))).toContain(deleted(OLD))
+    expect(await stream.readUntil(received => received.includes('event: delete'))).toContain(deleted(OLD))
     stream.abort()
   })
 
@@ -40,7 +40,7 @@ describe('the delete event', () => {
     const { url } = start(hub)
 
     const stream = await openEvents(url)
-    const text = await stream.readUntil(t => t.includes(NEW))
+    const text = await stream.readUntil(received => received.includes(NEW))
 
     expect(text).not.toContain('event: delete')
     stream.abort()
@@ -54,7 +54,7 @@ describe('the delete event', () => {
     const { url } = start(hub)
 
     const stream = await openEvents(url)
-    const text = await stream.readUntil(t => t.includes(NEW))
+    const text = await stream.readUntil(received => received.includes(NEW))
 
     expect(text).not.toContain(OLD)
     stream.abort()
@@ -65,14 +65,14 @@ describe('the discord status event', () => {
   it('should tell a new stream that Discord is connected', async () => {
     const { url } = start(createHub(10))
     const stream = await openEvents(url)
-    expect(await stream.readUntil(t => t.includes('event: discord'))).toContain('event: discord\ndata: connected\n\n')
+    expect(await stream.readUntil(received => received.includes('event: discord'))).toContain('event: discord\ndata: connected\n\n')
     stream.abort()
   })
 
   it('should tell a new stream that Discord is disconnected', async () => {
     const { url } = start(createHub(10), { connected: false })
     const stream = await openEvents(url)
-    expect(await stream.readUntil(t => t.includes('event: discord'))).toContain('event: discord\ndata: disconnected\n\n')
+    expect(await stream.readUntil(received => received.includes('event: discord'))).toContain('event: discord\ndata: disconnected\n\n')
     stream.abort()
   })
 
@@ -80,7 +80,7 @@ describe('the discord status event', () => {
     const { url } = start(createHub(10), { connected: false, loginFailed: true })
     const stream = await openEvents(url)
 
-    expect(await stream.readUntil(t => t.includes('event: discord'))).toContain('event: discord\ndata: failed\n\n')
+    expect(await stream.readUntil(received => received.includes('event: discord'))).toContain('event: discord\ndata: failed\n\n')
     stream.abort()
   })
 
@@ -88,7 +88,7 @@ describe('the discord status event', () => {
     const { url } = start(createHub(10), { available: false })
     const stream = await openEvents(url)
 
-    expect(await stream.readUntil(t => t.includes('event: discord'))).toContain('event: discord\ndata: unavailable\n\n')
+    expect(await stream.readUntil(received => received.includes('event: discord'))).toContain('event: discord\ndata: unavailable\n\n')
     stream.abort()
   })
 
@@ -96,7 +96,7 @@ describe('the discord status event', () => {
     const { url } = start(createHub(10), { connected: false, available: false })
     const stream = await openEvents(url)
 
-    expect(await stream.readUntil(t => t.includes('event: discord'))).toContain('event: discord\ndata: disconnected\n\n')
+    expect(await stream.readUntil(received => received.includes('event: discord'))).toContain('event: discord\ndata: disconnected\n\n')
     stream.abort()
   })
 
@@ -104,11 +104,11 @@ describe('the discord status event', () => {
     const overrides = { available: false }
     const { url } = start(createHub(10), overrides)
     const stream = await openEvents(url)
-    await stream.readUntil(t => t.includes('data: unavailable'))
+    await stream.readUntil(received => received.includes('data: unavailable'))
 
     overrides.available = true
 
-    expect(await stream.readUntil(t => t.includes('data: connected'))).toContain('event: discord\ndata: connected\n\n')
+    expect(await stream.readUntil(received => received.includes('data: connected'))).toContain('event: discord\ndata: connected\n\n')
     stream.abort()
   })
 
@@ -116,9 +116,9 @@ describe('the discord status event', () => {
     const overrides = { connected: true }
     const { url } = start(createHub(10), overrides)
     const stream = await openEvents(url)
-    await stream.readUntil(t => t.includes('data: connected'))
+    await stream.readUntil(received => received.includes('data: connected'))
     overrides.connected = false
-    expect(await stream.readUntil(t => t.includes('data: disconnected'))).toContain('event: discord\ndata: disconnected\n\n')
+    expect(await stream.readUntil(received => received.includes('data: disconnected'))).toContain('event: discord\ndata: disconnected\n\n')
     stream.abort()
   })
 })
@@ -156,7 +156,7 @@ describe('event streams', () => {
       hub.publish(makeMsg('1302000000000000002', 'live to both'))
 
       for (const events of [first, second]) {
-        const text = await events.readUntil(t => t.includes('live to both'))
+        const text = await events.readUntil(received => received.includes('live to both'))
         expect(text).toContain('replayed to both')
       }
     })
@@ -170,7 +170,7 @@ describe('event streams', () => {
       const { url } = start(hub)
 
       const events = await openEvents(url)
-      const text = await events.readUntil(t => t.includes('1302000000000000002'))
+      const text = await events.readUntil(received => received.includes('1302000000000000002'))
 
       expect(events.res.headers.get('content-type')).toBe('text/event-stream')
       expect(events.res.headers.get('cache-control')).toBe('no-cache')
@@ -185,7 +185,7 @@ describe('event streams', () => {
 
       hub.publish(makeMsg('1302000000000000003', 'rollback complete'))
 
-      const text = await events.readUntil(t => t.includes('rollback complete'))
+      const text = await events.readUntil(received => received.includes('rollback complete'))
       expect(text).toContain('id: 1302000000000000003')
     })
   })
@@ -202,7 +202,7 @@ describe('event streams', () => {
       const { url } = startWithBuffer()
 
       const events = await openEvents(url, '/events?since=1302000000000000002')
-      const text = await events.readUntil(t => t.includes('id: 1302000000000000003'))
+      const text = await events.readUntil(received => received.includes('id: 1302000000000000003'))
 
       expect(text).not.toContain('id: 1302000000000000001')
       expect(text).not.toContain('id: 1302000000000000002')
@@ -218,7 +218,7 @@ describe('event streams', () => {
       hub.publish(makeMsg('1302000000000000001'))
       hub.publish(makeMsg('1302000000000000003'))
 
-      const text = await events.readUntil(t => t.includes('id: 1302000000000000003'))
+      const text = await events.readUntil(received => received.includes('id: 1302000000000000003'))
       expect(text).not.toContain('id: 1302000000000000001')
     })
 
@@ -226,7 +226,7 @@ describe('event streams', () => {
       const { url } = startWithBuffer()
 
       const events = await openEvents(url, '/events?since=1302%27%20OR%201')
-      const text = await events.readUntil(t => t.includes('id: 1302000000000000003'))
+      const text = await events.readUntil(received => received.includes('id: 1302000000000000003'))
 
       expect(text).toContain('id: 1302000000000000001')
     })
@@ -240,7 +240,7 @@ describe('event streams', () => {
       const server = start(hub)
 
       const events = await openEvents(server.url)
-      const text = await events.readUntil(t => t.includes('first channel message'))
+      const text = await events.readUntil(received => received.includes('first channel message'))
       events.abort()
 
       expect(text).not.toContain('second channel message')
@@ -253,7 +253,7 @@ describe('event streams', () => {
       const server = start(hub)
 
       const events = await openEvents(server.url, `/events?channel=${CHANNEL_2}`)
-      const text = await events.readUntil(t => t.includes('second channel message'))
+      const text = await events.readUntil(received => received.includes('second channel message'))
       events.abort()
 
       expect(text).not.toContain('first channel message')
@@ -277,7 +277,7 @@ describe('event streams', () => {
 
       const events = await openEvents(url)
 
-      expect(await events.readUntil(t => t.includes('event: ping\n'))).toContain('event: ping\ndata: 1\n\n')
+      expect(await events.readUntil(received => received.includes('event: ping\n'))).toContain('event: ping\ndata: 1\n\n')
     })
 
     it('should ping every stream from one timer when several are open', async () => {
@@ -286,8 +286,8 @@ describe('event streams', () => {
 
       const first = await openEvents(url)
       const second = await openEvents(url)
-      await first.readUntil(t => t.includes('event: ping\n'))
-      await second.readUntil(t => t.includes('event: ping\n'))
+      await first.readUntil(received => received.includes('event: ping\n'))
+      await second.readUntil(received => received.includes('event: ping\n'))
       const created = timers.mock.calls.filter(([, ms]) => ms === 20).length
       timers.mockRestore()
 
@@ -309,8 +309,8 @@ describe('event streams', () => {
       events.abort()
       await waitFor(() => hub.subscriberCount() === 0)
 
-      expect(logs.find(l => l.event === 'client_connected')?.requestId).toBe(REQUEST_ID)
-      expect(logs.find(l => l.event === 'client_disconnected')?.requestId).toBe(REQUEST_ID)
+      expect(logs.find(entry => entry.event === 'client_connected')?.requestId).toBe(REQUEST_ID)
+      expect(logs.find(entry => entry.event === 'client_disconnected')?.requestId).toBe(REQUEST_ID)
     })
 
     it('should log it when the IP is past the cap', async () => {
@@ -321,7 +321,7 @@ describe('event streams', () => {
       const rejected = await openEvents(url, '/events', headers)
 
       expect(rejected.res.status).toBe(429)
-      expect(logs.find(l => l.event === 'client_rejected')?.requestId).toBe(REQUEST_ID)
+      expect(logs.find(entry => entry.event === 'client_rejected')?.requestId).toBe(REQUEST_ID)
     })
   })
 
@@ -418,11 +418,11 @@ describe('event streams', () => {
       for (let i = 0; i < 1000 && hub.subscriberCount() === 2; i++) {
         last = `13020000000${String(1000000 + i)}0`
         hub.publish(makeMsg(last, body))
-        await reader.readUntil(t => t.includes(`id: ${last}`))
+        await reader.readUntil(received => received.includes(`id: ${last}`))
       }
 
       expect(hub.subscriberCount()).toBe(1)
-      expect(logs.find(l => l.event === 'client_dropped')?.requestId).toBe('stalled-request')
+      expect(logs.find(entry => entry.event === 'client_dropped')?.requestId).toBe('stalled-request')
       const again = await openEvents(url, '/events', { 'X-Real-IP': '203.0.113.7' })
       expect(again.res.status).toBe(200)
     }, 20_000)
@@ -434,10 +434,10 @@ describe('event streams', () => {
       const { url } = start(hub)
 
       const events = await openEvents(url)
-      await events.readUntil(t => t.includes('id: 1302000000000000005'))
+      await events.readUntil(received => received.includes('id: 1302000000000000005'))
       hub.publish(makeMsg('1302000000000000006', 'after the replay'))
 
-      await events.readUntil(t => t.includes('after the replay'))
+      await events.readUntil(received => received.includes('after the replay'))
       expect(hub.subscriberCount()).toBe(1)
     })
   })

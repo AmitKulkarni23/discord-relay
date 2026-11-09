@@ -21,8 +21,8 @@ const beat = keyframes`
 `
 
 /** `# name`, or the bare ID while the bot has not loaded the channel yet. */
-function channelLabel(c: ChannelInfo): string {
-  return `# ${c.name ?? c.id}`
+function channelLabel(channel: ChannelInfo): string {
+  return `# ${channel.name ?? channel.id}`
 }
 
 const STATUS_DOT: Record<Status, string> = {
@@ -136,7 +136,7 @@ type TopBarProps = { channels: ChannelInfo[]; activeId: string | null; onSelect:
 
 /** Sticky top bar: product name, the channel (tabs when there are several), `children` for the status, theme. */
 export function TopBar({ channels, activeId, onSelect, children }: TopBarProps): ReactElement {
-  const active = channels.find(c => c.id === activeId)
+  const active = channels.find(channel => channel.id === activeId)
   return (
     <AppBar position="sticky" elevation={0} sx={{ bgcolor: 'background.default', borderBottom: 1, borderColor: 'divider', backgroundImage: 'none' }}>
       <Toolbar sx={{ minHeight: { xs: BAR_HEIGHT }, px: { xs: 2, sm: 3 }, gap: 1.5 }}>
@@ -157,8 +157,8 @@ export function TopBar({ channels, activeId, onSelect, children }: TopBarProps):
             aria-label="Channels"
             sx={{ minHeight: BAR_HEIGHT, flex: 1, minWidth: 0, '& .MuiTabs-indicator': { height: 2 } }}
           >
-            {channels.map(c => (
-              <Tab key={c.id} value={c.id} label={channelLabel(c)} disableRipple sx={TAB_SX} />
+            {channels.map(channel => (
+              <Tab key={channel.id} value={channel.id} label={channelLabel(channel)} disableRipple sx={TAB_SX} />
             ))}
           </Tabs>
         ) : active ? (

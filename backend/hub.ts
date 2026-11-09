@@ -2,7 +2,7 @@ import { compareIds, type Msg } from './types.ts'
 import { errorMessage, log } from './log.ts'
 
 /** Receives each new message for the channel it subscribed to. */
-export type Subscriber = (m: Msg) => void
+export type Subscriber = (msg: Msg) => void
 
 /** Told the ID of each message deleted from the channel it subscribed to. */
 export type RemoveSubscriber = (id: string) => void
@@ -13,7 +13,7 @@ type Subscription = { onMessage: Subscriber; onRemove: RemoveSubscriber }
 /** Deleted IDs remembered per channel, as many as a browser can hold. */
 const MAX_REMOVED = 500
 
-type Channel = {
+type ChannelState = {
   buffer: Msg[]
   subscribers: Set<Subscription>
   /** Recently deleted IDs, oldest first: replayed to reconnecting browsers, and never published again. */
@@ -44,22 +44,22 @@ export type Hub = {
  * browser stream calls `subscribe`. Create one per process, and a fresh one per test.
  */
 export function createHub(capacity = 100): Hub {
-  const channels = new Map<string, Channel>()
+  const channels = new Map<string, ChannelState>()
   let published = 0
 
   /** Returns the channel's state, creating it on first use. */
-  function channel(channelId: string): Channel {
-    let c = channels.get(channelId)
-    if (!c) {
-      c = { buffer: [], subscribers: new Set(), removed: new Set() }
-      channels.set(channelId, c)
+  function getChannelState(channelId: string): ChannelState {
+    let channel = channels.get(channelId)
+    if (!channel) {
+      channel = { buffer: [], subscribers: new Set(), removed: new Set() }
+      channels.set(channelId, channel)
     }
-    return c
+    return channel
   }
 
   /** Calls every subscriber; one that throws does not affect the others. */
-  function notify(c: Channel, channelId: string, call: (subscriber: Subscription) => void): void {
-    for (const subscriber of c.subscribers) {
+  function notify(channel: ChannelState, channelId: string, call: (subscriber: Subscription) => void): void {
+    for (const subscriber of channel.subscribers) {
       try {
         call(subscriber)
       } catch (err) {
@@ -76,25 +76,25 @@ export function createHub(capacity = 100): Hub {
      * fetch that started earlier can still return. Eviction always removes the oldest ID.
      */
     publish(msg) {
-      const c = channel(msg.channelId)
-      if (c.removed.has(msg.id)) return
+      const channel = getChannelState(msg.channelId)
+      if (channel.removed.has(msg.id)) return
       // Walk back from the newest: a live message stops at the first comparison.
-      let at = c.buffer.length
+      let at = channel.buffer.length
       for (; at > 0; at--) {
-        const held = c.buffer[at - 1]
+        const held = channel.buffer[at - 1]
         if (!held) break
         const order = compareIds(held.id, msg.id)
         if (order === 0) return
         if (order < 0) break
       }
-      if (at === 0 && c.buffer.length >= capacity) return
+      if (at === 0 && channel.buffer.length >= capacity) return
 
-      c.buffer.splice(at, 0, msg)
+      channel.buffer.splice(at, 0, msg)
       // shift() is O(n), fine at the 500 maximum; use a circular array if capacity grows to thousands
-      if (c.buffer.length > capacity) c.buffer.shift()
+      if (channel.buffer.length > capacity) channel.buffer.shift()
       published++
 
-      notify(c, msg.channelId, s => s.onMessage(msg))
+      notify(channel, msg.channelId, subscriber => subscriber.onMessage(msg))
     },
 
     /**
@@ -102,16 +102,16 @@ export function createHub(capacity = 100): Hub {
      * even if it has left the buffer, because an open page holds more than the server does.
      */
     remove(channelId, id) {
-      const c = channel(channelId)
-      if (c.removed.has(id)) return
-      c.removed.add(id)
-      for (const oldest of c.removed) {
-        if (c.removed.size <= MAX_REMOVED) break
-        c.removed.delete(oldest)
+      const channel = getChannelState(channelId)
+      if (channel.removed.has(id)) return
+      channel.removed.add(id)
+      for (const oldest of channel.removed) {
+        if (channel.removed.size <= MAX_REMOVED) break
+        channel.removed.delete(oldest)
       }
-      const at = c.buffer.findIndex(m => m.id === id)
-      if (at !== -1) c.buffer.splice(at, 1)
-      notify(c, channelId, s => s.onRemove(id))
+      const at = channel.buffer.findIndex(held => held.id === id)
+      if (at !== -1) channel.buffer.splice(at, 1)
+      notify(channel, channelId, subscriber => subscriber.onRemove(id))
     },
 
     removed(channelId) {
@@ -121,10 +121,10 @@ export function createHub(capacity = 100): Hub {
     subscribe(channelId, fn, onRemove = () => {}) {
       // A new object each time, so the same function can subscribe twice and still be removed one at a time.
       const entry = { onMessage: fn, onRemove }
-      const c = channel(channelId)
-      c.subscribers.add(entry)
+      const channel = getChannelState(channelId)
+      channel.subscribers.add(entry)
       return () => {
-        c.subscribers.delete(entry)
+        channel.subscribers.delete(entry)
       }
     },
 
@@ -133,9 +133,9 @@ export function createHub(capacity = 100): Hub {
     },
 
     subscriberCount() {
-      let n = 0
-      for (const c of channels.values()) n += c.subscribers.size
-      return n
+      let total = 0
+      for (const channel of channels.values()) total += channel.subscribers.size
+      return total
     },
 
     publishedTotal() {

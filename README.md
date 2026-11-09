@@ -179,28 +179,28 @@ Each section follows one hop of a message's path and lists what can go wrong the
 
 - **Failure**: The bot's connection to Discord drops for a moment, for example when Discord restarts a server or the network blips.
 - **User Sees**: Nothing, or a short pause in new messages.
-- **Detection**: `gateway_disconnected` and `gateway_reconnecting` logs.
+- **Detection**: The server logs each disconnect and reconnect.
 - **Handling**: discord.js reconnects on its own. If Discord lets it resume the session, Discord replays the missed messages. If not, the bot reloads the latest messages from Discord, and the ones it already had are ignored.
 
 #### 2. The Gateway stays down (the watchdog)
 
 - **Failure**: The connection does not come back, while the server itself keeps running. discord.js can get stuck retrying.
 - **User Sees**: An amber "Waiting for Discord" chip and no new messages. Messages already on the page stay.
-- **Detection**: `/health` returns 503, the `watchdog_expired` log, and the Grafana "Discord Gateway down" alarm after 2 minutes.
+- **Detection**: The health check starts failing, the server logs that the watchdog stepped in, and Grafana's "Discord Gateway down" alarm goes off after 2 minutes.
 - **Handling**: The watchdog notices the connection has been down for 5 minutes, throws away the stuck Discord client and builds a fresh one, and repeats every 5 minutes until one connects. The buffer is kept, so the page keeps its messages.
 
 #### 3. The bot token is invalid or revoked
 
 - **Failure**: Discord rejects the bot's token, for example because it was reset in the Discord developer portal.
 - **User Sees**: A red "Relay down" chip and "The relay cannot sign in to Discord. The project maintainer has been notified."
-- **Detection**: The `discord_login_failed` error log, `/health` returns 503, and the Grafana "Discord Gateway down" alarm posts to the maintainer's Discord channel within 2 minutes.
+- **Detection**: The server logs that Discord refused the login, the health check starts failing, and within 2 minutes Grafana's "Discord Gateway down" alarm posts to the maintainer's Discord channel.
 - **Handling**: The server stays up instead of crashing and restarting, and tells every open page. A new deploy with a bad token fails Railway's healthcheck, so the previous deploy keeps serving. The fix is to set a valid `DISCORD_TOKEN`, which redeploys.
 
 #### 4. A channel's history cannot be loaded
 
 - **Failure**: At startup the bot loads each channel's recent messages from Discord. This fails if Discord is down, rate-limits the bot, or the bot lacks permission to read the channel.
 - **User Sees**: An empty or partial page and a "Channel unavailable" chip.
-- **Detection**: The `history_failed` log, and the channel listed under `unavailableChannels` in `/health`.
+- **Detection**: The server logs the failure, and the health check lists the channel as unavailable.
 - **Handling**: The bot retries that channel, waiting longer each time (5 s, doubling up to 5 minutes), until it loads.
 
 ### Bot to hub (inside the server)
@@ -213,7 +213,7 @@ The bot and the hub run in the same server, so this hop is a function call, not 
 
 - **Failure**: An unusual Discord message makes the conversion into the app's message format fail.
 - **User Sees**: That one message is missing.
-- **Detection**: The `message_skipped` error log.
+- **Detection**: The server logs an error for each skipped message.
 - **Handling**: The bot skips that message and keeps relaying. Without this, one bad message would crash the server.
 
 #### 6. The same message arrives twice
@@ -227,7 +227,7 @@ The bot and the hub run in the same server, so this hop is a function call, not 
 
 - **Failure**: The hub hands each new message to every open page in turn, and an error happens while sending to one of them.
 - **User Sees**: Nothing on the other pages.
-- **Detection**: The `subscriber_failed` log.
+- **Detection**: The server logs the failed send.
 - **Handling**: Each page is handled separately, so one failure does not stop the message reaching the others.
 
 ### Hub to browser (through Railway's edge)
@@ -238,7 +238,7 @@ The bot and the hub run in the same server, so this hop is a function call, not 
 
 - **Failure**: Railway's proxy ends any request after 15 minutes, and a page's stream is one long request.
 - **User Sees**: A brief "Reconnecting…".
-- **Detection**: The page's `EventSource` reports an error.
+- **Detection**: The page notices its stream has closed.
 - **Handling**: The page reconnects after a short random delay and sends the newest message ID it holds, so the server sends only what it missed.
 
 #### 9. Railway closes a connection that has been silent for 5 minutes
@@ -252,35 +252,35 @@ The bot and the hub run in the same server, so this hop is a function call, not 
 
 - **Failure**: The connection dies on the viewer's side.
 - **User Sees**: "Reconnecting…", then the missed messages appear.
-- **Detection**: The page's error event, or 60 s without a ping.
+- **Detection**: The page notices its stream has closed, or that no ping has arrived for 60 s.
 - **Handling**: The page retries with a growing wait (up to 1 s at first, doubling to 30 s) and asks only for messages newer than the ones it holds. Messages older than the server's buffer are skipped.
 
 #### 11. A viewer cannot keep up
 
 - **Failure**: A viewer on a slow connection reads more slowly than messages arrive, so unsent messages pile up in server memory.
 - **User Sees**: That page reconnects and catches up.
-- **Detection**: The `client_dropped` warn log and the Grafana "Drop spike" alarm.
+- **Detection**: The server logs a warning for each dropped viewer, and Grafana's "Drop spike" alarm goes off if more than 1% are dropped in 5 minutes.
 - **Handling**: Once 1 MiB is waiting for one viewer, the server drops that stream, so one slow viewer cannot grow server memory.
 
 #### 12. One machine opens many streams
 
 - **Failure**: One IP address opens many streams, by accident (many tabs) or on purpose.
 - **User Sees**: "Connection limit" on that machine.
-- **Detection**: HTTP 429 in Railway's logs and `relay_rejected_total` in Grafana.
+- **Detection**: Railway's logs show the refused requests (HTTP 429), and Grafana counts them.
 - **Handling**: At most 20 streams per IP. The 21st gets 429 with a `Retry-After` header and the page waits that long. Many IPs (a botnet, an IPv6 range) get past it.
 
 #### 13. More viewers than Railway's edge allows
 
 - **Failure**: More than 10,000 in-flight requests per edge node (see [Known Problem 3](#3-railways-edge-caps-the-number-of-viewers)).
 - **User Sees**: New visitors cannot load the page (502 `too many upstream connections for host`).
-- **Detection**: Railway's HTTP logs and the Grafana "Near the edge cap" alarm at 8,000 streams.
+- **Detection**: Railway's logs show the refused requests, and Grafana's "Near the edge cap" alarm goes off at 8,000 open streams.
 - **Handling**: Nothing yet. Replicas do not raise this limit.
 
 #### 14. Viewers vanish without closing the connection
 
 - **Failure**: A phone loses signal without closing its stream, so the server still counts it as connected.
 - **User Sees**: Nothing, but the stream holds server memory.
-- **Detection**: The viewer count in `/health` and Grafana stays high.
+- **Detection**: The viewer count in the health check and in Grafana stays higher than it should.
 - **Handling**: The stream is freed when a write to it fails.
 
 #### 15. A message carries a malicious attachment link
@@ -298,28 +298,28 @@ Failures of the server program itself (the running copy of the app, also called 
 
 - **Failure**: An unexpected error stops the server.
 - **User Sees**: "Reconnecting…" for a few seconds.
-- **Detection**: The `unhandled_error` log, and the Grafana "App down" alarm if it stays down for 3 minutes.
+- **Detection**: The server logs the error, and Grafana's "App down" alarm goes off if it stays down for 3 minutes.
 - **Handling**: Railway restarts it, the bot reloads recent history from Discord, and every page reconnects on its own.
 
 #### 17. An environment variable is missing or invalid
 
 - **Failure**: A required setting such as `CHANNEL_ID` is missing or malformed.
 - **User Sees**: Nothing; the new deploy never goes live and the previous one keeps serving.
-- **Detection**: The `config_invalid` log, naming the variable.
+- **Detection**: The server logs which variable is missing or wrong.
 - **Handling**: The server exits at startup instead of running half-configured.
 
 #### 18. A deploy drops every viewer at once
 
 - **Failure**: A deploy replaces the running server, which ends every open stream.
 - **User Sees**: Up to about 1 s of "Reconnecting…".
-- **Detection**: The viewer count in `/health` and Grafana.
+- **Detection**: Railway shows the deploy, and the viewer count in Grafana shows pages reconnecting.
 - **Handling**: Railway runs the old and new server side by side for 30 s, then sends the old one SIGTERM. The old server closes its streams cleanly, and each page reconnects after its own random delay, so they do not all arrive at once.
 
 #### 19. Railway health-checks only at deploy time
 
 - **Failure**: Railway checks `/health` when a deploy starts, but not afterwards, so a server that breaks later stays live.
 - **User Sees**: Depends on what broke.
-- **Detection**: The Grafana alarms: "App down", "Discord Gateway down" and "HTTP 500 errors".
+- **Detection**: Grafana's "App down", "Discord Gateway down" and "HTTP 500 errors" alarms.
 - **Handling**: The watchdog fixes the one known way the server stalls (a stuck Gateway connection).
 
 
@@ -376,7 +376,7 @@ Each step got one of three results:
 
 **Usable Max** is the most viewers that passed 3 times out of 3. **Hard Max** is the most viewers before a step broke. A separate test went through the public URL to find the limit of Railway's edge.
 
-The numbers are in [Appendix G: Load test results](#g-load-test-results).
+The numbers are in [Appendix F: Load test results](#f-load-test-results).
 
 
 ## Observability
@@ -494,13 +494,7 @@ data: 1
 | No moderation filter | Discord AutoMod comes first |
 | Extensibility through `channelId` | Redis can replace the hub behind the same two functions |
 
-### F. Repo references
-
-- `docs/system-specs/architecture.md`, `decisions.md`, `failure-modes.md`, `message-shape.md`
-- `docs/load_test_plan.md`, `docs/load_test_results.md`, `docs/load_test_results_Nov_04.md`
-- `load-tests/` (harness), `.railway/railway.ts` (IaC), `.railway/flags.sh` (flags)
-
-### G. Load test results
+### F. Load test results
 
 **Summary (Nov 4, private network)**
 

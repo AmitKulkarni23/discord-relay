@@ -1,6 +1,6 @@
 import { useMemo, type ReactElement } from 'react'
 import Box from '@mui/material/Box'
-import { compareIds, type Msg } from '../../backend/types.ts'
+import { compareIds, type Msg } from '../../backend/core/types.ts'
 import { useStickToBottom } from '../hooks/use-stick-to-bottom.ts'
 import { buildRows } from '../lib/messages.ts'
 import type { Status } from '../lib/stream.ts'

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { compareIds } from '../types.ts'
+import { compareIds } from '../../core/types.ts'
 
 describe('compareIds', () => {
   describe('when snowflakes have different lengths', () => {

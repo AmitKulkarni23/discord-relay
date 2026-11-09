@@ -5,7 +5,7 @@
  *
  *   PORT=4100 bun load-tests/generator.ts
  */
-import type { Msg } from '../backend/types.ts'
+import type { Msg } from '../backend/core/types.ts'
 import { loadContent, makeLoadMsg } from './producer.ts'
 
 const bufferSize = Number(process.env.BUFFER_SIZE ?? 100)

@@ -52,7 +52,7 @@ The `data:` line is one JSON object, shown formatted:
 | `attachments[].width` | number \| null | Pixel width for images and videos, `null` for other files. The page uses it with `height` to reserve space before the media loads. | `attachment.width` |
 | `attachments[].height` | number \| null | Pixel height, same rules as `width`. | `attachment.height` |
 
-The conversion lives in `toMsg` in the Discord source. The TypeScript type is `Msg` in `backend/types.ts`.
+The conversion lives in `toMsg` in the Discord source. The TypeScript type is `Msg` in `backend/core/types.ts`.
 
 ## Notes on the values
 

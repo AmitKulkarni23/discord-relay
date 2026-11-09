@@ -22,7 +22,7 @@ code{font:11.5px ui-monospace,Menlo,monospace;background:rgba(127,127,127,.15);p
 <div class="n our"><b><span class="num">3</span>Hub</b><small>hub.ts</small></div>
 <div class="d">Drops it if the ID is already buffered, else inserts it in ID order. Once the buffer is full (its size is set by <code>BUFFER_SIZE</code>), the oldest message is dropped. Calls every subscriber of that <code>channelId</code>.</div>
 <div class="v"><span class="ln"></span></div><div class="t"><span class="chip">subscriber callback · one per open tab</span></div>
-<div class="n our"><b><span class="num">4</span>SSE stream</b><small>events.ts · GET /events</small></div>
+<div class="n our"><b><span class="num">4</span>SSE stream</b><small>sse.ts · GET /events</small></div>
 <div class="d">Writes <code>id: &lt;snowflake&gt;</code> + <code>data: &lt;message JSON&gt;</code>. A client more than 1 MiB behind is dropped so it can't grow server memory.</div>
 <div class="v"><span class="ln"></span></div><div class="t"><span class="chip">bytes on the open HTTP response</span></div>
 <div class="n inf"><b><span class="num">5</span>Railway edge</b><small>public proxy</small></div>

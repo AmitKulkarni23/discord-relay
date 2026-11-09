@@ -1,6 +1,6 @@
 import { describe, expect, it, mock } from 'bun:test'
-import { createHub } from '../hub.ts'
-import type { Msg } from '../types.ts'
+import { createHub } from '../../core/hub.ts'
+import type { Msg } from '../../core/types.ts'
 
 const GENERAL = '1301000000000000001'
 const RANDOM = '1301000000000000002'

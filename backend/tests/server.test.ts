@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test'
-import type { Flags } from '../flags.ts'
-import { createHub } from '../hub.ts'
+import type { Flags } from '../platform/flags.ts'
+import { createHub } from '../core/hub.ts'
 import { startServer } from '../server.ts'
 import { CHANNEL, CHANNEL_2, captureLogs, makeMsg, openEvents, start, waitFor } from './helpers.ts'
 

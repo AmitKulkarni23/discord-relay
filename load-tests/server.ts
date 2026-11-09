@@ -2,8 +2,8 @@
  * The real hub and HTTP server with a simulated producer instead of Discord, plus a control port
  * (PORT + 1) for the load runner: GET /stats, GET /clock, POST /rate?perSec=n, POST /publish.
  */
-import { DEFAULT_FLAGS } from '../backend/flags.ts'
-import { createHub } from '../backend/hub.ts'
+import { DEFAULT_FLAGS } from '../backend/platform/flags.ts'
+import { createHub } from '../backend/core/hub.ts'
 import { startServer } from '../backend/server.ts'
 import { startLoadControl } from './producer.ts'
 

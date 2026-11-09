@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, spyOn } from 'bun:test'
 import { flags } from 'railway'
-import { DEFAULT_FLAGS, startFlags } from '../flags.ts'
+import { DEFAULT_FLAGS, startFlags } from '../../platform/flags.ts'
 
 describe('startFlags', () => {
   describe('when there is no Railway token', () => {

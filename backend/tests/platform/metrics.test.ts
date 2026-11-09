@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, mock, spyOn } from 'bun:test'
-import { createHub } from '../hub.ts'
-import { log } from '../log.ts'
-import { formatMetrics, pushMetrics, readSnapshot, type Snapshot } from '../metrics.ts'
+import { createHub } from '../../core/hub.ts'
+import { log } from '../../platform/log.ts'
+import { formatMetrics, pushMetrics, readSnapshot, type Snapshot } from '../../platform/metrics.ts'
 
 const out = spyOn(console, 'log').mockImplementation(() => {})
 afterEach(() => out.mockClear())

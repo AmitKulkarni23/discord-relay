@@ -21,11 +21,11 @@ flowchart LR
 | Component | File | Responsibility |
 |---|---|---|
 | Discord bot | `backend/sources/discord.ts`, `discord-message.ts`, `watchdog.ts` | Connects to the Gateway, fetches history at startup, converts discord.js messages to `Msg`, and calls `publish`. It is the only file that imports discord.js. |
-| Hub | `backend/hub.ts` | Holds a ring buffer of `BUFFER_SIZE` messages per channel, dedupes by message ID, and handles publish/subscribe. Everything is keyed by `channelId`. Created with `createHub()`, so each test gets a fresh instance. |
-| Config | `backend/config.ts` | Reads and validates env vars once at startup (`loadConfig`); exits naming the variable when one is missing or invalid. |
-| Flags | `backend/flags.ts` | Reads Railway Feature Flags through the `railway` SDK; every flag falls back to off. |
-| HTTP server | `backend/server.ts`, `backend/events.ts` | The entry point. Runs `Bun.serve` for the page, `/events`, `/health` and `/config`, and handles SIGTERM. It is the only place dependencies are wired: it creates the hub and passes it, the config and the publish function to the bot and the routes. |
-| Types | `backend/types.ts` | `Msg` and `Attachment`, shared with the frontend. |
+| Hub | `backend/core/hub.ts` | Holds a ring buffer of `BUFFER_SIZE` messages per channel, dedupes by message ID, and handles publish/subscribe. Everything is keyed by `channelId`. Created with `createHub()`, so each test gets a fresh instance. |
+| Config | `backend/platform/config.ts` | Reads and validates env vars once at startup (`loadConfig`); exits naming the variable when one is missing or invalid. |
+| Flags | `backend/platform/flags.ts` | Reads Railway Feature Flags through the `railway` SDK; every flag falls back to off. |
+| HTTP server | `backend/server.ts`, `backend/http/sse.ts` | The entry point. Runs `Bun.serve` for the page, `/events`, `/health` and `/config`, and handles SIGTERM. It is the only place dependencies are wired: it creates the hub and passes it, the config and the publish function to the bot and the routes. |
+| Types | `backend/core/types.ts` | `Msg` and `Attachment`, shared with the frontend. |
 | Frontend | `frontend/` | React + MUI page, wired in `app.tsx`. `hooks/use-event-stream.ts` opens one `EventSource`, keeps up to 500 messages keyed by ID, and shows connection status. |
 
 ## Patterns
@@ -184,13 +184,13 @@ type Msg = {
 | `LOG_LEVEL` | no | `debug` logs each client connecting and disconnecting in production. Off by default, because a deploy reconnecting every client would exceed Railway's log limit. |
 | `PORT` | injected | Set by Railway. |
 | `RAILWAY_TOKEN` | no | Project token for reading feature flags. Without it every flag is off. |
-| `GRAFANA_METRICS_URL`, `GRAFANA_METRICS_USER`, `GRAFANA_METRICS_TOKEN` | no | Grafana Cloud push endpoint, instance ID and `metrics:write` token. With all three set, `backend/metrics.ts` pushes `relay_*` metrics every 60 s; with none, nothing is pushed; with only some, startup fails naming the missing one. |
+| `GRAFANA_METRICS_URL`, `GRAFANA_METRICS_USER`, `GRAFANA_METRICS_TOKEN` | no | Grafana Cloud push endpoint, instance ID and `metrics:write` token. With all three set, `backend/platform/metrics.ts` pushes `relay_*` metrics every 60 s; with none, nothing is pushed; with only some, startup fails naming the missing one. |
 
 The server reads these once at startup; changing one in Railway redeploys the service.
 
 Metrics are for the developer only: the app pushes one Influx line protocol line to Grafana Cloud every 60 s and serves no `/metrics` route. The series are `relay_gateway_connected`, `relay_sse_clients`, `relay_messages_total`, `relay_clients_dropped_total`, `relay_rejected_total` (429s), `relay_watchdog_restarts_total` and `relay_http_errors_total` (500s from a route that threw, logged as `request_failed`), tagged with `deployment` so two processes overlapping during a deploy never mix their totals. Drops, 429s, watchdog restarts and 500s are counted from their log events (`log.count`). A failed push logs `metrics_push_failed` and never affects the relay. The dashboard and alert rules live in `.grafana/apply.ts`; alerts go to a Discord contact point.
 
-Feature flags are Railway Feature Flags, not variables: `attachments`, `edits-deletes` and `debug-panel` (all bool, default off). `backend/flags.ts` reads them through the `railway` SDK, which polls Railway, and `/config` reads them on every request, so a change applies on the next page load without a redeploy.
+Feature flags are Railway Feature Flags, not variables: `attachments`, `edits-deletes` and `debug-panel` (all bool, default off). `backend/platform/flags.ts` reads them through the `railway` SDK, which polls Railway, and `/config` reads them on every request, so a change applies on the next page load without a redeploy.
 
 ## Limits
 

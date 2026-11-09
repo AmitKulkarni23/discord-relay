@@ -1,5 +1,5 @@
 import type { MetricsPush } from './config.ts'
-import type { Hub } from './hub.ts'
+import type { Hub } from '../core/hub.ts'
 import { errorMessage, log } from './log.ts'
 
 /** One reading of every metric. Totals count up from process start. */

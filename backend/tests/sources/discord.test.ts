@@ -3,7 +3,7 @@ import { Client, Events, Partials } from 'discord.js'
 import { collectHistory, startDiscord } from '../../sources/discord.ts'
 import type { MessageLike } from '../../sources/discord-message.ts'
 import { makeDiscordMessage } from './fixtures.ts'
-import type { Msg } from '../../types.ts'
+import type { Msg } from '../../core/types.ts'
 
 /**
  * A fake Discord history of `count` messages with increasing snowflake IDs.

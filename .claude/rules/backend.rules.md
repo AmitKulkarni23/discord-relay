@@ -7,7 +7,7 @@ paths:
 
 ## Boundaries
 
-- Only `backend/server.ts` MUST call `Bun.serve`, and only `backend/events.ts` MUST build SSE streams. Only `backend/sources/discord.ts` MUST import discord.js. Only `backend/flags.ts` MUST import the `railway` runtime SDK (`.railway/railway.ts` uses `railway/iac`).
+- Only `backend/server.ts` MUST call `Bun.serve`, and only `backend/http/sse.ts` MUST build SSE streams. Only `backend/sources/discord.ts` MUST import discord.js. Only `backend/platform/flags.ts` MUST import the `railway` runtime SDK (`.railway/railway.ts` uses `railway/iac`).
 - Feature flags MUST be read through the reader from `startFlags`, at request time, never cached at startup. A flag read MUST never throw or block startup; missing flags fall back to off.
 - Messages MUST flow through `hub.publish` / `hub.subscribe`. Sources and the HTTP server MUST NOT call each other directly.
 - Dependencies MUST be passed as function arguments and wired only in `server.ts`. Modules MUST NOT import another module's instance; the hub MUST be created with `createHub()`.
@@ -41,7 +41,7 @@ paths:
 
 ## Logging
 
-- Logs MUST go through `log.debug|info|warn|error(event, fields)` in `backend/log.ts`: one JSON object per line with `level` and `event` fields (e.g. `gateway_connected`, `client_connected`). Railway filters on `@level:` and `@event:`.
+- Logs MUST go through `log.debug|info|warn|error(event, fields)` in `backend/platform/log.ts`: one JSON object per line with `level` and `event` fields (e.g. `gateway_connected`, `client_connected`). Railway filters on `@level:` and `@event:`.
 - Levels: `error` for failures that need action (bad config, login failed, watchdog), `warn` for degraded but self-healing (Gateway down, missing content), `info` for lifecycle, `debug` for per-browser connects and disconnects.
 - `debug` lines MUST stay off in production unless `LOG_LEVEL=debug`, so nothing that needs noticing may log only at `debug`.
 - `client_*` events MUST include `requestId` from `X-Railway-Request-Id`, so they can be matched to Railway's network logs.

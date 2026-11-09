@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { compareIds, type Msg } from '../../backend/types.ts'
+import { compareIds, type Msg } from '../../backend/core/types.ts'
 import { addMsg, parseDeletedId, parseMsg, removeMsg, sortMsgs } from '../lib/messages.ts'
 import { eventsUrl, limitWaitMs, retryDelay, type Status } from '../lib/stream.ts'
 

@@ -1,12 +1,12 @@
 import index from '../frontend/index.html'
-import { loadConfig, type Config } from './config.ts'
-import { createEventStreams, type EventStreamDeps } from './events.ts'
-import { DEFAULT_FLAGS, startFlags, type Flags } from './flags.ts'
-import { createHub } from './hub.ts'
-import { errorMessage, log } from './log.ts'
-import { startMetrics } from './metrics.ts'
+import { loadConfig, type Config } from './platform/config.ts'
+import { createEventStreams, type EventStreamDeps } from './http/sse.ts'
+import { DEFAULT_FLAGS, startFlags, type Flags } from './platform/flags.ts'
+import { createHub } from './core/hub.ts'
+import { errorMessage, log } from './platform/log.ts'
+import { startMetrics } from './platform/metrics.ts'
 import { startDiscord } from './sources/discord.ts'
-import type { ChannelInfo } from './types.ts'
+import type { ChannelInfo } from './core/types.ts'
 
 /** What `startServer` needs; passed in so tests can supply their own. */
 export type ServerDeps = EventStreamDeps & {

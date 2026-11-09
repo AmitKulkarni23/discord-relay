@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test'
-import { errorMessage, log } from '../log.ts'
+import { errorMessage, log } from '../../platform/log.ts'
 
 const out = spyOn(console, 'log').mockImplementation(() => {})
 // Before, not after: a previous test file's closing streams can still log once this spy is installed.

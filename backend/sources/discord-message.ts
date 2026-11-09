@@ -1,4 +1,4 @@
-import type { Msg } from '../types.ts'
+import type { Msg } from '../core/types.ts'
 
 type AttachmentsLike = {
   values(): Iterable<{ url: string; name: string; contentType: string | null; size: number; width: number | null; height: number | null }>

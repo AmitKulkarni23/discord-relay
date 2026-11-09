@@ -1,8 +1,8 @@
 import { describe, expect, it, spyOn } from 'bun:test'
 import net from 'node:net'
-import { createHub } from '../hub.ts'
-import { encodeEvent, formatEvent, MAX_CONNECTIONS_PER_IP } from '../events.ts'
-import { CHANNEL, CHANNEL_2, captureLogs, makeMsg, openEvents, start, stops, waitFor } from './helpers.ts'
+import { createHub } from '../../core/hub.ts'
+import { encodeEvent, formatEvent, MAX_CONNECTIONS_PER_IP } from '../../http/sse.ts'
+import { CHANNEL, CHANNEL_2, captureLogs, makeMsg, openEvents, start, stops, waitFor } from '../helpers.ts'
 
 describe('the delete event', () => {
   const OLD = '1302000000000000001'

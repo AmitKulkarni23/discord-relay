@@ -1,4 +1,4 @@
-import { compareIds, type Attachment, type Msg } from '../../backend/types.ts'
+import { compareIds, type Attachment, type Msg } from '../../backend/core/types.ts'
 
 /** The most messages the browser holds; the oldest are dropped past this. */
 export const MAX_MSGS = 500

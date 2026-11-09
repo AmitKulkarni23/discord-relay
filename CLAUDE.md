@@ -34,18 +34,21 @@ discord-relay/
 │   └── railway.ts         # Railway IaC (service, healthcheck, start command, non-secret vars)
 ├── backend/
 │   ├── server.ts          # entry point: wiring + Bun.serve (/, /events, /health, /config)
-│   ├── events.ts          # GET /events: SSE streams, limits and their timers
-│   ├── config.ts          # env vars: read and validated once at startup
-│   ├── flags.ts           # Railway Feature Flags reader (railway SDK)
-│   ├── metrics.ts         # pushes developer metrics to Grafana Cloud every 60 s (nothing served or shown)
-│   ├── log.ts             # structured JSON logs: log.debug/info/warn/error
-│   ├── hub.ts             # Observer: ring buffer + publish/subscribe, keyed by channelId
-│   ├── types.ts           # Msg type shared with the frontend
+│   ├── http/
+│   │   └── sse.ts         # GET /events: SSE streams, limits and their timers
+│   ├── core/
+│   │   ├── hub.ts         # Observer: ring buffer + publish/subscribe, keyed by channelId
+│   │   └── types.ts       # Msg type shared with the frontend
+│   ├── platform/
+│   │   ├── config.ts      # env vars: read and validated once at startup
+│   │   ├── flags.ts       # Railway Feature Flags reader (railway SDK)
+│   │   ├── log.ts         # structured JSON logs: log.debug/info/warn/error
+│   │   └── metrics.ts     # pushes developer metrics to Grafana Cloud every 60 s (nothing served or shown)
 │   ├── sources/
 │   │   ├── discord.ts     # discord.js client: connection, history and retries
 │   │   ├── discord-message.ts # discord.js message → Msg
 │   │   └── watchdog.ts    # notices a Gateway that stays down
-│   └── tests/             # mirrors backend/: tests/hub.test.ts, tests/sources/discord.test.ts
+│   └── tests/             # mirrors backend/: tests/core/hub.test.ts, tests/sources/discord.test.ts
 ├── frontend/
 │   ├── index.html
 │   ├── main.tsx           # entry point: root, StrictMode, theme provider
@@ -87,7 +90,7 @@ Coding rules live in `.claude/rules/` and load only when a matching file is touc
 
 ## Feature Flags
 
-Railway Feature Flags (Project Settings → Feature Flags), read at runtime by the `railway` SDK in `backend/flags.ts` and exposed to the browser via `GET /config`. Changing one applies within seconds, on the next page load, with no redeploy. Without `RAILWAY_TOKEN`, or before the first sync, every flag is off.
+Railway Feature Flags (Project Settings → Feature Flags), read at runtime by the `railway` SDK in `backend/platform/flags.ts` and exposed to the browser via `GET /config`. Changing one applies within seconds, on the next page load, with no redeploy. Without `RAILWAY_TOKEN`, or before the first sync, every flag is off.
 
 - `attachments` (bool): render images, video and file links (Discord CDN URLs only).
 - `edits-deletes` (bool): remove messages deleted in Discord from the page. Off means they stay until they leave the buffer or the server restarts. Live edits are planned here too, not built yet.

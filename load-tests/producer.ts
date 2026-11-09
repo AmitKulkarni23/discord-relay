@@ -2,8 +2,8 @@
  * Simulated message producer and resource stats for a load test. load-tests/server.ts uses it, and a
  * test of the live service wires it into a temporary, uncommitted deploy (see README, Load test).
  */
-import type { Hub } from '../backend/hub.ts'
-import type { Msg } from '../backend/types.ts'
+import type { Hub } from '../backend/core/hub.ts'
+import type { Msg } from '../backend/core/types.ts'
 
 /** Above any real snowflake, so simulated messages sort last. The last 10 digits are the sequence number. */
 const ID_BASE = 1_900_000_000n * 10_000_000_000n

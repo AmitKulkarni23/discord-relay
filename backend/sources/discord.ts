@@ -1,6 +1,6 @@
 import { Client, Events, GatewayIntentBits, Partials } from 'discord.js'
-import { errorMessage, log } from '../log.ts'
-import { compareIds, type ChannelInfo, type Msg } from '../types.ts'
+import { errorMessage, log } from '../platform/log.ts'
+import { compareIds, type ChannelInfo, type Msg } from '../core/types.ts'
 import { isMissingContent, toMsg, type MessageLike } from './discord-message.ts'
 import { createWatchdog } from './watchdog.ts'
 

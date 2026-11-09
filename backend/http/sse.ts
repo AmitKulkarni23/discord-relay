@@ -1,6 +1,6 @@
-import type { Hub } from './hub.ts'
-import { log } from './log.ts'
-import type { Msg } from './types.ts'
+import type { Hub } from '../core/hub.ts'
+import { log } from '../platform/log.ts'
+import type { Msg } from '../core/types.ts'
 
 /** What `createEventStreams` needs; passed in so tests can supply their own. */
 export type EventStreamDeps = {

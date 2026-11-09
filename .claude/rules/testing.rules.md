@@ -8,7 +8,7 @@ paths:
 ## Runner and location
 
 - Tests MUST use `bun:test`. Vitest and Jest MUST NOT be added.
-- Backend tests MUST live in `backend/tests/`, mirroring the source tree: `backend/hub.ts` is tested by `backend/tests/hub.test.ts`, and `backend/sources/discord.ts` by `backend/tests/sources/discord.test.ts`.
+- Backend tests MUST live in `backend/tests/`, mirroring the source tree: `backend/core/hub.ts` is tested by `backend/tests/core/hub.test.ts`, and `backend/sources/discord.ts` by `backend/tests/sources/discord.test.ts`.
 - Frontend tests MUST live in `frontend/tests/`, mirroring the source tree: `frontend/lib/markup.ts` is tested by `frontend/tests/lib/markup.test.ts`.
 - Component and hook tests MUST use React Testing Library with happy-dom, by calling `setupDom()` from `frontend/tests/dom.ts`. A preload MUST NOT be used, because it would replace `fetch` for the backend's tests.
 - Layout cannot be tested in happy-dom: tests MUST state heights explicitly, and real scrolling and clipping belong in a browser.

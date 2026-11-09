@@ -36,7 +36,7 @@ export default defineRailway(() => {
       CHANNEL_ID: preserve(),
       // Messages kept per channel and loaded at startup, 1 to 500 (TASK-007).
       BUFFER_SIZE: '100',
-      // Project token for reading Railway Feature Flags at runtime (backend/flags.ts). Sealed; set once in Railway.
+      // Project token for reading Railway Feature Flags at runtime (backend/platform/flags.ts). Sealed; set once in Railway.
       // The flags themselves (attachments, edits-deletes, debug-panel) live in Project Settings → Feature Flags.
       RAILWAY_TOKEN: preserve(),
       // Bun.serve bundles the page in development mode (no minify, hot reload) unless this is set.

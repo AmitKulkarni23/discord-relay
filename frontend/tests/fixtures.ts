@@ -1,4 +1,4 @@
-import type { Attachment, Msg } from '../../backend/types.ts'
+import type { Attachment, Msg } from '../../backend/core/types.ts'
 
 /** A realistic message; override what a test cares about. */
 export function makeMsg(overrides: Partial<Msg> = {}): Msg {

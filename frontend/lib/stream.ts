@@ -1,4 +1,4 @@
-import type { ChannelInfo } from '../../backend/types.ts'
+import type { ChannelInfo } from '../../backend/core/types.ts'
 import { isRecord } from './messages.ts'
 
 /** The browser's view of the /events stream and, once it is open, of the bot's Discord connection. */

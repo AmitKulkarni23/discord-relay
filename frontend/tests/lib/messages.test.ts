@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import type { Msg } from '../../../backend/types.ts'
+import type { Msg } from '../../../backend/core/types.ts'
 import { addMsg, buildRows, MAX_MSGS, parseDeletedId, parseMsg, removeMsg, sortMsgs } from '../../lib/messages.ts'
 
 const CHANNEL = '1566584977829900002'

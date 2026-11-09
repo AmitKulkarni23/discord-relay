@@ -1,5 +1,5 @@
 import { compareIds, type Msg } from './types.ts'
-import { errorMessage, log } from './log.ts'
+import { errorMessage, log } from '../platform/log.ts'
 
 /** Receives each new message for the channel it subscribed to. */
 export type Subscriber = (msg: Msg) => void

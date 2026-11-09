@@ -11,7 +11,7 @@ import Toolbar from '@mui/material/Toolbar'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import { keyframes, useColorScheme } from '@mui/material/styles'
-import type { ChannelInfo } from '../../backend/types.ts'
+import type { ChannelInfo } from '../../backend/core/types.ts'
 import { recoveredLabel, type Status } from '../lib/stream.ts'
 import { BAR_HEIGHT, COARSE, GROUND, NARROW, VISUALLY_HIDDEN } from '../theme.ts'
 

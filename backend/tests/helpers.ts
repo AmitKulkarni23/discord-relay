@@ -1,8 +1,8 @@
 import { afterEach, spyOn } from 'bun:test'
-import type { Flags } from '../flags.ts'
-import type { Hub } from '../hub.ts'
+import type { Flags } from '../platform/flags.ts'
+import type { Hub } from '../core/hub.ts'
 import { startServer } from '../server.ts'
-import type { Msg } from '../types.ts'
+import type { Msg } from '../core/types.ts'
 
 export const CHANNEL = '1301000000000000001'
 export const CHANNEL_2 = '1301000000000000002'

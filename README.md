@@ -364,16 +364,17 @@ Why it wasn't chosen:
 
 ## Load Testing
 
-The question was how many viewers one server can hold for one busy channel. Every message is written once per open stream, so the server's work is rate × viewers. Discord rate-limits posting, which keeps inbound volume low, so fan-out to viewers is the axis to test.
-
 ![Load test setup](docs/load-test-setup.png)
 
-- **Harness:** `load-tests/` in this repo. `run.ts` ramps consumer counts, `max.ts` narrows down to the limit and repeats it, `verdict.ts` judges each step, `agent.ts` coordinates several consumer machines and `railway-metrics.ts` adds Railway's CPU and memory figures.
-- **Setup:** the real `discord-relay` service, in a temporary build with one extra private port for the generator and stats. The consumers and the generator ran on Railway over the private network. The app was restarted, with a 2-minute wait, before each test.
-- **Fixed settings:** one channel, 456-byte messages, `BUFFER_SIZE` 100 and a 60 s hold per step.
-- **Verdicts:** PASS means every message reached every consumer, none were dropped, p99 was at most 1 s and the slowest delivery at most 5 s. SLOW means nothing was lost but p99 or the slowest delivery was over those limits. BROKEN means a message was lost or a consumer was dropped or refused. INVALID means the test rig itself was saturated, so the step needs re-running with more capacity.
-- **Usable Max** is the highest count that passes 3 runs out of 3. **Hard Max** is the highest count before BROKEN.
-- A separate run went through the public URL to find the limit of Railway's edge.
+A test copy of the app ran on Railway. A fake sender stood in for Discord and sent messages at a fixed rate. Fake viewers (the "consumers" in the results) stood in for browsers and checked that every message arrived and how long it took. Each test added viewers in steps and held each step for 60 seconds.
+
+Each step got one of three results:
+
+- **PASS**: every viewer got every message, 99% of them within 1 second and none later than 5 seconds.
+- **SLOW**: every message arrived, but some arrived later than that.
+- **BROKEN**: a message was lost or a viewer was cut off.
+
+**Usable Max** is the most viewers that passed 3 times out of 3. **Hard Max** is the most viewers before a step broke. A separate test went through the public URL to find the limit of Railway's edge.
 
 The numbers are in [Appendix G: Load test results](#g-load-test-results).
 

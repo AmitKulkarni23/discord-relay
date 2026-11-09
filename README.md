@@ -28,7 +28,7 @@ One Railway service, with one replica, runs three components in a single Bun pro
 - **HTTP Server**: serves the web page, streams messages to browsers over SSE
 
 
-![High-level design](docs/system-diagram.png)
+![High-level design](docs/images/system-diagram.png)
 
 ### HTTP API
 
@@ -44,7 +44,7 @@ One Railway service, with one replica, runs three components in a single Bun pro
 
 ### How one message flows from Discord to a browser
 
-![How one message flows from Discord to a browser](docs/message-flow.png)
+![How one message flows from Discord to a browser](docs/images/message-flow.png)
 
 1. **Discord to bot.** A user posts. Discord sends `messageCreate` over the Gateway WebSocket the bot holds open.
 2. **Normalize.** The bot converts the discord.js object to a plain object (`id`, `channelId`, `author`, `content`, `note`, `createdAt`, `editedAt`, `attachments`).
@@ -173,7 +173,7 @@ Each section follows one hop of a message's path and lists what can go wrong the
 
 ### Discord to bot (Gateway)
 
-![Discord to bot hop](docs/failure-flow-0.png)
+![Discord to bot hop](docs/images/failure-flow-0.png)
 
 #### 1. The Gateway connection drops briefly
 
@@ -205,7 +205,7 @@ Each section follows one hop of a message's path and lists what can go wrong the
 
 ### Bot to hub (inside the server)
 
-![Bot to hub hop](docs/failure-flow-1.png)
+![Bot to hub hop](docs/images/failure-flow-1.png)
 
 The bot and the hub run in the same server, so this hop is a function call, not a network connection. What can go wrong here is bad or repeated data.
 
@@ -232,7 +232,7 @@ The bot and the hub run in the same server, so this hop is a function call, not 
 
 ### Hub to browser (through Railway's edge)
 
-![Hub to browser hops](docs/failure-flow-2.png)
+![Hub to browser hops](docs/images/failure-flow-2.png)
 
 #### 8. Railway cuts every connection after 15 minutes
 
@@ -329,7 +329,7 @@ Both alternatives solve the same problem: running more than one web replica. In 
 
 ### A. Bot service, Redis Pub/Sub and web replicas
 
-![Alternative A: bot service, Redis Pub/Sub and web replicas](docs/alt-a-redis.png)
+![Alternative A: bot service, Redis Pub/Sub and web replicas](docs/images/alt-a-redis.png)
 
 One bot publishes each message to Redis. Every web replica subscribes and fans messages out to its own SSE clients.
 
@@ -342,7 +342,7 @@ Why it isn't built yet:
 
 ### B. Postgres for storage, Redis for fan-out
 
-![Alternative B: Postgres for storage, Redis for fan-out, web replicas](docs/alt-b-postgres-redis.png)
+![Alternative B: Postgres for storage, Redis for fan-out, web replicas](docs/images/alt-b-postgres-redis.png)
 
 The bot writes every message to Postgres and publishes it to Redis. Web replicas read history and `?since=` replays from Postgres, and live messages from Redis.
 
@@ -364,7 +364,7 @@ Why it wasn't chosen:
 
 ## Load Testing
 
-![Load test setup](docs/load-test-setup.png)
+![Load test setup](docs/images/load-test-setup.png)
 
 A test copy of the app ran on Railway. A fake sender stood in for Discord and sent messages at a fixed rate. Fake viewers (the "consumers" in the results) stood in for browsers and checked that every message arrived and how long it took. Each test added viewers in steps and held each step for 60 seconds.
 
@@ -401,7 +401,7 @@ Each line carries a `deployment` tag, so the old and new process keep separate t
 
 [One Grafana dashboard](https://earnestturkey2621.grafana.net/public-dashboards/43657ad697154903aa9ed639ef2eaaf1), public and read-only, with a panel per metric: Gateway status, viewers, messages per second, 500s, clients dropped, 429s and watchdog restarts.
 
-![Grafana dashboard](docs/grafana-dashboard.png)
+![Grafana dashboard](docs/images/grafana-dashboard.png)
 
 ### Alarms
 

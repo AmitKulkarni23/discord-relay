@@ -169,7 +169,7 @@ Failures of the server program itself (the running copy of the app, also called 
 - **Failure**: An unexpected error stops the server.
 - **User Sees**: "Reconnecting…" for a few seconds.
 - **Detection**: The server logs the error, and Grafana's "App down" alarm goes off if it stays down for 3 minutes.
-- **Handling**: Railway restarts it, the bot reloads recent history from Discord, and every web page reconnects on its own.
+- **Handling**: Railway restarts it, the bot reloads recent history from Discord, and every web page reconnects on its own. If every restart crashes again, Grafana's "App down" alarm posts to the maintainer's Discord channel once no metrics have arrived for 3 minutes. Railway stops after 10 restarts, so the maintainer rolls back to the previous deployment in Railway and reads `@event:unhandled_error` in the logs for the stack trace.
 
 #### 16. An environment variable is missing or invalid
 

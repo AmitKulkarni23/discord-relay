@@ -232,23 +232,23 @@ Failures of the server program itself (the running copy of the app, also called 
 #### 6. Bandwidth cost grows with message rate × viewers
 
 - **Problem**: Every message is sent to every viewer, and Railway bills outbound traffic.
-- **Impact**: 10,000 viewers at 5 msg/s is about 24 MB/s of billed traffic.
+- **Impact**: 10,000 viewers at 5 msg/s, with messages of about 470 bytes, is about 24 MB/s of billed traffic.
 - **Behavior Today**: Reconnecting web pages send `?since=`, so the buffer is not sent again on every reconnect.
-- **Long Term Fix**: Compress the stream, cap the message rate per channel, or move fan-out to a push service.
+- **Long Term Fix**: Compress the stream (gzip, flushed after each event) and trim fields the web page does not need.
 
 #### 7. Images load at full resolution
 
 - **Problem**: Attachments are loaded from Discord as the original file.
-- **Impact**: A 25 MB photo costs every viewer 25 MB, even though it is shown 400 px wide.
+- **Impact**: The server sends only the image's Discord CDN link, so this costs the server nothing. Each viewer's browser downloads the original from Discord: a 25 MB photo is a 25 MB download on a phone, even though it is shown 400 px wide.
 - **Behavior Today**: Attachments are behind the `attachments` flag.
 - **Long Term Fix**: Load a resized version from Discord's media proxy and link to the original.
 
 #### 8. Every channel adds to one process
 
 - **Problem**: The hub keeps a buffer per channel, and one bot loads every channel's history, one channel after another.
-- **Impact**: Costs grow with the number of channels. Memory is channels × `BUFFER_SIZE` messages (100 channels × 500 is 50,000 messages, tens of MB). Startup, and every fresh Gateway session, reloads up to 5 history pages per channel, so many channels mean a slow reload and Discord's rate limits. The web page shows one tab per channel, which stops working well past a handful.
+- **Impact**: Costs grow with the number of channels. Memory is channels × `BUFFER_SIZE` messages (100 channels × 500 is 50,000 messages, tens of MB). Startup, and every fresh Gateway session, reloads up to 5 history pages per channel, so many channels mean a slow reload and Discord's rate limits. The web page shows one tab per channel at the top, which becomes hard to use past a handful.
 - **Behavior Today**: Channels are a fixed list in `CHANNEL_ID`, meant for a few.
-- **Long Term Fix**: Load history for several channels at once within Discord's rate limits, lower `BUFFER_SIZE` as channels grow, and replace the tabs with a channel picker. Past that, split channels across services.
+- **Long Term Fix**: Load history for several channels at once within Discord's rate limits, lower `BUFFER_SIZE` as channels grow, and replace the tabs with a searchable dropdown. Past that, split channels across services.
 
 ### Correctness and data
 

@@ -470,6 +470,9 @@ data: 1
 | `BUFFER_SIZE` | no (100) | Messages kept per channel, 1 to 500 |
 | `LOG_LEVEL` | no | `debug` logs each client connecting, disconnecting or being turned away; not set in production |
 | `RAILWAY_TOKEN` | no | Reads the feature flags; without it every flag is off |
+| `GRAFANA_METRICS_URL` | no | Grafana Cloud's Influx push endpoint |
+| `GRAFANA_METRICS_USER` | no | The Grafana Prometheus instance ID |
+| `GRAFANA_METRICS_TOKEN` | no | A `metrics:write` token, as a sealed Railway variable. All three turn the metrics push on; setting only some stops startup |
 | `PORT` | injected | Set by Railway |
 
 ### D. Limits

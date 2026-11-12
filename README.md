@@ -84,9 +84,9 @@ Each section follows one hop of a message's path and lists what can go wrong the
 
 The bot and the hub run in the same server, so this hop is a function call, not a network connection. What can go wrong here is bad or repeated data.
 
-#### 5. A message cannot be converted
+#### 5. A Discord message cannot be turned into the app's message format
 
-- **Failure**: An unusual Discord message makes the conversion into the app's message format fail.
+- **Failure**: Before a message reaches the hub, the bot turns the discord.js message object into the app's own plain message (ID, author, text, attachments, timestamps; see [Appendix A](#a-message-shape)). An unusual Discord message can make that step throw.
 - **User Sees**: That one message is missing.
 - **Detection**: The server logs an error for each skipped message.
 - **Handling**: The bot skips that message and keeps relaying. Without this, one bad message would crash the server.
@@ -98,67 +98,60 @@ The bot and the hub run in the same server, so this hop is a function call, not 
 - **Detection**: None needed.
 - **Handling**: The hub keeps one copy per message ID, and so does the page.
 
-#### 7. Sending to one page fails
-
-- **Failure**: The hub hands each new message to every open page in turn, and an error happens while sending to one of them.
-- **User Sees**: Nothing on the other pages.
-- **Detection**: The server logs the failed send.
-- **Handling**: Each page is handled separately, so one failure does not stop the message reaching the others.
-
 ### Hub to browser (through Railway's edge)
 
 ![Hub to browser hops](docs/images/failure-flow-2.png)
 
-#### 8. Railway cuts every connection after 15 minutes
+#### 7. Railway cuts every connection after 15 minutes
 
 - **Failure**: Railway's proxy ends any request after 15 minutes, and a page's stream is one long request.
 - **User Sees**: A brief "Reconnecting…".
 - **Detection**: The page notices its stream has closed.
 - **Handling**: The page reconnects after a short random delay and sends the newest message ID it holds, so the server sends only what it missed.
 
-#### 9. Railway closes a connection that has been silent for 5 minutes
+#### 8. Railway closes a connection that has been silent for 5 minutes
 
 - **Failure**: A quiet channel can go many minutes without a message. Railway's proxy treats a connection with no traffic for 5 minutes as dead and closes it.
 - **User Sees**: Nothing.
 - **Detection**: None needed.
 - **Handling**: The server sends a tiny `ping` event every 25 s, so the connection is never silent. The page also uses the pings to notice a dead connection: after 60 s without one, it reconnects.
 
-#### 10. The browser loses its network or the laptop sleeps
+#### 9. The browser loses its network or the laptop sleeps
 
 - **Failure**: The connection dies on the viewer's side.
 - **User Sees**: "Reconnecting…", then the missed messages appear.
 - **Detection**: The page notices its stream has closed, or that no ping has arrived for 60 s.
 - **Handling**: The page retries with a growing wait (up to 1 s at first, doubling to 30 s) and asks only for messages newer than the ones it holds. Messages older than the server's buffer are skipped.
 
-#### 11. A viewer cannot keep up
+#### 10. A viewer cannot keep up
 
 - **Failure**: A viewer on a slow connection reads more slowly than messages arrive, so unsent messages pile up in server memory.
 - **User Sees**: That page reconnects and catches up.
 - **Detection**: The server logs a warning for each dropped viewer, and Grafana's "Drop spike" alarm goes off if more than 1% are dropped in 5 minutes.
 - **Handling**: Once 1 MiB is waiting for one viewer, the server drops that stream, so one slow viewer cannot grow server memory. [Appendix I](#i-from-stream-to-browser-queues-sockets-and-buffers) shows where those bytes wait.
 
-#### 12. One machine opens many streams
+#### 11. One machine opens many streams
 
 - **Failure**: One IP (Internet Protocol) address opens many streams, by accident (many tabs) or on purpose.
 - **User Sees**: "Connection limit" on that machine.
 - **Detection**: Railway's logs show the refused requests (HTTP 429), and Grafana counts them.
 - **Handling**: At most 20 streams per IP. The 21st gets 429 with a `Retry-After` header and the page waits that long. Many IPs (a botnet, an IPv6 range) get past it.
 
-#### 13. More viewers than Railway's edge allows
+#### 12. More viewers than Railway's edge allows
 
 - **Failure**: More than 10,000 in-flight requests per edge node (see [Known Problem 3](#3-railways-edge-caps-the-number-of-viewers)).
 - **User Sees**: New visitors cannot load the page (502 `too many upstream connections for host`).
 - **Detection**: Railway's logs show the refused requests, and Grafana's "Near the edge cap" alarm goes off at 8,000 open streams.
 - **Handling**: Nothing yet. Replicas do not raise this limit.
 
-#### 14. Viewers vanish without closing the connection
+#### 13. Viewers vanish without closing the connection
 
 - **Failure**: A phone loses signal without closing its stream, so the server still counts it as connected.
 - **User Sees**: Nothing, but the stream holds server memory.
 - **Detection**: The viewer count in Grafana stays higher than it should.
 - **Handling**: The stream is freed when a write to it fails.
 
-#### 15. A message carries a malicious attachment link
+#### 14. A message carries a malicious attachment link
 
 - **Failure**: A message includes an attachment URL (Uniform Resource Locator) that points somewhere other than Discord.
 - **User Sees**: Nothing.
@@ -169,28 +162,28 @@ The bot and the hub run in the same server, so this hop is a function call, not 
 
 Failures of the server program itself (the running copy of the app, also called the process) or of Railway deploying and running it.
 
-#### 16. The server crashes
+#### 15. The server crashes
 
 - **Failure**: An unexpected error stops the server.
 - **User Sees**: "Reconnecting…" for a few seconds.
 - **Detection**: The server logs the error, and Grafana's "App down" alarm goes off if it stays down for 3 minutes.
 - **Handling**: Railway restarts it, the bot reloads recent history from Discord, and every page reconnects on its own.
 
-#### 17. An environment variable is missing or invalid
+#### 16. An environment variable is missing or invalid
 
 - **Failure**: A required setting such as `CHANNEL_ID` is missing or malformed.
 - **User Sees**: Nothing; the new deploy never goes live and the previous one keeps serving.
 - **Detection**: The server logs which variable is missing or wrong.
 - **Handling**: The server exits at startup instead of running half-configured.
 
-#### 18. A deploy drops every viewer at once
+#### 17. A deploy drops every viewer at once
 
 - **Failure**: A deploy replaces the running server, which ends every open stream.
 - **User Sees**: Up to about 1 s of "Reconnecting…".
 - **Detection**: Railway shows the deploy, and the viewer count in Grafana shows pages reconnecting.
 - **Handling**: Railway runs the old and new server side by side for 30 s, then sends the old one SIGTERM (the signal asking a process to terminate). The old server closes its streams cleanly, and each page reconnects after its own random delay, so they do not all arrive at once.
 
-#### 19. Railway health-checks only at deploy time
+#### 18. Railway health-checks only at deploy time
 
 - **Failure**: Railway checks `/health` when a deploy starts, but not afterwards, so a server that breaks later stays live.
 - **User Sees**: Depends on what broke.

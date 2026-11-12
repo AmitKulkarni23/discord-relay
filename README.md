@@ -200,7 +200,7 @@ Failures of the server program itself (the running copy of the app, also called 
 #### 2. A deploy or crash causes a reconnect storm
 
 - **Problem**: When the server goes away, every open web page tries to reconnect within the same few seconds.
-- **Impact**: The new server gets a burst of connections at once. This was load tested over Railway's private network but never through the public edge.
+- **Impact**: The new server gets a burst of connections at once.
 - **Behavior Today**: Railway runs the old and new server side by side for 30 s during a deploy. Each web page waits a random delay before reconnecting (up to 1 s, doubling to 30 s on repeated failures), and sends the newest message ID it holds (`?since=`), so the server sends only what it missed instead of the whole buffer.
 - **Long Term Fix**: Close the old server's streams at random times across the draining window instead of all at once, and load test a reconnect storm through the public edge.
 
@@ -215,8 +215,8 @@ Failures of the server program itself (the running copy of the app, also called 
 
 #### 4. One CPU core does all the fan-out
 
-- **Problem**: Every message is written separately to every open web page, and Bun runs that work on a single thread, so one CPU (Central Processing Unit) core does it all.
-- **Impact**: The more messages per second, the fewer viewers one server can hold: 16,300 viewers at 10 msg/s, but only 2,000 at 200 msg/s. The two tend to rise together: a busy moment brings more posters and more viewers at once, so the load multiplies. 4,000 viewers at 200 msg/s froze the server for 33.6 s.
+- **Problem**: Every message is written separately to every open web page, and Bun runs that work on a single thread, so one CPU core does it all.
+- **Impact**: The more messages per second, the fewer viewers one server can hold. In service-to-service load tests over Railway's private network, which bypass the edge and its 10,000 cap, one server held 16,300 viewers at 10 msg/s, but only 2,000 at 200 msg/s. The two tend to rise together: a busy moment brings more posters and more viewers at once, so the load multiplies. 4,000 viewers at 200 msg/s froze the server for 33.6 s.
 - **Behavior Today**: Each message is turned into bytes once and the same bytes are reused for every viewer. A viewer more than 1 MiB behind is dropped, which protects memory but not CPU.
 - **Long Term Fix**:
   - **Batch writes**: today, 200 messages a second means 200 separate writes to each open web page. Instead, the server would collect the messages that arrive in a short window (for example 50 ms) and send them to each web page as one write. At 200 msg/s that is about 20 writes per web page per second instead of 200, in exchange for up to 50 ms of extra delay.

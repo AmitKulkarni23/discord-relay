@@ -305,12 +305,19 @@ Failures of the server program itself (the running copy of the app, also called 
 
 One bot publishes each message to Redis. Every web replica subscribes and fans messages out to its own SSE clients.
 
-Why it isn't built yet:
+Pros:
+
+- A crash drops only one replica's viewers, not everyone ([Known Problem 1](#1-one-replica-is-a-single-point-of-failure)).
+- Fan-out is spread across replicas and their CPU cores, so the message rate one server can handle stops being the ceiling ([Known Problem 4](#4-one-cpu-core-does-all-the-fan-out)).
+- There is one bot and one Gateway session however many replicas run.
+
+Cons:
 
 - More replicas would not let more people in. Railway's edge caps a domain at 10,000 in-flight requests per edge node, counted across all replicas, and each SSE stream is a long-lived request. The public load test hit that cap at about 15,000 clients, while one replica held 16,300 clients at 10 msg/s over the private network.
-- One replica covers the load we expect. It held 55,000 clients at 1 msg/s over the private network.
 - Redis adds a service, a bill, a network hop and a new way to fail: if Redis is down, no messages get through. Pub/Sub also drops messages for a subscriber that is disconnected, so the replicas would need their own reconnect and replay logic.
-- A crash already recovers in a few seconds, through restart on failure and a history refetch. At this size that is enough for the single point of failure.
+- One replica already covers the load we expect: it held 55,000 clients at 1 msg/s over the private network. A crash recovers in a few seconds, through restart on failure and a history refetch.
+
+When to switch: when the message rate makes one CPU core the bottleneck, or when a few seconds of full outage on a crash is no longer acceptable.
 
 ### B. Postgres for storage, Redis for fan-out
 
@@ -318,20 +325,28 @@ Why it isn't built yet:
 
 The bot writes every message to Postgres and publishes it to Redis. Web replicas read history and `?since=` replays from Postgres, and live messages from Redis.
 
-Why it wasn't chosen:
+Pros:
+
+- History survives restarts and is not limited to the buffer, so the web page could load older messages ([Appendix H](#h-loading-older-messages-not-built)) and offer search.
+- `?since=` replays and deletes survive a restart ([Known Problem 11](#11-a-message-deleted-while-the-server-restarts-stays-on-web-pages-that-were-already-open)).
+- It brings the replica benefits of Alternative A too.
+
+Cons:
 
 - Discord already stores every message. A second copy brings sync problems (edits, deletes, events missed during downtime) and does nothing for someone watching live.
 - Nothing in the product needs search or history beyond 500 messages yet.
 - It costs the most of the three options and takes the most work to run: two stateful services, migrations and backups.
 
+When to switch: when the product needs history or search, not just a live view.
+
 ### Other options
 
-| Option | Why not |
-| --- | --- |
-| A bot in every replica, no Redis | It works because the bot only reads, but each replica keeps its own buffer and its own Gateway session |
-| WebSockets instead of SSE | Two-way, which we don't need. They are exempt from the 15-minute cut, so they are worth another look for the edge cap |
-| Polling | • More lag<br>• Load even when the channel is quiet: 10,000 viewers polling every 2 s is 5,000 requests a second<br>• Every poll is a full HTTP request, which costs far more CPU than a write to an open stream<br>• Empty answers still send headers, and Railway bills that traffic |
-| A managed push service (Pusher, Ably) | The way past the edge cap, at the cost of a bill and a vendor |
+| Option | Good for | Why not |
+| --- | --- | --- |
+| A bot in every replica, no Redis | Replicas with no extra service, which works because the bot only reads | Each replica keeps its own buffer and its own Gateway session |
+| WebSockets instead of SSE | The edge cap: the edge does not count a WebSocket once it is established, and does not cut it at 15 minutes | Two-way, which we don't need, and the browser gets no built-in reconnect |
+| Polling | The simplest client and server, working through any proxy | • More lag<br>• Load even when the channel is quiet: 10,000 viewers polling every 2 s is 5,000 requests a second<br>• Every poll is a full HTTP request, which costs far more CPU than a write to an open stream<br>• Empty answers still send headers, and Railway bills that traffic |
+| A managed push service (Pusher, Ably) | The way past the edge cap, with no fan-out servers to run | A bill and a vendor |
 
 
 ## Load Testing

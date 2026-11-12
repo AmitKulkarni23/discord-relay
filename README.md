@@ -389,7 +389,7 @@ The numbers are in [Appendix F: Load test results](#f-load-test-results).
 
 ## Observability
 
-Railway's Hobby plan has no custom metrics, dashboards or alerts, so the app sends its own numbers to Grafana Cloud's free tier. Every 60 seconds it pushes one line of metrics over HTTPS (HTTP Secure, which is encrypted). Nothing new is served or shown on the web page, and a failed push is logged and does not affect the relay. CPU and memory stay in Railway's own metrics.
+Railway's Hobby plan has no custom metrics, dashboards or alerts, so the app sends its own numbers to Grafana Cloud's free tier. Every 60 seconds it pushes one line of metrics over HTTPS. Nothing new is served or shown on the web page, and a failed push is logged and does not affect the relay. CPU and memory stay in Railway's own metrics.
 
 ### Metrics
 
@@ -468,21 +468,21 @@ data: 1
 | `DISCORD_TOKEN` | yes | Bot token, as a sealed Railway variable |
 | `CHANNEL_ID` | yes | One or more channel IDs, comma-separated |
 | `BUFFER_SIZE` | no (100) | Messages kept per channel, 1 to 500 |
-| `LOG_LEVEL` | no | `debug` logs every client connect and disconnect |
+| `LOG_LEVEL` | no | `debug` logs each client connecting, disconnecting or being turned away; not set in production |
 | `RAILWAY_TOKEN` | no | Reads the feature flags; without it every flag is off |
 | `PORT` | injected | Set by Railway |
 
 ### D. Limits
 
-| Limit | Value |
-| --- | --- |
-| Server buffer per channel | `BUFFER_SIZE`, default 100, max 500 |
-| Browser message cap | 500 |
-| Open streams per IP | 20, then 429 |
-| Queued bytes per stream | 1 MiB, then dropped |
-| Reconnect delay | Random, up to 1 s, doubling to 30 s |
-| SSE heartbeat | 25 s |
-| Gateway watchdog | Every 5 min while disconnected |
+| Limit | Value | Why |
+| --- | --- | --- |
+| Server buffer per channel | `BUFFER_SIZE`, default 100, max 500 | Keeps memory bounded; 500 matches the browser cap |
+| Browser message cap | 500 | Keeps a tab that stays open for days fast |
+| Open streams per IP | 20, then 429 | Stops one machine from holding thousands of streams |
+| Queued bytes per stream | 1 MiB, then dropped | Stops a viewer that stopped reading from growing server memory |
+| Reconnect delay | Random, up to 1 s, doubling to 30 s | Spreads out browsers that were dropped at the same moment |
+| SSE heartbeat | 25 s | Railway closes requests that send nothing for 5 min |
+| Gateway watchdog | Every 5 min while disconnected | Healthchecks only run at deploy time, so nothing else would notice |
 
 ### E. Decision log
 
@@ -491,16 +491,12 @@ data: 1
 | SSE to the browser | One-way data, plain HTTP, built-in reconnect |
 | Bun | Server, bundler and tests built in |
 | One service for backend and frontend | One deploy, one domain, no CORS (Cross-Origin Resource Sharing) |
-| React + MUI (Material UI) | A fast, accessible UI (user interface) that escapes text |
 | No database | Discord already stores everything |
 | One replica | Covers the expected load; Alternative A is the next step |
 | Reconnect with `?since=` | Avoids resending about 58 KB per client every 15 min |
 | Railway Feature Flags | Changes without a redeploy |
-| Railway IaC (Infrastructure as Code) | `railway.json` is deprecated |
-| No staging | Tests cover the logic, and the team is small |
 | Gateway watchdog | Healthchecks only run at deploy time |
 | No moderation filter | Discord AutoMod comes first |
-| Extensibility through `channelId` | Redis can replace the hub behind the same two functions |
 
 ### F. Load test results
 
@@ -607,7 +603,7 @@ n is at most 500, so even O(n) is microseconds per message.
 
 **Why not a ring buffer.** A ring buffer (a fixed array with a moving start index) makes eviction O(1) instead of O(n). But the buffer must also stay in ID order when history and live messages arrive out of order, and inserting into the middle of a ring buffer is still O(n). At 500 entries the saving is too small to matter, and the plain array is easier to read and test.
 
-**When to change it.** A capacity in the thousands, or hundreds of messages per second in one channel, would make the O(n) steps show up in profiles. Then use a ring buffer for live appends and treat an out-of-order message as the rare case, or a sorted structure such as a B-tree. Past that, the buffer belongs in a database ([Alternative C](#c-postgres-for-storage-redis-for-fan-out)).
+**When to change it.** If the buffer grew to thousands of messages, or one channel got hundreds of messages per second, shifting and splicing the array on every message would start to cost real CPU. A ring buffer would then make the common case, a new message added at the end, O(1), and leave only the rare out-of-order message slow. Beyond that, keep messages in a database ([Alternative C](#c-postgres-for-storage-redis-for-fan-out)).
 
 ### H. Loading older messages (not built)
 
@@ -634,9 +630,9 @@ hub → [1] queue → [2] Bun → [3] TCP send ══▶ [4] edge ══▶ [5] 
        └─ the 1 MiB check measures only this
 ```
 
-1. The stream queue, in the server's JavaScript heap. It holds bytes `enqueue()` accepted that Bun has not sent yet. This is the only layer the server measures, and once it holds more than 1 MiB the next live write drops the client.
-2. Bun's socket buffer, in native memory. It holds bytes Bun took from the stream that the kernel could not accept yet. Bun stops reading from the stream while the socket is full, so this should stay small; we have not checked Bun's source to confirm it.
-3. The TCP send buffer, in the server's kernel. It holds bytes sent but not yet acknowledged. The other end of this connection is Railway's edge, so the edge's acknowledgements empty it, not the browser's. The OS (operating system) sizes it, usually somewhere from a few hundred KB to a few MB.
+1. The stream queue, in the server's JavaScript heap. It holds bytes `enqueue()` accepted that Bun has not sent yet.
+2. Bun's socket buffer, in native memory. It holds bytes Bun took from the stream that the kernel could not accept yet. Bun stops reading from the stream while the socket is full, so this should stay small.
+3. The TCP send buffer, in the server's kernel. It holds bytes sent but not yet acknowledged. The other end of this connection is Railway's edge, so the edge's acknowledgements empty it, not the browser's. The OS sizes it, usually somewhere from a few hundred KB to a few MB.
 4. Railway's edge, a proxy with buffers of its own. It keeps accepting bytes from the server until its buffers toward the browser fill. Railway does not document their size.
 5. The TCP receive buffer, on the viewer's machine. It holds bytes that arrived but the browser has not read yet. Over HTTP/2, one connection from the browser can carry the streams of several tabs.
 
@@ -650,8 +646,8 @@ The stream reports how much room its queue has left as `desiredSize`, which is 1
 
 Bytes leave each buffer as fast as the next one takes them, which has three consequences:
 
-- The queue only grows once buffers 2 to 5 are full, so a viewer is dropped later than "1 MiB behind" suggests.
-- A stalled viewer has more than 1 MiB waiting in total, because the kernel and edge buffers hold bytes too. Only the queue and Bun's buffer are in the server process's memory, and every layer has a fixed size, so the total is still bounded.
+- A slow viewer is dropped later than "1 MiB behind" suggests. The queue only starts filling once buffers 2 to 5 are full, so when the server drops a viewer, those buffers already hold more on top of the 1 MiB.
+- A slow viewer still costs the server a bounded amount of memory. Only buffers 1 and 2 are in the server process, and each has a size limit.
 - It probably explains why dead connections linger ([Known Problem 5](#5-dead-connections-linger)). When a phone loses signal, the edge is still up and keeps accepting bytes, and the server notices nothing until the edge's buffers are full.
 
 ### J. Terminology

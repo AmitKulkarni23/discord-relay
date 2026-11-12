@@ -16,18 +16,18 @@ code{font:11.5px ui-monospace,Menlo,monospace;background:rgba(127,127,127,.15);p
 <div class="n ext"><b><span class="num">1</span>Discord</b><small>a user posts "hello"</small></div>
 <div class="d">Discord stores the message and emits <code>messageCreate</code> to the bot's Gateway session.</div>
 <div class="v"><span class="ln"></span></div><div class="t"><span class="chip">Gateway WebSocket · messageCreate</span></div>
-<div class="n our"><b><span class="num">2</span>Discord bot</b><small>sources/discord.ts</small></div>
+<div class="n our"><b><span class="num">2</span>Discord bot</b><small>read-only</small></div>
 <div class="d">Converts the discord.js object to a plain message object (id, channelId, author, content, createdAt, attachments).</div>
 <div class="v"><span class="ln"></span></div><div class="t"><span class="chip">in-process function call</span></div>
-<div class="n our"><b><span class="num">3</span>Hub</b><small>hub.ts</small></div>
+<div class="n our"><b><span class="num">3</span>Hub</b><small>in memory, per channel</small></div>
 <div class="d">Drops it if the ID is already buffered, else inserts it in ID order. Once the buffer is full (its size is set by <code>BUFFER_SIZE</code>), the oldest message is dropped. Calls every subscriber of that <code>channelId</code>.</div>
 <div class="v"><span class="ln"></span></div><div class="t"><span class="chip">subscriber callback · one per open tab</span></div>
-<div class="n our"><b><span class="num">4</span>SSE stream</b><small>sse.ts · GET /events</small></div>
-<div class="d">Writes <code>id: &lt;snowflake&gt;</code> + <code>data: &lt;message JSON&gt;</code>. A client more than 1 MiB behind is dropped so it can't grow server memory.</div>
+<div class="n our"><b><span class="num">4</span>SSE stream</b><small>GET /events</small></div>
+<div class="d">Writes <code>id: &lt;snowflake&gt;</code> + <code>data: &lt;message JSON&gt;</code>.</div>
 <div class="v"><span class="ln"></span></div><div class="t"><span class="chip">bytes on the open HTTP response</span></div>
 <div class="n inf"><b><span class="num">5</span>Railway edge</b><small>public proxy</small></div>
-<div class="d">Passes the stream through. Cuts it at 15 min; the page reconnects with <code>?since=&lt;newest id&gt;</code> and gets only newer messages.</div>
+<div class="d">Passes the stream through.</div>
 <div class="v"><span class="ln"></span></div><div class="t"><span class="chip">text/event-stream · EventSource</span></div>
-<div class="n usr"><b><span class="num">6</span>Browser</b><small>use-event-stream.ts</small></div>
+<div class="n usr"><b><span class="num">6</span>Browser</b><small>the page</small></div>
 <div class="d">Dedupes by ID, keeps the newest 500 messages and renders them.</div>
 </div></div></body></html>

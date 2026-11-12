@@ -10,10 +10,10 @@ Link: [discord-relay-production-262e.up.railway.app](https://discord-relay-produ
 ### How it works
 One Railway service, with one replica, runs three components in a single Bun process:
 
-- **Discord ingestion**: connects to Discord as a read-only bot, loads recent history over Discord's REST API at startup, and receives new messages live over the gateway (Discord's real-time WebSocket)
+- **Discord ingestion**: connects to Discord as a read-only bot, loads recent history over Discord's REST API (Representational State Transfer Application Programming Interface) at startup, and receives new messages live over the gateway (Discord's real-time WebSocket)
   - **Watchdog**: a timer that starts whenever the Gateway connection drops. If the connection is not back within 5 minutes, it replaces the stuck Discord client with a fresh one, and repeats every 5 minutes until one connects. Messages already on the page are kept. Railway only health-checks at deploy time, so without the watchdog a connection that stalls later would go unnoticed
-- **Hub**: keeps an in-memory buffer of recent messages per channel. It is a `Map` keyed by `channelId`, and everything in it (buffer, subscribers, deleted IDs) lives under that key, so channels never mix. Each open browser stream registers a callback; when a message arrives, the hub calls every callback for that channel. How the buffer is laid out is in [Appendix G](#g-the-hubs-buffer)
-- **HTTP Server**: serves the web page, streams messages to browsers over SSE
+- **Hub**: keeps an in-memory buffer of recent messages per channel. It is a `Map` keyed by `channelId`, and everything in it lives under that key, so channels never mix: the buffer, the subscribers and the IDs (identifiers) of deleted messages. Each open page subscribes to one channel. The Discord bot publishes each new message to the hub, and the hub passes it to every subscriber of that channel. How the buffer is laid out is in [Appendix G](#g-the-hubs-buffer)
+- **HTTP Server**: serves the web page over HTTP (Hypertext Transfer Protocol) and streams messages to browsers over SSE (Server-Sent Events)
 
 
 ![High-level design](docs/images/system-diagram.png)
@@ -37,7 +37,7 @@ One Railway service, with one replica, runs three components in a single Bun pro
 1. **Discord to bot.** A user posts. Discord sends `messageCreate` over the Gateway WebSocket the bot holds open.
 2. **Normalize.** The bot converts the discord.js object to a plain object (`id`, `channelId`, `author`, `content`, `note`, `createdAt`, `editedAt`, `attachments`).
 3. **Hub.** The hub inserts the message into that channel's buffer, or drops it if the ID is already there. The buffer has a fixed size, configurable with `BUFFER_SIZE` (default 100, max 500); once it is full, the oldest message is dropped to make room. Then the hub calls every subscriber callback for that channel.
-4. **SSE write.** Each open `/events` stream is one subscriber. It writes `id: <snowflake>` and `data: <JSON>`. A stream more than 1 MiB behind is dropped, so one slow client cannot grow server memory. What "behind" means is in [Appendix I](#i-from-stream-to-browser-queues-sockets-and-buffers).
+4. **SSE write.** Each open `/events` stream is one subscriber. It writes `id: <snowflake>` and `data: <JSON>`. A stream more than 1 MiB (mebibyte, 1,048,576 bytes) behind is dropped, so one slow client cannot grow server memory. What "behind" means is in [Appendix I](#i-from-stream-to-browser-queues-sockets-and-buffers).
 5. **Edge to browser.** The bytes go through Railway's proxy to the browser's `EventSource`.
 6. **Render.** The page drops duplicate IDs, keeps the newest 500 messages and renders them.
 
@@ -139,7 +139,7 @@ The bot and the hub run in the same server, so this hop is a function call, not 
 
 #### 12. One machine opens many streams
 
-- **Failure**: One IP address opens many streams, by accident (many tabs) or on purpose.
+- **Failure**: One IP (Internet Protocol) address opens many streams, by accident (many tabs) or on purpose.
 - **User Sees**: "Connection limit" on that machine.
 - **Detection**: Railway's logs show the refused requests (HTTP 429), and Grafana counts them.
 - **Handling**: At most 20 streams per IP. The 21st gets 429 with a `Retry-After` header and the page waits that long. Many IPs (a botnet, an IPv6 range) get past it.
@@ -160,10 +160,10 @@ The bot and the hub run in the same server, so this hop is a function call, not 
 
 #### 15. A message carries a malicious attachment link
 
-- **Failure**: A message includes an attachment URL that points somewhere other than Discord.
+- **Failure**: A message includes an attachment URL (Uniform Resource Locator) that points somewhere other than Discord.
 - **User Sees**: Nothing.
 - **Detection**: None needed.
-- **Handling**: The page only renders attachments hosted on Discord's CDN.
+- **Handling**: The page only renders attachments hosted on Discord's CDN (Content Delivery Network).
 
 ### Server and Railway
 
@@ -188,7 +188,7 @@ Failures of the server program itself (the running copy of the app, also called 
 - **Failure**: A deploy replaces the running server, which ends every open stream.
 - **User Sees**: Up to about 1 s of "Reconnecting…".
 - **Detection**: Railway shows the deploy, and the viewer count in Grafana shows pages reconnecting.
-- **Handling**: Railway runs the old and new server side by side for 30 s, then sends the old one SIGTERM. The old server closes its streams cleanly, and each page reconnects after its own random delay, so they do not all arrive at once.
+- **Handling**: Railway runs the old and new server side by side for 30 s, then sends the old one SIGTERM (the signal asking a process to terminate). The old server closes its streams cleanly, and each page reconnects after its own random delay, so they do not all arrive at once.
 
 #### 19. Railway health-checks only at deploy time
 
@@ -229,7 +229,7 @@ The two that matter most: Railway's edge caps public viewers at about 10,000, an
 
 #### 4. One CPU core does all the fan-out
 
-- **Problem**: Every message is written separately to every open page, and Bun runs that work on a single thread, so one CPU core does it all.
+- **Problem**: Every message is written separately to every open page, and Bun runs that work on a single thread, so one CPU (Central Processing Unit) core does it all.
 - **Impact**: The more messages per second, the fewer viewers one server can hold: 16,300 viewers at 10 msg/s, but only 2,000 at 200 msg/s. The two tend to rise together: a busy moment brings more posters and more viewers at once, so the load multiplies. 4,000 viewers at 200 msg/s froze the server for 33.6 s.
 - **Behavior Today**: Each message is turned into bytes once and the same bytes are reused for every viewer. A viewer more than 1 MiB behind is dropped, which protects memory but not CPU.
 - **Long Term Fix**:
@@ -241,7 +241,7 @@ The two that matter most: Railway's edge caps public viewers at about 10,000, an
 - **Problem**: A viewer that disappears without closing the connection, such as a phone losing signal, still looks connected to the server.
 - **Impact**: Those connections stay subscribed for over 5 minutes, using memory and getting written to. One load test reached 75,896 subscribers, of which only about 50,000 were live.
 - **Behavior Today**: The connection is cleaned up when a write to it finally fails.
-- **Long Term Fix**: Drop a stream that has not accepted any data for N seconds, or use a shorter TCP keepalive.
+- **Long Term Fix**: Drop a stream that has not accepted any data for N seconds, or use a shorter TCP (Transmission Control Protocol) keepalive.
 
 #### 6. Bandwidth cost grows with message rate × viewers
 
@@ -315,7 +315,7 @@ The two that matter most: Railway's edge caps public viewers at about 10,000, an
 - **Problem**: Each IP address may open at most 20 streams.
 - **Impact**: A large office or a network where many people share one IP can be blocked, while an attacker with many IPs (a botnet, an IPv6 range) gets past it.
 - **Behavior Today**: The 21st stream gets 429 Too Many Requests with a `Retry-After` header, and the page shows "Connection limit" and waits.
-- **Long Term Fix**: Rate limiting at the edge or a CDN/WAF in front, plus a cap on total streams.
+- **Long Term Fix**: Rate limiting at the edge or a CDN or a WAF (Web Application Firewall) in front, plus a cap on total streams.
 
 
 ## Alternatives Considered
@@ -376,7 +376,7 @@ The numbers are in [Appendix F: Load test results](#f-load-test-results).
 
 ## Observability
 
-Railway's Hobby plan has no custom metrics, dashboards or alerts, so the app sends its own numbers to Grafana Cloud's free tier. Every 60 seconds it pushes one line of metrics over HTTPS. Nothing new is served or shown on the page, and a failed push is logged and does not affect the relay. CPU and memory stay in Railway's own metrics.
+Railway's Hobby plan has no custom metrics, dashboards or alerts, so the app sends its own numbers to Grafana Cloud's free tier. Every 60 seconds it pushes one line of metrics over HTTPS (HTTP Secure, which is encrypted). Nothing new is served or shown on the page, and a failed push is logged and does not affect the relay. CPU and memory stay in Railway's own metrics.
 
 ### Metrics
 
@@ -477,19 +477,21 @@ data: 1
 | --- | --- |
 | SSE to the browser | One-way data, plain HTTP, built-in reconnect |
 | Bun | Server, bundler and tests built in |
-| One service for backend and frontend | One deploy, one domain, no CORS |
-| React + MUI | A fast, accessible UI that escapes text |
+| One service for backend and frontend | One deploy, one domain, no CORS (Cross-Origin Resource Sharing) |
+| React + MUI (Material UI) | A fast, accessible UI (user interface) that escapes text |
 | No database | Discord already stores everything |
 | One replica | Extra replicas mean extra bots and buffers |
 | Reconnect with `?since=` | Avoids resending about 58 KB per client every 15 min |
 | Railway Feature Flags | Changes without a redeploy |
-| Railway IaC | `railway.json` is deprecated |
+| Railway IaC (Infrastructure as Code) | `railway.json` is deprecated |
 | No staging | Tests cover the logic, and the team is small |
 | Gateway watchdog | Healthchecks only run at deploy time |
 | No moderation filter | Discord AutoMod comes first |
 | Extensibility through `channelId` | Redis can replace the hub behind the same two functions |
 
 ### F. Load test results
+
+p50 and p99 are the delivery times that 50% and 99% of messages beat.
 
 **Summary (Nov 4, private network)**
 
@@ -553,7 +555,7 @@ At 4,000 consumers the event loop stalled for up to 33.6 s, and the app dropped 
 **What the numbers say**
 
 - Below the Hard Max nothing was lost. Under load, delivery got slower but stayed complete.
-- One CPU core is the bottleneck. Bun runs this on one thread, and CPU sat at about 92% of one core near every limit while Railway showed at most 1.2 of 8 vCPU in use.
+- One CPU core is the bottleneck. Bun runs this on one thread, and CPU sat at about 92% of one core near every limit while Railway showed at most 1.2 of 8 vCPUs (virtual CPUs) in use.
 - Memory is not the limit: about 60 KB per consumer, or 3.1 GB at 55,000.
 - The edge caps public reach at roughly 12,000 to 15,000 connections, well below what the server can hold, and adding replicas would not raise it.
 - The tests did not cover long holds (steps were 60 s), real browsers, larger messages or the bot handling real traffic.
@@ -619,9 +621,9 @@ hub → [1] queue → [2] Bun → [3] TCP send ══▶ [4] edge ══▶ [5] 
        └─ the 1 MiB check measures only this
 ```
 
-1. The stream queue, in the server's JS heap. It holds bytes `enqueue()` accepted that Bun has not sent yet. This is the only layer the server measures, and once it holds more than 1 MiB the next live write drops the client.
+1. The stream queue, in the server's JavaScript heap. It holds bytes `enqueue()` accepted that Bun has not sent yet. This is the only layer the server measures, and once it holds more than 1 MiB the next live write drops the client.
 2. Bun's socket buffer, in native memory. It holds bytes Bun took from the stream that the kernel could not accept yet. Bun stops reading from the stream while the socket is full, so this should stay small; we have not checked Bun's source to confirm it.
-3. The TCP send buffer, in the server's kernel. It holds bytes sent but not yet acknowledged. The other end of this connection is Railway's edge, so the edge's acknowledgements empty it, not the browser's. The OS sizes it, usually somewhere from a few hundred KB to a few MB.
+3. The TCP send buffer, in the server's kernel. It holds bytes sent but not yet acknowledged. The other end of this connection is Railway's edge, so the edge's acknowledgements empty it, not the browser's. The OS (operating system) sizes it, usually somewhere from a few hundred KB to a few MB.
 4. Railway's edge, a proxy with buffers of its own. It keeps accepting bytes from the server until its buffers toward the browser fill. Railway does not document their size.
 5. The TCP receive buffer, on the viewer's machine. It holds bytes that arrived but the browser has not read yet. Over HTTP/2, one connection from the browser can carry the streams of several tabs.
 

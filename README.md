@@ -243,6 +243,131 @@ Failures of the server program itself (the running copy of the app, also called 
 - **Behavior Today**: Attachments are behind the `attachments` flag.
 - **Long Term Fix**: Load a resized version from Discord's media proxy and link to the original.
 
+#### 8. The browser loses its network or the laptop sleeps
+
+- **Failure**: The connection dies on the viewer's side.
+- **User Sees**: "Reconnecting…", then the missed messages appear.
+- **Detection**: The web page notices its stream has closed, or that no ping has arrived for 60 s.
+- **Handling**: The web page retries with a growing wait (up to 1 s at first, doubling to 30 s) and asks only for messages newer than the ones it holds. Messages older than the server's buffer are skipped.
+
+#### 9. A viewer cannot keep up
+
+- **Failure**: A viewer on a slow connection reads more slowly than messages arrive, so unsent messages pile up in server memory.
+- **User Sees**: That web page reconnects and catches up.
+- **Detection**: The server logs a warning for each dropped viewer, and Grafana's "Drop spike" alarm goes off if more than 1% are dropped in 5 minutes.
+- **Handling**: Once 1 MiB is waiting for one viewer, the server drops that stream, so one slow viewer cannot grow server memory. The web page sees its stream end and reconnects like after any other drop: after a random delay, with the newest message ID it holds, so the server replays what it missed from the buffer. A viewer that stays too slow is dropped again, and its reconnect delays grow up to 30 s. [Appendix I](#i-from-stream-to-browser-queues-sockets-and-buffers) shows where those bytes wait.
+
+#### 10. One machine opens many streams
+
+- **Failure**: One IP (Internet Protocol) address opens many streams, by accident (many tabs) or on purpose.
+- **User Sees**: "Connection limit" on that machine.
+- **Detection**: Railway's logs show the refused requests (HTTP 429), and Grafana counts them.
+- **Handling**: At most 20 streams per IP. The 21st gets 429 with a `Retry-After` header and the web page waits that long.
+
+#### 11. More viewers than Railway's edge allows
+
+- **Failure**: More than 10,000 in-flight requests per edge node (see [Known Problem 3](#3-railways-edge-caps-the-number-of-viewers)).
+- **User Sees**: New visitors cannot load the web page (502 `too many upstream connections for host`).
+- **Detection**: Railway's logs show the refused requests, and Grafana's "Near the edge cap" alarm goes off at 8,000 open streams.
+- **Handling**: Nothing yet. Replicas do not raise this limit.
+
+#### 12. Viewers vanish without closing the connection
+
+- **Failure**: A phone loses signal without closing its stream, so the server still counts it as connected.
+- **User Sees**: Nothing, but the stream holds server memory.
+- **Detection**: Not detected directly. Grafana's viewer count includes these streams and cannot tell them apart from live ones.
+- **Handling**: Nothing actively. The server frees the stream when its connection closes: when Railway's edge gives up on the phone, or at the 15-minute cut at the latest. In a busy channel the 1 MiB limit can drop it sooner.
+
+#### 13. A message carries a malicious attachment link
+
+- **Failure**: A message includes an attachment URL (Uniform Resource Locator) that points somewhere other than Discord.
+- **User Sees**: Nothing.
+- **Detection**: None needed.
+- **Handling**: The web page only renders attachments hosted on Discord's CDN (Content Delivery Network).
+
+### Server and Railway
+
+Failures of the server program itself (the running copy of the app, also called the process) or of Railway deploying and running it.
+
+#### 14. The server crashes
+
+- **Failure**: An unexpected error stops the server.
+- **User Sees**: "Reconnecting…" for a few seconds.
+- **Detection**: The server logs the error, and Grafana's "App down" alarm goes off if it stays down for 3 minutes.
+- **Handling**: Railway restarts it, the bot reloads recent history from Discord, and every web page reconnects on its own. If every restart crashes again, Grafana's "App down" alarm posts to the maintainer's Discord channel once no metrics have arrived for 3 minutes. Railway stops after 10 restarts, so the maintainer rolls back to the previous deployment in Railway and reads `@event:unhandled_error` in the logs for the stack trace.
+
+#### 15. An environment variable is missing or invalid
+
+- **Failure**: A required setting such as `CHANNEL_ID` is missing or malformed.
+- **User Sees**: Nothing; the new deploy never goes live and the previous one keeps serving.
+- **Detection**: The server logs which variable is missing or wrong.
+- **Handling**: The server exits at startup instead of running half-configured.
+
+#### 16. A deploy drops every viewer at once
+
+- **Failure**: A deploy replaces the running server, which ends every open stream.
+- **User Sees**: Up to about 1 s of "Reconnecting…".
+- **Detection**: Railway shows the deploy, and the viewer count in Grafana shows web pages reconnecting.
+- **Handling**: Railway runs the old and new server side by side for 30 s, then sends the old one SIGTERM (the signal asking a process to terminate). The old server closes its streams cleanly, and each web page reconnects after its own random delay, so they do not all arrive at once.
+
+
+## Known Problems
+
+### Availability
+
+#### 1. One replica is a single point of failure
+
+- **Problem**: The whole app runs as one copy on one machine.
+- **Impact**: A crash or a deploy drops every viewer at once, for a few seconds.
+- **Behavior Today**: Railway restarts the server on failure, the bot reloads recent history from Discord, and every web page reconnects on its own after a short random delay.
+- **Long Term Fix**: [Alternative A](#a-bot-service-redis-pubsub-and-web-replicas): one bot service, Redis and several web replicas, so losing one replica drops only its share of viewers.
+
+#### 2. A deploy or crash causes a reconnect storm
+
+- **Problem**: When the server goes away, every open web page tries to reconnect within the same few seconds.
+- **Impact**: The new server gets a burst of connections at once.
+- **Behavior Today**: Railway runs the old and new server side by side for 30 s during a deploy. Each web page waits a random delay before reconnecting (up to 1 s, doubling to 30 s on repeated failures), and sends the newest message ID it holds (`?since=`), so the server sends only what it missed instead of the whole buffer.
+- **Long Term Fix**: Close the old server's streams at random times across the draining window instead of all at once, and load test a reconnect storm through the public edge.
+
+### Scale and performance
+
+#### 3. Railway's edge caps the number of viewers
+
+- **Problem**: Railway's public proxy allows at most 10,000 in-flight requests per domain per edge node. Each open web page holds one long-lived request.
+- **Impact**: Past 10,000 viewers, new visitors get a 502 `too many upstream connections for host`, and that includes loading the web page itself.
+- **Behavior Today**: Nothing. Adding replicas or upgrading the plan does not raise this limit. The Grafana "Near the edge cap" alarm fires at 8,000 open streams.
+- **Long Term Fix**: Switch to WebSockets, which the edge does not count once they are established, or hand fan-out to a managed push service such as Pusher or Ably.
+
+#### 4. One CPU core does all the fan-out
+
+- **Problem**: Every message is written separately to every open web page, and Bun runs that work on a single thread, so one CPU core does it all.
+- **Impact**: The more messages per second, the fewer viewers one server can hold. In service-to-service load tests over Railway's private network, which bypass the edge and its 10,000 cap, one server held 16,300 viewers at 10 msg/s, but only 2,000 at 200 msg/s. The two tend to rise together: a busy moment brings more posters and more viewers at once, so the load multiplies. 4,000 viewers at 200 msg/s froze the server for 33.6 s.
+- **Behavior Today**: Each message is turned into bytes once and the same bytes are reused for every viewer. A viewer more than 1 MiB behind is dropped, which protects memory but not CPU.
+- **Long Term Fix**:
+  - **Batch writes**: today, 200 messages a second means 200 separate writes to each open web page. Instead, the server would collect the messages that arrive in a short window (for example 50 ms) and send them to each web page as one write. At 200 msg/s that is about 20 writes per web page per second instead of 200, in exchange for up to 50 ms of extra delay.
+  - **Replicas**: after batching, run several copies of the server ([Alternative A](#a-bot-service-redis-pubsub-and-web-replicas)), so the fan-out is spread across several CPU cores instead of one.
+
+#### 5. Dead connections linger
+
+- **Problem**: A viewer that disappears without closing the connection, such as a phone losing signal, still looks connected to the server.
+- **Impact**: Those connections stay subscribed for over 5 minutes, using memory and getting written to. One load test reached 75,896 subscribers, of which only about 50,000 were live.
+- **Behavior Today**: The connection is cleaned up when a write to it finally fails.
+- **Long Term Fix**: Drop a stream that has not accepted any data for N seconds, or use a shorter TCP keepalive.
+
+#### 6. Bandwidth cost grows with message rate × viewers
+
+- **Problem**: Every message is sent to every viewer, and Railway bills outbound traffic.
+- **Impact**: 10,000 viewers at 5 msg/s is about 24 MB/s of billed traffic.
+- **Behavior Today**: Reconnecting web pages send `?since=`, so the buffer is not sent again on every reconnect.
+- **Long Term Fix**: Compress the stream, cap the message rate per channel, or move fan-out to a push service.
+
+#### 7. Images load at full resolution
+
+- **Problem**: Attachments are loaded from Discord as the original file.
+- **Impact**: A 25 MB photo costs every viewer 25 MB, even though it is shown 400 px wide.
+- **Behavior Today**: Attachments are behind the `attachments` flag.
+- **Long Term Fix**: Load a resized version from Discord's media proxy and link to the original.
+
 #### 8. A tab open for days can slow down
 
 - **Problem**: A web page left open keeps adding messages.
@@ -250,7 +375,7 @@ Failures of the server program itself (the running copy of the app, also called 
 - **Behavior Today**: The web page keeps at most 500 messages and removes the oldest.
 - **Long Term Fix**: None needed yet.
 
-#### 9. Every channel adds to one process
+#### 8. Every channel adds to one process
 
 - **Problem**: The hub keeps a buffer per channel, and one bot loads every channel's history, one channel after another.
 - **Impact**: Costs grow with the number of channels. Memory is channels × `BUFFER_SIZE` messages (100 channels × 500 is 50,000 messages, tens of MB). Startup, and every fresh Gateway session, reloads up to 5 history pages per channel, so many channels mean a slow reload and Discord's rate limits. The web page shows one tab per channel, which stops working well past a handful.
@@ -259,28 +384,28 @@ Failures of the server program itself (the running copy of the app, also called 
 
 ### Correctness and data
 
-#### 10. Edits are not relayed
+#### 9. Edits are not relayed
 
 - **Problem**: When someone edits a message in Discord, the web page is not updated.
 - **Impact**: An edited message keeps its old text on the web page, because the hub ignores a message ID it already holds.
 - **Behavior Today**: Not built.
 - **Long Term Fix**: Let the hub replace a message it already holds, behind the `edits-deletes` flag.
 
-#### 11. Deletes only reach the web page with the `edits-deletes` flag on
+#### 10. Deletes only reach the web page with the `edits-deletes` flag on
 
 - **Problem**: Removing deleted messages from the web page is behind a feature flag that is off by default.
 - **Impact**: With the flag off, a message deleted in Discord stays on the public web page until it leaves the buffer or the server restarts.
 - **Behavior Today**: The flag exists and is off.
 - **Long Term Fix**: Turn the flag on once it has been verified in production.
 
-#### 12. A message deleted while the server restarts stays on web pages that were already open
+#### 11. A message deleted while the server restarts stays on web pages that were already open
 
 - **Problem**: The server remembers recent deletes only in memory, and tells reconnecting web pages about them. If a message is deleted in Discord while the server is restarting, the new server never sees that delete, so it has nothing to tell the web pages that were open before the restart.
 - **Impact**: Someone who kept the web page open through the restart still sees the deleted message until they reload. Anyone who opens the web page afterwards does not see it, because the new server loads fresh history from Discord.
 - **Behavior Today**: Not handled. A reload fixes it.
 - **Long Term Fix**: After reconnecting, have the web page check which of its messages are still in the server's buffer, or keep recent deletes somewhere that survives a restart.
 
-#### 13. Messages older than the buffer are skipped on reconnect
+#### 12. Messages older than the buffer are skipped on reconnect
 
 - **Problem**: A reconnecting web page only gets the messages the server still holds, which is at most `BUFFER_SIZE` per channel.
 - **Impact**: A web page offline for longer than the buffer covers has a gap, and nothing on the web page says so.
@@ -289,14 +414,14 @@ Failures of the server program itself (the running copy of the app, also called 
 
 ### Security and abuse
 
-#### 14. No content moderation
+#### 13. No content moderation
 
 - **Problem**: Everything posted in the channel is shown on a public web page.
 - **Impact**: Offensive content is relayed live.
 - **Behavior Today**: Discord AutoMod can block it in Discord before the bot sees it.
 - **Long Term Fix**: A filter in front of the hub, with a word list or a moderation API.
 
-#### 15. The per-IP connection cap is blunt
+#### 14. The per-IP connection cap is blunt
 
 - **Problem**: Each IP address may open at most 20 streams.
 - **Impact**: A large office or a network where many people share one IP can be blocked, while an attacker with many IPs (a botnet, an IPv6 range) gets past it.

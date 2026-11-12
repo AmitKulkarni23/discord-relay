@@ -30,7 +30,12 @@ export type Msg = {
 /** A relayed channel as GET /config reports it; `name` is null until the bot has loaded it. */
 export type ChannelInfo = { id: string; name: string | null }
 
-/** Orders two Discord snowflakes by time without converting them to numbers. */
+/**
+ * Orders two Discord snowflakes by time without converting them to numbers: they pass 2^53, so
+ * Number() would lose precision. A longer ID is newer, so length is compared first, then the text.
+ * Plain string comparison alone gets it wrong: "999999999999999999" (18 digits, July 2022) sorts after
+ * "1566588496691400000" (19 digits, November 2026). Returns below 0 when `a` is older, 0 when equal, above 0 when newer.
+ */
 export function compareIds(a: string, b: string): number {
   return a.length - b.length || (a < b ? -1 : a > b ? 1 : 0)
 }

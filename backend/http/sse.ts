@@ -30,7 +30,21 @@ export const MAX_CONNECTIONS_PER_IP = 20
 /** How long a refused client should wait before trying again. */
 const RETRY_AFTER_SEC = 30
 
-/** Bytes a stream may have queued before its client counts as stalled and is dropped. */
+/**
+ * Bytes a stream may have queued before its client counts as stalled and is dropped.
+ *
+ * A stream's queue holds bytes enqueued but not yet sent to the browser. ByteLengthQueuingStrategy
+ * measures it in bytes; CountQueuingStrategy, the other built-in one, counts chunks, so a ping and a
+ * 50 KB message would weigh the same, and memory is about bytes. This limit is its highWaterMark,
+ * and the stream reports `desiredSize = highWaterMark - bytes queued`:
+ *
+ *   queued 0       -> desiredSize 1 MiB      the browser is keeping up
+ *   queued 600 KB  -> desiredSize ~400 KB    some backlog
+ *   queued 1.2 MB  -> desiredSize negative   past the mark
+ *
+ * enqueue() never refuses data: the mark is only a hint. So a live write checks desiredSize itself
+ * and drops the client once it is negative, instead of letting one stalled browser grow memory forever.
+ */
 const MAX_QUEUED_BYTES = 1024 * 1024
 
 /** Formats a message as one SSE event whose `id:` is the Discord message ID. */
@@ -130,11 +144,14 @@ export function createEventStreams(deps: EventStreamDeps): EventStreams {
 
   /** Builds the response for one accepted client: its replay, then live events until it leaves or falls too far behind. */
   const openStream = ({ req, server, channelId, since, ip, requestId }: StreamClient): Response => {
+    // Newer than the newest message the browser already holds (?since=); every message when since is 0. BigInt, because IDs pass 2^53.
     const isNew = (m: Msg) => BigInt(m.id) > since
     let cleanup = () => {}
 
     const stream = new ReadableStream<Uint8Array>(
       {
+        // `controller` is the ReadableStream's handle for this one response, made by the constructor and passed in
+        // here (a ReadableStreamDefaultController): enqueue() adds bytes to the queue, close() and error() end the stream.
         start(controller) {
           // A write can throw if the browser went away before abort fired; treat that as a disconnect.
           const send = (bytes: Uint8Array) => {
@@ -157,9 +174,14 @@ export function createEventStreams(deps: EventStreamDeps): EventStreams {
           // Send something at once so headers flush even when the buffer is empty.
           send(CONNECTED)
           send(DISCORD_EVENTS[discordState(channelId)])
-          // A reconnecting browser may hold messages deleted while it was away. A new one holds nothing.
+          // A reconnecting page may still show messages deleted while it was offline: it missed those delete
+          // events, so they are replayed before the messages. A brand-new page (no since) holds nothing, so it is skipped.
           if (since > 0n) for (const id of hub.removed(channelId)) send(deleteEvent(id, channelId))
+          // A new page needs something to show: replay the buffer (only messages newer than ?since= when
+          // reconnecting), then go live. Without it, a new visitor would see an empty page until someone posted.
           for (const msg of hub.recent(channelId).filter(isNew)) send(encodeEvent(msg))
+          // Registers this stream for the channel's live messages and deletes. `unsubscribe` removes it again; cleanup
+          // calls it when the browser leaves, or the hub would keep writing to a dead stream and over-count clients.
           // A restarted server refills its buffer through publish, so a live message can be one the browser holds.
           const unsubscribe = hub.subscribe(
             channelId,

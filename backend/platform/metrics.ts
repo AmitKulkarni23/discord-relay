@@ -39,11 +39,15 @@ export function formatMetrics(snapshot: Snapshot, deployment: string): string {
   return `relay,deployment=${escapeTag(deployment)} ${values}`
 }
 
-/** Sends one body to Grafana Cloud. Never throws: a failed push is logged and the next one tries again. */
+/**
+ * Sends one body to Grafana Cloud from the server; browsers never see these metrics. Never throws:
+ * a failed push is logged and the next one tries again.
+ */
 export async function pushMetrics(push: MetricsPush, body: string, fetch: Fetch = globalThis.fetch): Promise<void> {
   try {
     const res = await fetch(push.url, {
       method: 'POST',
+      // HTTP Basic auth: base64 of "instanceId:token" (btoa encodes, it does not encrypt). config.ts requires an https URL, which protects it.
       headers: { Authorization: `Basic ${btoa(`${push.user}:${push.token}`)}`, 'Content-Type': 'text/plain' },
       body,
       signal: AbortSignal.timeout(10_000),
@@ -67,7 +71,7 @@ export function readSnapshot(hub: Pick<Hub, 'subscriberCount' | 'publishedTotal'
   }
 }
 
-/** Pushes a snapshot every `intervalMs`. Returns a function that stops it. */
+/** Runs in the server process: pushes a snapshot every `intervalMs` (60 s by default). Returns a function that stops it. */
 export function startMetrics(opts: {
   push: MetricsPush
   deployment: string

@@ -33,7 +33,11 @@ export type MessageLike = {
   messageSnapshots: { first(): { content: string | null; attachments: AttachmentsLike } | undefined }
 }
 
-/** The title and description of a message's first embed that has either, as text. */
+/**
+ * The title and description of a message's first embed that has either, as text. Bot and webhook
+ * messages, such as GitHub notifications, often have no typed content and put all their text in
+ * embeds; without this they would show as empty. Used only when there is no typed text.
+ */
 function embedText(message: MessageLike): string {
   const embed = message.embeds.find(item => item.title || item.description)
   return embed ? [embed.title, embed.description].filter(Boolean).join('\n') : ''

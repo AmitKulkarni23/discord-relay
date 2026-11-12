@@ -69,14 +69,10 @@ export function createHub(capacity = 100): Hub {
   }
 
   return {
-    /**
-     * Stores a message in ID order and sends it to every subscriber of its channel. Ignores a
-     * message whose ID is already buffered, so history and live events can overlap safely, and one
-     * older than a full buffer, which would be evicted at once, or one already deleted, which a history
-     * fetch that started earlier can still return. Eviction always removes the oldest ID.
-     */
+    /** Stores a message in ID order and sends it to every subscriber of its channel. Eviction always removes the oldest ID. */
     publish(msg) {
       const channel = getChannelState(msg.channelId)
+      // Already deleted: a history fetch that started before the delete can still return it.
       if (channel.removed.has(msg.id)) return
       // Walk back from the newest: a live message stops at the first comparison.
       let at = channel.buffer.length
@@ -84,13 +80,16 @@ export function createHub(capacity = 100): Hub {
         const existing = channel.buffer[at - 1]
         if (!existing) break
         const cmp = compareIds(existing.id, msg.id)
+        // Already buffered: a history reload after a reconnect overlaps the live events, so duplicates are normal.
         if (cmp === 0) return
         if (cmp < 0) break
       }
+      // Older than everything in a full buffer: it would be evicted the moment it was stored.
       if (at === 0 && channel.buffer.length >= capacity) return
 
       channel.buffer.splice(at, 0, msg)
-      // shift() is O(n), fine at the 500 maximum; use a circular array if capacity grows to thousands
+      // Over capacity: evict the oldest, at index 0. splice and shift are both O(n), microseconds at the
+      // 500 maximum. A ring buffer would make eviction O(1), but an out-of-order insert would stay O(n).
       if (channel.buffer.length > capacity) channel.buffer.shift()
       published++
 
@@ -109,6 +108,8 @@ export function createHub(capacity = 100): Hub {
         if (channel.removed.size <= MAX_REMOVED) break
         channel.removed.delete(oldest)
       }
+      // Found by ID, since the buffer is an array. -1 means it has already been evicted, and subscribers are still
+      // told below: a page keeps up to 500 messages, more than the server's buffer.
       const at = channel.buffer.findIndex(held => held.id === id)
       if (at !== -1) channel.buffer.splice(at, 1)
       notify(channel, channelId, subscriber => subscriber.onRemove(id))

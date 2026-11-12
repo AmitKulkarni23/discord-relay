@@ -100,7 +100,11 @@ export function startDiscord(deps: DiscordDeps): DiscordSource {
   let stopped = false
   /** Channels whose latest history load failed. */
   const unavailable = new Set<string>()
-  /** Failed loads in a row and the pending retry, per channel. */
+  /**
+   * Per channel: `attempts` is how many history loads have failed in a row, which sets the backoff
+   * (5 s, 10 s, 20 s... up to 5 minutes), and `timer` is the scheduled retry, kept so it can be cancelled.
+   * An entry exists only while a channel is failing.
+   */
   const retries = new Map<string, { attempts: number; timer?: ReturnType<typeof setTimeout> }>()
 
   /** Records a Gateway state change for /health and the watchdog. */
@@ -140,8 +144,14 @@ export function startDiscord(deps: DiscordDeps): DiscordSource {
   }
 
   /**
-   * Removes messages deleted while the Gateway was down, which fire no event: anything held that Discord
-   * no longer returns. `fetched` is oldest first. A full page says nothing about messages older than it.
+   * Removes messages deleted while the Gateway was down. Normally a delete arrives as a live MessageDelete
+   * event, but if the Gateway is down when someone deletes a message, that event is lost for good: Discord
+   * does not replay it on a fresh session, and the hub would keep showing the message indefinitely.
+   *
+   * So after reconnecting, when the bot reloads history, it compares what the hub holds (`held`) with what
+   * Discord returns now (`fetched`, oldest first). A held message Discord no longer returns has been deleted.
+   * Except when the fetch came back full: a held message older than its oldest one may simply be outside
+   * the window, so only messages newer than that are judged.
    */
   function removeMissing(channelId: string, held: string[], fetched: Array<{ id: string }>): void {
     if (!deletesEnabled()) return
@@ -165,6 +175,7 @@ export function startDiscord(deps: DiscordDeps): DiscordSource {
 
   /** Publishes one channel's latest `historyLimit` messages, oldest first. Logs and retries on failure. */
   async function publishHistory(channelId: string): Promise<void> {
+    // This load may come from a fresh session rather than the retry timer; cancel the retry so the channel does not load twice.
     clearTimeout(retries.get(channelId)?.timer)
     try {
       const channel = await client.channels.fetch(channelId)
@@ -262,7 +273,8 @@ export function startDiscord(deps: DiscordDeps): DiscordSource {
     } catch (err) {
       log.warn('discord_client_destroy_failed', { error: errorMessage(err) })
     }
-    // Closing can outlast the next attempt, which replaces `freshClient`, or a stop.
+    // destroy() can take a while. Meanwhile stop() may have run, or the watchdog may have fired again and replaced
+    // `client` with a newer one. Logging in with a client that is no longer current would open a second Gateway session.
     if (!stopped && client === freshClient) await login(freshClient)
   }
 
@@ -277,10 +289,14 @@ export function startDiscord(deps: DiscordDeps): DiscordSource {
     loginFailed: () => loginFailed,
     isChannelAvailable: channelId => !unavailable.has(channelId),
     channels: () => channelIds.map(id => ({ id, name: channelNames.get(id) ?? null })),
+    // Graceful shutdown, called from the SIGTERM handler. `stopped` blocks any reconnect or retry already under way.
     async stop() {
       stopped = true
+      // Cancels the watchdog's countdown, so it cannot start a reconnect mid-shutdown.
       watchdog.connected()
       for (const retry of retries.values()) clearTimeout(retry.timer)
+      // Closes the Gateway WebSocket and discord.js's own timers, such as the heartbeat. Discord sees the bot leave
+      // at once instead of after missed heartbeats time out. Awaited, so process.exit(0) does not cut it off halfway.
       await client.destroy()
     },
   }

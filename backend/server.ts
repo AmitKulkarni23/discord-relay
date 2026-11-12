@@ -87,6 +87,8 @@ export function main(): void {
     config = loadConfig(process.env)
   } catch (err) {
     log.error('config_invalid', { error: errorMessage(err) })
+    // Restarts cannot fix this, but they cost nothing: variables change only through a redeploy, so a bad value
+    // fails the new deployment's healthcheck and Railway keeps the old one serving.
     process.exit(1)
   }
 

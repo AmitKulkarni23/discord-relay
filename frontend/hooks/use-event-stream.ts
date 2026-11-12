@@ -25,7 +25,10 @@ type EventStream = {
   recovered: number | null
 }
 
-/** One EventSource for one channel, with up to 500 messages keyed by ID. Switching channel starts a fresh list. */
+/**
+ * One EventSource for one channel, with up to MAX_MSGS (500) messages keyed by ID. That is more than the
+ * server's buffer (BUFFER_SIZE, 100 by default): an open page keeps collecting live messages. Switching channel starts a fresh list.
+ */
 export function useEventStream(channel: string | null): EventStream {
   const [msgs, setMsgs] = useState<Map<string, Msg>>(() => new Map())
   const [connection, setConnection] = useState<Connection>('connecting')

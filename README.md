@@ -4,8 +4,6 @@ A Discord bot that streams messages from one or more Discord channels into a web
 
 Link: [discord-relay-production-262e.up.railway.app](https://discord-relay-production-262e.up.railway.app)
 
-Terms such as Gateway, SSE and snowflake are defined in [Appendix J](#j-terminology).
-
 
 ## High Level Design
 
@@ -42,126 +40,6 @@ One Railway service, with one replica, runs three components in a single Bun pro
 4. **SSE write.** Each open `/events` stream is one subscriber. It writes `id: <snowflake>` and `data: <JSON>`. A stream more than 1 MiB behind is dropped, so one slow client cannot grow server memory. What "behind" means is in [Appendix I](#i-from-stream-to-browser-queues-sockets-and-buffers).
 5. **Edge to browser.** The bytes go through Railway's proxy to the browser's `EventSource`.
 6. **Render.** The page drops duplicate IDs, keeps the newest 500 messages and renders them.
-
-
-## Known Problems
-
-The two that matter most: Railway's edge caps public viewers at about 10,000, and adding replicas does not raise that. And one replica is a single point of failure, so a crash means a few seconds of outage followed by every viewer reconnecting at once.
-
-### Availability
-
-#### 1. One replica is a single point of failure
-
-- **Problem**: The whole app runs as one copy on one machine.
-- **Impact**: A crash or a deploy drops every viewer at once, for a few seconds.
-- **Behavior Today**: Railway restarts the server on failure, the bot reloads recent history from Discord, and every page reconnects on its own after a short random delay.
-- **Long Term Fix**: [Alternative A](#a-bot-service-redis-pubsub-and-web-replicas): one bot service, Redis and several web replicas, so losing one replica drops only its share of viewers.
-
-#### 2. A deploy or crash causes a reconnect storm
-
-- **Problem**: When the server goes away, every open page tries to reconnect within the same few seconds.
-- **Impact**: The new server gets a burst of connections at once. This was load tested over Railway's private network but never through the public edge.
-- **Behavior Today**: Railway runs the old and new server side by side for 30 s during a deploy. Each page waits a random delay before reconnecting (up to 1 s, doubling to 30 s on repeated failures), and sends the newest message ID it holds (`?since=`), so the server sends only what it missed instead of the whole buffer.
-- **Long Term Fix**: Close the old server's streams at random times across the draining window instead of all at once, and load test a reconnect storm through the public edge.
-
-### Scale and performance
-
-#### 3. Railway's edge caps the number of viewers
-
-- **Problem**: Railway's public proxy allows at most 10,000 in-flight requests per domain per edge node. Each open page holds one long-lived request.
-- **Impact**: Past 10,000 viewers, new visitors get a 502 `too many upstream connections for host`, and that includes loading the page itself.
-- **Behavior Today**: Nothing. Adding replicas or upgrading the plan does not raise this limit. The Grafana "Near the edge cap" alarm fires at 8,000 open streams.
-- **Long Term Fix**: Switch to WebSockets, which the edge does not count once they are established, or hand fan-out to a managed push service such as Pusher or Ably.
-
-#### 4. One CPU core does all the fan-out
-
-- **Problem**: Every message is written separately to every open page, and Bun runs that work on a single thread, so one CPU core does it all.
-- **Impact**: The more messages per second, the fewer viewers one server can hold: 16,300 viewers at 10 msg/s, but only 2,000 at 200 msg/s. The two tend to rise together: a busy moment brings more posters and more viewers at once, so the load multiplies. 4,000 viewers at 200 msg/s froze the server for 33.6 s.
-- **Behavior Today**: Each message is turned into bytes once and the same bytes are reused for every viewer. A viewer more than 1 MiB behind is dropped, which protects memory but not CPU.
-- **Long Term Fix**:
-  - **Batch writes**: today, 200 messages a second means 200 separate writes to each open page. Instead, the server would collect the messages that arrive in a short window (for example 50 ms) and send them to each page as one write. At 200 msg/s that is about 20 writes per page per second instead of 200, in exchange for up to 50 ms of extra delay.
-  - **Replicas**: after batching, run several copies of the server ([Alternative A](#a-bot-service-redis-pubsub-and-web-replicas)), so the fan-out is spread across several CPU cores instead of one.
-
-#### 5. Dead connections linger
-
-- **Problem**: A viewer that disappears without closing the connection, such as a phone losing signal, still looks connected to the server.
-- **Impact**: Those connections stay subscribed for over 5 minutes, using memory and getting written to. One load test reached 75,896 subscribers, of which only about 50,000 were live.
-- **Behavior Today**: The connection is cleaned up when a write to it finally fails.
-- **Long Term Fix**: Drop a stream that has not accepted any data for N seconds, or use a shorter TCP keepalive.
-
-#### 6. Bandwidth cost grows with message rate × viewers
-
-- **Problem**: Every message is sent to every viewer, and Railway bills outbound traffic.
-- **Impact**: 10,000 viewers at 5 msg/s is about 24 MB/s of billed traffic.
-- **Behavior Today**: Reconnecting pages send `?since=`, so the buffer is not sent again on every reconnect.
-- **Long Term Fix**: Compress the stream, cap the message rate per channel, or move fan-out to a push service.
-
-#### 7. Images load at full resolution
-
-- **Problem**: Attachments are loaded from Discord as the original file.
-- **Impact**: A 25 MB photo costs every viewer 25 MB, even though it is shown 400 px wide.
-- **Behavior Today**: Attachments are behind the `attachments` flag.
-- **Long Term Fix**: Load a resized version from Discord's media proxy and link to the original.
-
-#### 8. A tab open for days can slow down
-
-- **Problem**: A page left open keeps adding messages.
-- **Impact**: The page gets heavier over time.
-- **Behavior Today**: The page keeps at most 500 messages and removes the oldest.
-- **Long Term Fix**: None needed yet.
-
-#### 9. Every channel adds to one process
-
-- **Problem**: The hub keeps a buffer per channel, and one bot loads every channel's history, one channel after another.
-- **Impact**: Costs grow with the number of channels. Memory is channels × `BUFFER_SIZE` messages (100 channels × 500 is 50,000 messages, tens of MB). Startup, and every fresh Gateway session, reloads up to 5 history pages per channel, so many channels mean a slow reload and Discord's rate limits. The page shows one tab per channel, which stops working well past a handful.
-- **Behavior Today**: Channels are a fixed list in `CHANNEL_ID`, meant for a few.
-- **Long Term Fix**: Load history for several channels at once within Discord's rate limits, lower `BUFFER_SIZE` as channels grow, and replace the tabs with a channel picker. Past that, split channels across services.
-
-### Correctness and data
-
-#### 10. Edits are not relayed
-
-- **Problem**: When someone edits a message in Discord, the page is not updated.
-- **Impact**: An edited message keeps its old text on the page, because the hub ignores a message ID it already holds.
-- **Behavior Today**: Not built.
-- **Long Term Fix**: Let the hub replace a message it already holds, behind the `edits-deletes` flag.
-
-#### 11. Deletes only reach the page with the `edits-deletes` flag on
-
-- **Problem**: Removing deleted messages from the page is behind a feature flag that is off by default.
-- **Impact**: With the flag off, a message deleted in Discord stays on the public page until it leaves the buffer or the server restarts.
-- **Behavior Today**: The flag exists and is off.
-- **Long Term Fix**: Turn the flag on once it has been verified in production.
-
-#### 12. A message deleted while the server restarts stays on pages that were already open
-
-- **Problem**: The server remembers recent deletes only in memory, and tells reconnecting pages about them. If a message is deleted in Discord while the server is restarting, the new server never sees that delete, so it has nothing to tell the pages that were open before the restart.
-- **Impact**: Someone who kept the page open through the restart still sees the deleted message until they reload. Anyone who opens the page afterwards does not see it, because the new server loads fresh history from Discord.
-- **Behavior Today**: Not handled. A reload fixes it.
-- **Long Term Fix**: After reconnecting, have the page check which of its messages are still in the server's buffer, or keep recent deletes somewhere that survives a restart.
-
-#### 13. Messages older than the buffer are skipped on reconnect
-
-- **Problem**: A reconnecting page only gets the messages the server still holds, which is at most `BUFFER_SIZE` per channel.
-- **Impact**: A page offline for longer than the buffer covers has a gap, and nothing on the page says so.
-- **Behavior Today**: The buffer holds up to 500 messages per channel.
-- **Long Term Fix**: Show a "some messages skipped" marker, or load older history from Discord.
-
-### Security and abuse
-
-#### 14. No content moderation
-
-- **Problem**: Everything posted in the channel is shown on a public page.
-- **Impact**: Offensive content is relayed live.
-- **Behavior Today**: Discord AutoMod can block it in Discord before the bot sees it.
-- **Long Term Fix**: A filter in front of the hub, with a word list or a moderation API.
-
-#### 15. The per-IP connection cap is blunt
-
-- **Problem**: Each IP address may open at most 20 streams.
-- **Impact**: A large office or a network where many people share one IP can be blocked, while an attacker with many IPs (a botnet, an IPv6 range) gets past it.
-- **Behavior Today**: The 21st stream gets 429 Too Many Requests with a `Retry-After` header, and the page shows "Connection limit" and waits.
-- **Long Term Fix**: Rate limiting at the edge or a CDN/WAF in front, plus a cap on total streams.
 
 
 ## Failure Modes
@@ -318,6 +196,126 @@ Failures of the server program itself (the running copy of the app, also called 
 - **User Sees**: Depends on what broke.
 - **Detection**: Grafana's "App down", "Discord Gateway down" and "HTTP 500 errors" alarms.
 - **Handling**: The watchdog fixes the one known way the server stalls (a stuck Gateway connection).
+
+
+## Known Problems
+
+The two that matter most: Railway's edge caps public viewers at about 10,000, and adding replicas does not raise that. And one replica is a single point of failure, so a crash means a few seconds of outage followed by every viewer reconnecting at once.
+
+### Availability
+
+#### 1. One replica is a single point of failure
+
+- **Problem**: The whole app runs as one copy on one machine.
+- **Impact**: A crash or a deploy drops every viewer at once, for a few seconds.
+- **Behavior Today**: Railway restarts the server on failure, the bot reloads recent history from Discord, and every page reconnects on its own after a short random delay.
+- **Long Term Fix**: [Alternative A](#a-bot-service-redis-pubsub-and-web-replicas): one bot service, Redis and several web replicas, so losing one replica drops only its share of viewers.
+
+#### 2. A deploy or crash causes a reconnect storm
+
+- **Problem**: When the server goes away, every open page tries to reconnect within the same few seconds.
+- **Impact**: The new server gets a burst of connections at once. This was load tested over Railway's private network but never through the public edge.
+- **Behavior Today**: Railway runs the old and new server side by side for 30 s during a deploy. Each page waits a random delay before reconnecting (up to 1 s, doubling to 30 s on repeated failures), and sends the newest message ID it holds (`?since=`), so the server sends only what it missed instead of the whole buffer.
+- **Long Term Fix**: Close the old server's streams at random times across the draining window instead of all at once, and load test a reconnect storm through the public edge.
+
+### Scale and performance
+
+#### 3. Railway's edge caps the number of viewers
+
+- **Problem**: Railway's public proxy allows at most 10,000 in-flight requests per domain per edge node. Each open page holds one long-lived request.
+- **Impact**: Past 10,000 viewers, new visitors get a 502 `too many upstream connections for host`, and that includes loading the page itself.
+- **Behavior Today**: Nothing. Adding replicas or upgrading the plan does not raise this limit. The Grafana "Near the edge cap" alarm fires at 8,000 open streams.
+- **Long Term Fix**: Switch to WebSockets, which the edge does not count once they are established, or hand fan-out to a managed push service such as Pusher or Ably.
+
+#### 4. One CPU core does all the fan-out
+
+- **Problem**: Every message is written separately to every open page, and Bun runs that work on a single thread, so one CPU core does it all.
+- **Impact**: The more messages per second, the fewer viewers one server can hold: 16,300 viewers at 10 msg/s, but only 2,000 at 200 msg/s. The two tend to rise together: a busy moment brings more posters and more viewers at once, so the load multiplies. 4,000 viewers at 200 msg/s froze the server for 33.6 s.
+- **Behavior Today**: Each message is turned into bytes once and the same bytes are reused for every viewer. A viewer more than 1 MiB behind is dropped, which protects memory but not CPU.
+- **Long Term Fix**:
+  - **Batch writes**: today, 200 messages a second means 200 separate writes to each open page. Instead, the server would collect the messages that arrive in a short window (for example 50 ms) and send them to each page as one write. At 200 msg/s that is about 20 writes per page per second instead of 200, in exchange for up to 50 ms of extra delay.
+  - **Replicas**: after batching, run several copies of the server ([Alternative A](#a-bot-service-redis-pubsub-and-web-replicas)), so the fan-out is spread across several CPU cores instead of one.
+
+#### 5. Dead connections linger
+
+- **Problem**: A viewer that disappears without closing the connection, such as a phone losing signal, still looks connected to the server.
+- **Impact**: Those connections stay subscribed for over 5 minutes, using memory and getting written to. One load test reached 75,896 subscribers, of which only about 50,000 were live.
+- **Behavior Today**: The connection is cleaned up when a write to it finally fails.
+- **Long Term Fix**: Drop a stream that has not accepted any data for N seconds, or use a shorter TCP keepalive.
+
+#### 6. Bandwidth cost grows with message rate × viewers
+
+- **Problem**: Every message is sent to every viewer, and Railway bills outbound traffic.
+- **Impact**: 10,000 viewers at 5 msg/s is about 24 MB/s of billed traffic.
+- **Behavior Today**: Reconnecting pages send `?since=`, so the buffer is not sent again on every reconnect.
+- **Long Term Fix**: Compress the stream, cap the message rate per channel, or move fan-out to a push service.
+
+#### 7. Images load at full resolution
+
+- **Problem**: Attachments are loaded from Discord as the original file.
+- **Impact**: A 25 MB photo costs every viewer 25 MB, even though it is shown 400 px wide.
+- **Behavior Today**: Attachments are behind the `attachments` flag.
+- **Long Term Fix**: Load a resized version from Discord's media proxy and link to the original.
+
+#### 8. A tab open for days can slow down
+
+- **Problem**: A page left open keeps adding messages.
+- **Impact**: The page gets heavier over time.
+- **Behavior Today**: The page keeps at most 500 messages and removes the oldest.
+- **Long Term Fix**: None needed yet.
+
+#### 9. Every channel adds to one process
+
+- **Problem**: The hub keeps a buffer per channel, and one bot loads every channel's history, one channel after another.
+- **Impact**: Costs grow with the number of channels. Memory is channels × `BUFFER_SIZE` messages (100 channels × 500 is 50,000 messages, tens of MB). Startup, and every fresh Gateway session, reloads up to 5 history pages per channel, so many channels mean a slow reload and Discord's rate limits. The page shows one tab per channel, which stops working well past a handful.
+- **Behavior Today**: Channels are a fixed list in `CHANNEL_ID`, meant for a few.
+- **Long Term Fix**: Load history for several channels at once within Discord's rate limits, lower `BUFFER_SIZE` as channels grow, and replace the tabs with a channel picker. Past that, split channels across services.
+
+### Correctness and data
+
+#### 10. Edits are not relayed
+
+- **Problem**: When someone edits a message in Discord, the page is not updated.
+- **Impact**: An edited message keeps its old text on the page, because the hub ignores a message ID it already holds.
+- **Behavior Today**: Not built.
+- **Long Term Fix**: Let the hub replace a message it already holds, behind the `edits-deletes` flag.
+
+#### 11. Deletes only reach the page with the `edits-deletes` flag on
+
+- **Problem**: Removing deleted messages from the page is behind a feature flag that is off by default.
+- **Impact**: With the flag off, a message deleted in Discord stays on the public page until it leaves the buffer or the server restarts.
+- **Behavior Today**: The flag exists and is off.
+- **Long Term Fix**: Turn the flag on once it has been verified in production.
+
+#### 12. A message deleted while the server restarts stays on pages that were already open
+
+- **Problem**: The server remembers recent deletes only in memory, and tells reconnecting pages about them. If a message is deleted in Discord while the server is restarting, the new server never sees that delete, so it has nothing to tell the pages that were open before the restart.
+- **Impact**: Someone who kept the page open through the restart still sees the deleted message until they reload. Anyone who opens the page afterwards does not see it, because the new server loads fresh history from Discord.
+- **Behavior Today**: Not handled. A reload fixes it.
+- **Long Term Fix**: After reconnecting, have the page check which of its messages are still in the server's buffer, or keep recent deletes somewhere that survives a restart.
+
+#### 13. Messages older than the buffer are skipped on reconnect
+
+- **Problem**: A reconnecting page only gets the messages the server still holds, which is at most `BUFFER_SIZE` per channel.
+- **Impact**: A page offline for longer than the buffer covers has a gap, and nothing on the page says so.
+- **Behavior Today**: The buffer holds up to 500 messages per channel.
+- **Long Term Fix**: Show a "some messages skipped" marker, or load older history from Discord.
+
+### Security and abuse
+
+#### 14. No content moderation
+
+- **Problem**: Everything posted in the channel is shown on a public page.
+- **Impact**: Offensive content is relayed live.
+- **Behavior Today**: Discord AutoMod can block it in Discord before the bot sees it.
+- **Long Term Fix**: A filter in front of the hub, with a word list or a moderation API.
+
+#### 15. The per-IP connection cap is blunt
+
+- **Problem**: Each IP address may open at most 20 streams.
+- **Impact**: A large office or a network where many people share one IP can be blocked, while an attacker with many IPs (a botnet, an IPv6 range) gets past it.
+- **Behavior Today**: The 21st stream gets 429 Too Many Requests with a `Retry-After` header, and the page shows "Connection limit" and waits.
+- **Long Term Fix**: Rate limiting at the edge or a CDN/WAF in front, plus a cap on total streams.
 
 
 ## Alternatives Considered

@@ -70,6 +70,8 @@ discord-relay/
 │   ├── consumer-process.ts # a running copy of consumer.ts
 │   ├── consumer.ts        # one consumer process: many raw /events connections
 │   └── tests/             # the pure logic: verdicts, search and metrics
+├── scripts/
+│   └── demo.sh            # posts sample messages through channel webhooks, for demos (URLs from env, never committed)
 ├── docs/
 │   ├── system-specs/      # architecture, failure modes, decisions
 │   └── task-specs/        # one spec per task, TASK_INDEX.md lists them in order
@@ -126,6 +128,7 @@ bun run typecheck
 bun test           # unit + integration, no network
 bun test --coverage  # per-file floor in bunfig.toml
 bun audit          # known vulnerabilities
+DEMO_WEBHOOK_URLS="<webhook URLs>" sh scripts/demo.sh   # live demo traffic: one sample message per channel every 2 s (INTERVAL, COUNT)
 bun load-tests/run.ts --consumers 1000,5000 --rate 5   # local load test. Production only with approval, as docs/load_test_plan.md says. Knobs: --help. Plan: docs/load_test_plan.md
 ```
 

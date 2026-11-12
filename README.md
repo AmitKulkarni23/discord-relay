@@ -188,8 +188,6 @@ Failures of the server program itself (the running copy of the app, also called 
 
 ## Known Problems
 
-The two that matter most: Railway's edge caps public viewers at about 10,000, and adding replicas does not raise that. And one replica is a single point of failure, so a crash means a few seconds of outage followed by every viewer reconnecting at once.
-
 ### Availability
 
 #### 1. One replica is a single point of failure

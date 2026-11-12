@@ -81,11 +81,11 @@ export function createHub(capacity = 100): Hub {
       // Walk back from the newest: a live message stops at the first comparison.
       let at = channel.buffer.length
       for (; at > 0; at--) {
-        const held = channel.buffer[at - 1]
-        if (!held) break
-        const order = compareIds(held.id, msg.id)
-        if (order === 0) return
-        if (order < 0) break
+        const existing = channel.buffer[at - 1]
+        if (!existing) break
+        const cmp = compareIds(existing.id, msg.id)
+        if (cmp === 0) return
+        if (cmp < 0) break
       }
       if (at === 0 && channel.buffer.length >= capacity) return
 

@@ -129,7 +129,7 @@ sequenceDiagram
 |---|---|
 | `GET /` | The React page. Bun bundles `frontend/` from the HTML import; `NODE_ENV=production` makes it a minified build with no hot reload. |
 | `GET /events?channel=<id>` | `text/event-stream` for one channel. Opens with a `discord` event, then sends its buffer and live events, with `event: ping` every 25 s. `since=<id>` limits both to messages newer than that ID; an invalid value is ignored. No `channel` means the first configured channel; an ID that is not configured returns 404. Past 20 open streams from one IP it returns 429 with `Retry-After: 30`. A client more than 1 MiB behind on live writes is dropped. |
-| `GET /config` | `{ "attachments": bool, "editsDeletes": bool, "debugPanel": bool, "channels": [{ "id": string, "name": string \| null }] }`. A `name` is null until the bot has loaded that channel at startup. |
+| `GET /config` | `{ "attachments": bool, "editsDeletes": bool, "channels": [{ "id": string, "name": string \| null }] }`. A `name` is null until the bot has loaded that channel at startup. |
 | `GET /health` | `200` when the Gateway is connected, `503` otherwise. Body: `{ "discord": "connected" \| "disconnected", "clients": n, "buffered": n, "lastEventAt": iso \| null, "unavailableChannels": [id], "uptimeSec": n }` |
 
 The stream opens with a `: connected` comment so headers reach the browser even when the buffer is empty. A named `discord` event (`data: connected`, `disconnected`, or `unavailable` when the bot cannot read this channel) follows it, and repeats within about a second whenever the Gateway state changes, so the page's chip reflects the bot and not only the browser's stream.
@@ -190,7 +190,7 @@ The server reads these once at startup; changing one in Railway redeploys the se
 
 Metrics are for the developer only: the app pushes one Influx line protocol line to Grafana Cloud every 60 s and serves no `/metrics` route. The series are `relay_gateway_connected`, `relay_sse_clients`, `relay_messages_total`, `relay_clients_dropped_total`, `relay_rejected_total` (429s), `relay_watchdog_restarts_total` and `relay_http_errors_total` (500s from a route that threw, logged as `request_failed`), tagged with `deployment` so two processes overlapping during a deploy never mix their totals. Drops, 429s, watchdog restarts and 500s are counted from their log events (`log.count`). A failed push logs `metrics_push_failed` and never affects the relay. The dashboard and alert rules live in `.grafana/apply.ts`; alerts go to a Discord contact point.
 
-Feature flags are Railway Feature Flags, not variables: `attachments`, `edits-deletes` and `debug-panel` (all bool, default off). `backend/platform/flags.ts` reads them through the `railway` SDK, which polls Railway, and `/config` reads them on every request, so a change applies on the next page load without a redeploy.
+Feature flags are Railway Feature Flags, not variables: `attachments` and `edits-deletes` (both bool, default off). `backend/platform/flags.ts` reads them through the `railway` SDK, which polls Railway, and `/config` reads them on every request, so a change applies on the next page load without a redeploy.
 
 ## Limits
 
@@ -204,7 +204,6 @@ Feature flags are Railway Feature Flags, not variables: `attachments`, `edits-de
 | Reconnect delay | Random, up to 1 s, doubling per attempt to 30 s | Spreads browsers dropped together. Starts over once a stream has stayed open 30 s. |
 | SSE heartbeat | 25 s | Railway closes requests that send no data for 5 min. |
 | Gateway watchdog | Fresh client every 5 min while disconnected | Railway runs healthchecks only at deploy time. Exiting would lose the buffer and use up restarts. |
-| Debug panel refresh | `/health` every 10 s | Diagnostics only. Messages are never polled. |
 
 ## Railway deployment
 
@@ -228,7 +227,7 @@ Built:
 - Live relay of one or more channels, with history at startup, reconnect and dedupe, and a tab per channel on the page
 - the `attachments` flag
 
-Planned: edits behind `edits-deletes`, which so far controls deletes only, and `debug-panel`, which nothing reads yet.
+Planned: edits behind `edits-deletes`, which so far controls deletes only.
 
 Not built, and described in the README instead:
 

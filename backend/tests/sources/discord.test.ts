@@ -106,7 +106,7 @@ function startFakeDiscord(
     channelIds: [CHANNEL],
     publish: msg => published.push(msg),
     remove: (channelId, id) => removed.push([channelId, id]),
-    buffered: () => buffered.ids,
+    bufferedIds: () => buffered.ids,
     deletesEnabled: () => options.deletesOn ?? true,
     historyLimit: options.historyLimit,
     watchdogMs: options.watchdogMs,

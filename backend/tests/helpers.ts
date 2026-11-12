@@ -76,7 +76,7 @@ export function start(
     port: 0,
     hub,
     channelIds: [CHANNEL, CHANNEL_2],
-    flags: overrides.flags ?? (() => ({ attachments: true, editsDeletes: false, debugPanel: false })),
+    flags: overrides.flags ?? (() => ({ attachments: true, editsDeletes: false })),
     isDiscordConnected: () => overrides.connected ?? true,
     isChannelAvailable: () => overrides.available ?? true,
     isLoginFailed: () => overrides.loginFailed ?? false,

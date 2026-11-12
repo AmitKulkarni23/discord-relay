@@ -9,7 +9,6 @@ describe('parseConfig', () => {
       const config = parseConfig({
         attachments: true,
         editsDeletes: false,
-        debugPanel: false,
         channels: [
           { id: '1566584977829900002', name: 'relay' },
           { id: '1566584977829900003', name: null },

@@ -29,13 +29,18 @@ export function startServer(deps: ServerDeps): { url: URL; stop: () => void } {
   /** Reports Discord status and stream stats across channels; 503 when Discord is disconnected. */
   function health(): Response {
     const connected = isDiscordConnected()
-    const buffered = channelIds.flatMap(id => hub.recent(id))
-    const lastEventAt = buffered.reduce<string | null>((max, msg) => (max === null || msg.createdAt > max ? msg.createdAt : max), null)
+    const buffers = channelIds.map(id => hub.recent(id))
+    // The newest buffered message across channels. Each buffer is oldest first, and ISO timestamps sort as text.
+    const lastEventAt =
+      buffers
+        .flatMap(buffer => buffer.at(-1)?.createdAt ?? [])
+        .sort()
+        .at(-1) ?? null
     return Response.json(
       {
         discord: connected ? 'connected' : 'disconnected',
         clients: hub.subscriberCount(),
-        buffered: buffered.length,
+        buffered: buffers.reduce((total, buffer) => total + buffer.length, 0),
         lastEventAt,
         unavailableChannels: channelIds.filter(id => !isChannelAvailable(id)),
         uptimeSec: Math.round((Date.now() - startedAt) / 1000),
@@ -97,7 +102,7 @@ export function main(): void {
     historyLimit: config.bufferSize,
     publish: hub.publish,
     remove: hub.remove,
-    buffered: channelId => hub.recent(channelId).map(msg => msg.id),
+    bufferedIds: channelId => hub.recent(channelId).map(msg => msg.id),
     deletesEnabled: () => readFlags().editsDeletes,
     // Stay up: the page tells viewers the maintainer was notified, and relay_gateway_connected = 0 fires the Grafana alarm.
     onFatal: err => log.error('discord_login_failed', { error: errorMessage(err), hint: 'Check DISCORD_TOKEN and the MessageContent intent' }),

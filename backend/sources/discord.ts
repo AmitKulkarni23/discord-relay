@@ -13,7 +13,7 @@ export type DiscordDeps = {
   /** Removes a message deleted in Discord. */
   remove: (channelId: string, id: string) => void
   /** The IDs of a channel's buffered messages. */
-  buffered: (channelId: string) => string[]
+  bufferedIds: (channelId: string) => string[]
   /** The `edits-deletes` flag: whether deletions in Discord reach the page. Read each time, so a change applies at once. */
   deletesEnabled: () => boolean
   /** How many recent messages to load at startup; matches the hub's buffer size. */
@@ -40,26 +40,28 @@ function isFatalLogin(err: unknown): boolean {
 const PAGE_SIZE = 100
 
 /**
- * Loads the newest `limit` messages, oldest first. `fetchPage(before, size)`
- * returns up to `size` messages older than `before` (all when undefined), newest
+ * Loads the newest `limit` messages, oldest first. `fetchPage(before, pageSize)`
+ * returns up to `pageSize` messages older than `before` (all when undefined), newest
  * first, as Discord does; this walks back page by page until it has `limit`
  * or a page comes back short.
  */
 export async function collectHistory<T extends { id: string }>(
-  fetchPage: (before: string | undefined, limit: number) => Promise<T[]>,
+  fetchPage: (before: string | undefined, pageSize: number) => Promise<T[]>,
   limit: number,
 ): Promise<T[]> {
-  const out: T[] = []
+  const messages: T[] = []
   let before: string | undefined
-  while (out.length < limit) {
-    const size = Math.min(PAGE_SIZE, limit - out.length)
-    const page = await fetchPage(before, size)
-    out.push(...page)
+  while (messages.length < limit) {
+    const pageSize = Math.min(PAGE_SIZE, limit - messages.length)
+    const page = await fetchPage(before, pageSize)
+    messages.push(...page)
     const oldest = page.at(-1)
-    if (page.length < size || !oldest) break
+    // A short page means the channel has nothing older.
+    if (page.length < pageSize || !oldest) break
     before = oldest.id
   }
-  return out.reverse()
+  // Pages arrive newest first; the hub wants oldest first.
+  return messages.reverse()
 }
 
 /** The running bot, as `startDiscord` returns it. */
@@ -85,13 +87,13 @@ export type DiscordSource = {
  * for /config, and `stop`.
  */
 export function startDiscord(deps: DiscordDeps): DiscordSource {
-  const { token, channelIds, publish, remove, buffered, deletesEnabled, historyLimit = 100, onFatal, watchdogMs = 5 * 60_000, historyRetryMs = 5_000 } = deps
+  const { token, channelIds, publish, remove, bufferedIds, deletesEnabled, historyLimit = 100, onFatal, watchdogMs = 5 * 60_000, historyRetryMs = 5_000 } = deps
   const watchdog = createWatchdog({ limitMs: watchdogMs, onExpire: () => void reconnect() })
   let connected = false
   let loginFailed = false
   const wanted = new Set(channelIds)
   /** Channel names, filled in as each channel's history loads. */
-  const names = new Map<string, string>()
+  const channelNames = new Map<string, string>()
   /** True once the first session is ready; each later ready event is a fresh session that may have missed messages. */
   let started = false
   let warnedMissingContent = false
@@ -102,9 +104,9 @@ export function startDiscord(deps: DiscordDeps): DiscordSource {
   const retries = new Map<string, { attempts: number; timer?: ReturnType<typeof setTimeout> }>()
 
   /** Records a Gateway state change for /health and the watchdog. */
-  function setConnected(next: boolean, event: string): void {
-    connected = next
-    if (next) {
+  function setConnected(isUp: boolean, event: string): void {
+    connected = isUp
+    if (isUp) {
       loginFailed = false
       watchdog.connected()
       log.info(event)
@@ -171,10 +173,10 @@ export function startDiscord(deps: DiscordDeps): DiscordSource {
         retryHistory(channelId)
         return
       }
-      if ('name' in channel && typeof channel.name === 'string') names.set(channelId, channel.name)
+      if ('name' in channel && typeof channel.name === 'string') channelNames.set(channelId, channel.name)
       // Taken before the fetch, so a message posted while it runs is never mistaken for a deleted one.
-      const held = buffered(channelId)
-      const messages = await collectHistory(async (before, limit) => [...(await channel.messages.fetch({ limit, before })).values()], historyLimit)
+      const held = bufferedIds(channelId)
+      const messages = await collectHistory(async (before, pageSize) => [...(await channel.messages.fetch({ limit: pageSize, before })).values()], historyLimit)
       removeMissing(channelId, held, messages)
       for (const message of messages) handle(message)
       unavailable.delete(channelId)
@@ -221,7 +223,7 @@ export function startDiscord(deps: DiscordDeps): DiscordSource {
       if (deletesEnabled() && wanted.has(message.channelId)) remove(message.channelId, message.id)
     })
     client.on(Events.ChannelUpdate, (_, channel) => {
-      if (wanted.has(channel.id) && 'name' in channel && typeof channel.name === 'string') names.set(channel.id, channel.name)
+      if (wanted.has(channel.id) && 'name' in channel && typeof channel.name === 'string') channelNames.set(channel.id, channel.name)
     })
     client.on(Events.MessageBulkDelete, (messages, channel) => {
       if (deletesEnabled() && wanted.has(channel.id)) for (const id of messages.keys()) remove(channel.id, id)
@@ -230,9 +232,9 @@ export function startDiscord(deps: DiscordDeps): DiscordSource {
   }
 
   /** Logs in. A failure a retry could fix is only logged, and the watchdog tries again. */
-  async function login(next: Client): Promise<void> {
+  async function login(target: Client): Promise<void> {
     try {
-      await next.login(token)
+      await target.login(token)
     } catch (err) {
       if (isFatalLogin(err)) {
         loginFailed = true
@@ -248,20 +250,20 @@ export function startDiscord(deps: DiscordDeps): DiscordSource {
   async function reconnect(): Promise<void> {
     if (stopped) return
     log.error('watchdog_expired', { reason: 'Gateway disconnected past the watchdog limit; reconnecting with a fresh client' })
-    const old = client
-    const next = createClient()
-    client = next
+    const oldClient = client
+    const freshClient = createClient()
+    client = freshClient
     // Nothing from the old connection may count from here on. Without an 'error' listener, an emitted error would crash.
-    old.removeAllListeners()
-    old.on(Events.Error, () => {})
+    oldClient.removeAllListeners()
+    oldClient.on(Events.Error, () => {})
     setConnected(false, 'gateway_reconnecting')
     try {
-      await old.destroy()
+      await oldClient.destroy()
     } catch (err) {
       log.warn('discord_client_destroy_failed', { error: errorMessage(err) })
     }
-    // Closing can outlast the next attempt, which replaces `next`, or a stop.
-    if (!stopped && client === next) await login(next)
+    // Closing can outlast the next attempt, which replaces `freshClient`, or a stop.
+    if (!stopped && client === freshClient) await login(freshClient)
   }
 
   let client = createClient()
@@ -274,7 +276,7 @@ export function startDiscord(deps: DiscordDeps): DiscordSource {
     isConnected: () => connected,
     loginFailed: () => loginFailed,
     isChannelAvailable: channelId => !unavailable.has(channelId),
-    channels: () => channelIds.map(id => ({ id, name: names.get(id) ?? null })),
+    channels: () => channelIds.map(id => ({ id, name: channelNames.get(id) ?? null })),
     async stop() {
       stopped = true
       watchdog.connected()

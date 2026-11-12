@@ -11,12 +11,11 @@ Attachments render behind the `attachments` flag (TASK-009). What is left:
 - **Expired links.** Discord's attachment URLs expire after about 24 hours. The page shows "no longer available" when one fails; refreshing URLs server-side (Discord has an attachment-refresh endpoint) would keep old media working.
 - **Not captured yet:** link previews and embed images (an embed-only message shows only its title and description), sticker images and poll answers (shown as a note), custom emoji images (shown as `:name:`), headings, quotes, lists and masked links (shown as typed), replies, threads and reactions.
 
-## 2. Edits and the debug panel
+## 2. Edits
 
-Both flags exist in Railway (`edits-deletes`, `debug-panel`, see `.railway/flags.sh`) but nothing reads them yet.
+The `edits-deletes` flag exists in Railway (see `.railway/flags.sh`) and so far controls deletes only.
 
 - **Edits:** listen for Discord's update event, replace the buffered message, and send the edit under the same ID. The page already replaces a message whose `editedAt` changed. Deletes are built, behind the same flag. An edit made while a browser is away must also get past `?since=`.
-- **Debug panel:** show Gateway status, client count and last event time on the page, from `/health` every 10 s.
 
 ## 3. Load testing and scale
 

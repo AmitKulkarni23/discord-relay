@@ -8,6 +8,5 @@ set -e
 
 railway flag set attachments true      # render images, video, audio and file links
 railway flag set edits-deletes false   # remove messages deleted in Discord from the page; live edits are not built yet
-railway flag set debug-panel false     # show connection status, client count, last event (not built yet)
 
 railway flag list

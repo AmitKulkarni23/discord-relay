@@ -2,15 +2,15 @@ import { flags } from 'railway'
 import { errorMessage, log } from './log.ts'
 
 /** Feature flags, exposed to the browser through GET /config. */
-export type Flags = { attachments: boolean; editsDeletes: boolean; debugPanel: boolean }
+export type Flags = { attachments: boolean; editsDeletes: boolean }
 
 /** Used before the first sync, without a token, or when a flag is missing in Railway. */
-export const DEFAULT_FLAGS: Flags = { attachments: false, editsDeletes: false, debugPanel: false }
+export const DEFAULT_FLAGS: Flags = { attachments: false, editsDeletes: false }
 
 /**
  * Starts Railway's feature-flag client and returns a reader for the current
  * values. Flags live in Project Settings → Feature Flags (`attachments`,
- * `edits-deletes`, `debug-panel`); the SDK keeps them in memory and polls
+ * `edits-deletes`); the SDK keeps them in memory and polls
  * Railway, so a change applies within seconds and never needs a redeploy.
  * Never throws: without `RAILWAY_TOKEN`, or if Railway is unreachable, every
  * flag reads as its default and the app keeps running.
@@ -36,7 +36,6 @@ export async function startFlags(env: Record<string, string | undefined>): Promi
       return {
         attachments: flags.getBoolean('attachments', undefined, DEFAULT_FLAGS.attachments),
         editsDeletes: flags.getBoolean('edits-deletes', undefined, DEFAULT_FLAGS.editsDeletes),
-        debugPanel: flags.getBoolean('debug-panel', undefined, DEFAULT_FLAGS.debugPanel),
       }
     } catch {
       return DEFAULT_FLAGS

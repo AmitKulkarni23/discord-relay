@@ -65,7 +65,6 @@ describe('server', () => {
       expect(await res.json()).toEqual({
         attachments: true,
         editsDeletes: false,
-        debugPanel: false,
         channels: [
           { id: CHANNEL, name: 'relay-test' },
           { id: CHANNEL_2, name: 'announcements' },
@@ -74,7 +73,7 @@ describe('server', () => {
     })
 
     it('should read the flags on every request when a flag changes at runtime', async () => {
-      let current: Flags = { attachments: false, editsDeletes: false, debugPanel: false }
+      let current: Flags = { attachments: false, editsDeletes: false }
       const { url } = start(createHub(), { flags: () => current })
 
       const before = await (await fetch(new URL('/config', url))).json()

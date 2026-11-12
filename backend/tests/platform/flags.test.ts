@@ -8,7 +8,7 @@ describe('startFlags', () => {
       const read = await startFlags({})
 
       expect(read()).toEqual(DEFAULT_FLAGS)
-      expect(DEFAULT_FLAGS).toEqual({ attachments: false, editsDeletes: false, debugPanel: false })
+      expect(DEFAULT_FLAGS).toEqual({ attachments: false, editsDeletes: false })
     })
   })
 
@@ -30,7 +30,7 @@ describe('startFlags', () => {
     it('should read each flag from Railway', async () => {
       const read = await start(name => name === 'edits-deletes')
 
-      expect(read()).toEqual({ attachments: false, editsDeletes: true, debugPanel: false })
+      expect(read()).toEqual({ attachments: false, editsDeletes: true })
     })
 
     it('should fall back to the defaults instead of throwing, because event listeners read flags', async () => {

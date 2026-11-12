@@ -234,7 +234,7 @@ Failures of the server program itself (the running copy of the app, also called 
 - **Problem**: Every message is sent to every viewer, and Railway bills outbound traffic.
 - **Impact**: 10,000 viewers at 5 msg/s, with messages of about 470 bytes, is about 24 MB/s of billed traffic.
 - **Behavior Today**: Reconnecting web pages send `?since=`, so the buffer is not sent again on every reconnect.
-- **Long Term Fix**: Compress the stream (gzip, flushed after each event) and trim fields the web page does not need.
+- **Long Term Fix**: Trim fields the web page does not need from each message first. Compressing the stream with gzip would cut traffic several times over, but it costs CPU for every viewer, and CPU is already the tighter limit ([Known Problem 4](#4-one-cpu-core-does-all-the-fan-out)).
 
 #### 7. Images load at full resolution
 

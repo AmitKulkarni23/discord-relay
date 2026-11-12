@@ -53,9 +53,9 @@ Each section follows one hop of a message's path and lists what can go wrong the
 #### 1. The Gateway connection drops briefly
 
 - **Failure**: The bot's connection to Discord drops for a moment, for example when Discord restarts a server or the network blips.
-- **User Sees**: Nothing, or a short pause in new messages.
+- **User Sees**: A short amber "Waiting for Discord" chip, then the messages posted during the drop appear together.
 - **Detection**: The server logs each disconnect and reconnect.
-- **Handling**: discord.js reconnects on its own. If Discord lets it resume the session, Discord replays the missed messages. If not, the bot reloads the latest messages from Discord, and the ones it already had are ignored.
+- **Handling**: discord.js reconnects on its own and asks Discord to resume the session. If Discord still has it, Discord resends every event the bot missed, deletes included. If not, discord.js starts a new session, and the bot reloads each channel's latest messages over Discord's REST API (up to `BUFFER_SIZE`). The hub ignores the ones it already has. Messages older than that are not recovered.
 
 #### 2. The Gateway stays down (the watchdog)
 

@@ -185,13 +185,6 @@ Failures of the server program itself (the running copy of the app, also called 
 - **Detection**: Railway shows the deploy, and the viewer count in Grafana shows web pages reconnecting.
 - **Handling**: Railway runs the old and new server side by side for 30 s, then sends the old one SIGTERM (the signal asking a process to terminate). The old server closes its streams cleanly, and each web page reconnects after its own random delay, so they do not all arrive at once.
 
-#### 18. Railway health-checks only at deploy time
-
-- **Failure**: Railway checks `/health` when a deploy starts, but not afterwards, so a server that breaks later stays live.
-- **User Sees**: Depends on what broke.
-- **Detection**: Grafana's "App down", "Discord Gateway down" and "HTTP 500 errors" alarms.
-- **Handling**: The watchdog fixes the one known way the server stalls (a stuck Gateway connection).
-
 
 ## Known Problems
 

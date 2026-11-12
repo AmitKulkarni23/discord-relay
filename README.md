@@ -317,11 +317,10 @@ Cons:
 - Discord work grows with the replica count. Each replica holds its own Gateway session, and after a deploy or a fresh session every replica reloads history over the REST API at once, sharing one rate-limit budget per bot token.
 - Buffers can briefly disagree. A replica that missed events while restarting holds a slightly different buffer until its next history reload, and a web page that reconnects to it then can miss a message. Ordering is never affected, because message IDs are global.
 - A restarted replica comes back with no viewers. Load evens out only as streams reconnect, which the 15-minute cut forces within 15 minutes.
-- Not checked yet: whether Discord accepts several identical Gateway sessions for one bot token.
 
 Why it isn't built yet: one replica already covers the load we expect (it held 55,000 clients at 1 msg/s over the private network), and a crash recovers in a few seconds through restart on failure and a history refetch.
 
-When to switch: when the message rate makes one CPU core the bottleneck, or when a few seconds of full outage on a crash is no longer acceptable.
+When to switch: when the message rate makes one CPU core the bottleneck.
 
 ### B. Bot service, Redis Pub/Sub and web replicas
 
@@ -383,7 +382,7 @@ Each step got one of three results:
 - **SLOW**: every message arrived, but some arrived later than that.
 - **BROKEN**: a message was lost or a viewer was cut off.
 
-**Usable Max** is the most viewers that passed 3 times out of 3. **Hard Max** is the most viewers before a step broke. A separate test went through the public URL to find the limit of Railway's edge.
+**Usable Max** is the highest viewer count that got PASS in 3 repeat runs out of 3, so it is safe to plan for. **Hard Max** is the viewer count where steps started to break: above it, messages were lost or viewers were cut off. A separate test went through the public URL to find the limit of Railway's edge.
 
 The numbers are in [Appendix F: Load test results](#f-load-test-results).
 

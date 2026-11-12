@@ -108,6 +108,8 @@ The bot and the hub run in the same server, so this hop is a function call, not 
 - **User Sees**: A brief "Reconnecting…".
 - **Detection**: The page notices its stream has closed.
 - **Handling**: The page reconnects after a short random delay and sends the newest message ID it holds, so the server sends only what it missed.
+  - The page keeps that ID in memory, in a plain variable that every arriving message updates. Nothing goes into cookies or browser storage. On reconnect it calls `/events?channel=<id>&since=<newest id>`. A reload or a new tab starts with no ID and gets the whole buffer.
+  - `EventSource` has a built-in version of this: it remembers the last `id:` it received and sends it as a `Last-Event-ID` header when it reconnects on its own. The page does not rely on it, because it closes the stream itself on every error and opens a new `EventSource` to control the backoff, and a new `EventSource` starts without that ID.
 
 #### 8. Railway closes a connection that has been silent for 5 minutes
 

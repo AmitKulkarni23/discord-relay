@@ -61,21 +61,21 @@ Each section follows one hop of a message's path and lists what can go wrong the
 
 - **Failure**: The connection does not come back, while the server itself keeps running. discord.js can get stuck retrying.
 - **User Sees**: An amber "Waiting for Discord" chip and no new messages. Messages already on the page stay.
-- **Detection**: The health check starts failing, the server logs that the watchdog stepped in, and Grafana's "Discord Gateway down" alarm goes off after 2 minutes.
+- **Detection**: Grafana's "Discord Gateway down" alarm goes off after 2 minutes. The logs show `gateway_disconnected` at once and `watchdog_expired` when the watchdog steps in at 5 minutes.
 - **Handling**: The watchdog notices the connection has been down for 5 minutes, throws away the stuck Discord client and builds a fresh one, and repeats every 5 minutes until one connects. The buffer is kept, so the page keeps its messages.
 
 #### 3. The bot token is invalid or revoked
 
 - **Failure**: Discord rejects the bot's token, for example because it was reset in the Discord developer portal.
 - **User Sees**: A red "Relay down" chip and "The relay cannot sign in to Discord. The project maintainer has been notified."
-- **Detection**: The server logs that Discord refused the login, the health check starts failing, and within 2 minutes Grafana's "Discord Gateway down" alarm posts to the maintainer's Discord channel.
+- **Detection**: The server logs that Discord refused the login, and within 2 minutes Grafana's "Discord Gateway down" alarm posts to the maintainer's Discord channel.
 - **Handling**: The server stays up instead of crashing and restarting, and tells every open page. A new deploy with a bad token fails Railway's healthcheck, so the previous deploy keeps serving. The fix is to set a valid `DISCORD_TOKEN`, which redeploys.
 
 #### 4. A channel's history cannot be loaded
 
 - **Failure**: At startup the bot loads each channel's recent messages from Discord. This fails if Discord is down, rate-limits the bot, or the bot lacks permission to read the channel.
 - **User Sees**: An empty or partial page and a "Channel unavailable" chip.
-- **Detection**: The server logs the failure, and the health check lists the channel as unavailable.
+- **Detection**: The server logs the failure. No alarm covers this yet.
 - **Handling**: The bot retries that channel, waiting longer each time (5 s, doubling up to 5 minutes), until it loads.
 
 ### Bot to hub (inside the server)
@@ -155,7 +155,7 @@ The bot and the hub run in the same server, so this hop is a function call, not 
 
 - **Failure**: A phone loses signal without closing its stream, so the server still counts it as connected.
 - **User Sees**: Nothing, but the stream holds server memory.
-- **Detection**: The viewer count in the health check and in Grafana stays higher than it should.
+- **Detection**: The viewer count in Grafana stays higher than it should.
 - **Handling**: The stream is freed when a write to it fails.
 
 #### 15. A message carries a malicious attachment link

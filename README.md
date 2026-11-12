@@ -195,7 +195,7 @@ Failures of the server program itself (the running copy of the app, also called 
 - **Problem**: The whole app runs as one copy on one machine.
 - **Impact**: A crash or a deploy drops every viewer at once, for a few seconds.
 - **Behavior Today**: Railway restarts the server on failure, the bot reloads recent history from Discord, and every web page reconnects on its own after a short random delay.
-- **Long Term Fix**: [Alternative A](#a-bot-service-redis-pubsub-and-web-replicas): one bot service, Redis and several web replicas, so losing one replica drops only its share of viewers.
+- **Long Term Fix**: [Alternative A](#a-bot-in-every-replica): several replicas, each with its own bot, so losing one replica drops only its share of viewers.
 
 #### 2. A deploy or crash causes a reconnect storm
 
@@ -220,7 +220,7 @@ Failures of the server program itself (the running copy of the app, also called 
 - **Behavior Today**: Each message is turned into bytes once and the same bytes are reused for every viewer. A viewer more than 1 MiB behind is dropped, which protects memory but not CPU.
 - **Long Term Fix**:
   - **Batch writes**: today, 200 messages a second means 200 separate writes to each open web page. Instead, the server would collect the messages that arrive in a short window (for example 50 ms) and send them to each web page as one write. At 200 msg/s that is about 20 writes per web page per second instead of 200, in exchange for up to 50 ms of extra delay.
-  - **Replicas**: after batching, run several copies of the server ([Alternative A](#a-bot-service-redis-pubsub-and-web-replicas)), so the fan-out is spread across several CPU cores instead of one.
+  - **Replicas**: after batching, run several copies of the server ([Alternative A](#a-bot-in-every-replica)), so the fan-out is spread across several CPU cores instead of one.
 
 #### 5. Dead connections linger
 
@@ -299,29 +299,52 @@ Failures of the server program itself (the running copy of the app, also called 
 
 ## Alternatives Considered
 
-### A. Bot service, Redis Pub/Sub and web replicas
+### A. Bot in every replica
 
-![Alternative A: bot service, Redis Pub/Sub and web replicas](docs/images/alt-a-redis.png)
+![Alternative A: a bot in every replica](docs/images/alt-a-bot-per-replica.png)
+
+Run today's service with several replicas. Each replica is a full copy of the current server, with its own bot, Gateway session, buffer and SSE streams, and Railway's edge spreads web pages across them.
+
+Pros:
+
+- A crash drops only that replica's viewers ([Known Problem 1](#1-one-replica-is-a-single-point-of-failure)). Their web pages reconnect on their own with `?since=`, and the edge sends each new request to a replica that is up.
+- Fan-out is spread across replicas and their CPU cores ([Known Problem 4](#4-one-cpu-core-does-all-the-fan-out)).
+- No new service and almost no new code: it is the replica count in `.railway/railway.ts`.
+
+Cons:
+
+- More replicas would not let more people in. Railway's edge caps a domain at 10,000 in-flight requests per edge node, counted across all replicas, and each SSE stream is a long-lived request.
+- Discord work grows with the replica count. Each replica holds its own Gateway session, and after a deploy or a fresh session every replica reloads history over the REST API at once, sharing one rate-limit budget per bot token.
+- Buffers can briefly disagree. A replica that missed events while restarting holds a slightly different buffer until its next history reload, and a web page that reconnects to it then can miss a message. Ordering is never affected, because message IDs are global.
+- A restarted replica comes back with no viewers. Load evens out only as streams reconnect, which the 15-minute cut forces within 15 minutes.
+- Not checked yet: whether Discord accepts several identical Gateway sessions for one bot token.
+
+Why it isn't built yet: one replica already covers the load we expect (it held 55,000 clients at 1 msg/s over the private network), and a crash recovers in a few seconds through restart on failure and a history refetch.
+
+When to switch: when the message rate makes one CPU core the bottleneck, or when a few seconds of full outage on a crash is no longer acceptable.
+
+### B. Bot service, Redis Pub/Sub and web replicas
+
+![Alternative B: bot service, Redis Pub/Sub and web replicas](docs/images/alt-b-redis.png)
 
 One bot publishes each message to Redis. Every web replica subscribes and fans messages out to its own SSE clients.
 
 Pros:
 
-- A crash drops only one replica's viewers, not everyone ([Known Problem 1](#1-one-replica-is-a-single-point-of-failure)).
-- Fan-out is spread across replicas and their CPU cores, so the message rate one server can handle stops being the ceiling ([Known Problem 4](#4-one-cpu-core-does-all-the-fan-out)).
-- There is one bot and one Gateway session however many replicas run.
+- There is one bot and one Gateway session however many replicas run, so Discord traffic does not grow with the replica count.
+- Every replica gets the same stream from Redis, so their buffers always agree.
+- Like Alternative A, a crash drops only one replica's viewers and fan-out is spread across CPU cores.
 
 Cons:
 
-- More replicas would not let more people in. Railway's edge caps a domain at 10,000 in-flight requests per edge node, counted across all replicas, and each SSE stream is a long-lived request.
+- Like Alternative A, more replicas would not let more people in: the edge cap is counted across all replicas.
 - Redis adds a service, a bill, a network hop and a new way to fail: if Redis is down, no messages get through. Pub/Sub also drops messages for a subscriber that is disconnected, so the replicas would need their own reconnect and replay logic.
-- One replica already covers the load we expect: it held 55,000 clients at 1 msg/s over the private network. A crash recovers in a few seconds, through restart on failure and a history refetch.
 
-When to switch: when the message rate makes one CPU core the bottleneck, or when a few seconds of full outage on a crash is no longer acceptable.
+When to switch: when Alternative A runs enough replicas that their combined Discord traffic becomes the limit, or when every replica must see exactly the same stream.
 
-### B. Postgres for storage, Redis for fan-out
+### C. Postgres for storage, Redis for fan-out
 
-![Alternative B: Postgres for storage, Redis for fan-out, web replicas](docs/images/alt-b-postgres-redis.png)
+![Alternative C: Postgres for storage, Redis for fan-out, web replicas](docs/images/alt-c-postgres-redis.png)
 
 The bot writes every message to Postgres and publishes it to Redis. Web replicas read history and `?since=` replays from Postgres, and live messages from Redis.
 
@@ -329,13 +352,13 @@ Pros:
 
 - History survives restarts and is not limited to the buffer, so the web page could load older messages ([Appendix H](#h-loading-older-messages-not-built)) and offer search.
 - `?since=` replays and deletes survive a restart ([Known Problem 11](#11-a-message-deleted-while-the-server-restarts-stays-on-web-pages-that-were-already-open)).
-- It brings the replica benefits of Alternative A too.
+- It brings the replica benefits of Alternatives A and B too.
 
 Cons:
 
 - Discord already stores every message. A second copy brings sync problems (edits, deletes, events missed during downtime) and does nothing for someone watching live.
 - Nothing in the product needs search or history beyond 500 messages yet.
-- It costs the most of the three options and takes the most work to run: two stateful services, migrations and backups.
+- It costs the most of these options and takes the most work to run: two stateful services, migrations and backups.
 
 When to switch: when the product needs history or search, not just a live view.
 
@@ -343,7 +366,6 @@ When to switch: when the product needs history or search, not just a live view.
 
 | Option | Good for | Why not |
 | --- | --- | --- |
-| A bot in every replica, no Redis | Replicas with no extra service, which works because the bot only reads | Each replica keeps its own buffer and its own Gateway session |
 | WebSockets instead of SSE | The edge cap: the edge does not count a WebSocket once it is established, and does not cut it at 15 minutes | Two-way, which we don't need, and the browser gets no built-in reconnect |
 | Polling | The simplest client and server, working through any proxy | • More lag<br>• Load even when the channel is quiet: 10,000 viewers polling every 2 s is 5,000 requests a second<br>• Every poll is a full HTTP request, which costs far more CPU than a write to an open stream<br>• Empty answers still send headers, and Railway bills that traffic |
 | A managed push service (Pusher, Ably) | The way past the edge cap, with no fan-out servers to run | A bill and a vendor |
@@ -472,7 +494,7 @@ data: 1
 | One service for backend and frontend | One deploy, one domain, no CORS (Cross-Origin Resource Sharing) |
 | React + MUI (Material UI) | A fast, accessible UI (user interface) that escapes text |
 | No database | Discord already stores everything |
-| One replica | Extra replicas mean extra bots and buffers |
+| One replica | Covers the expected load; Alternative A is the next step |
 | Reconnect with `?since=` | Avoids resending about 58 KB per client every 15 min |
 | Railway Feature Flags | Changes without a redeploy |
 | Railway IaC (Infrastructure as Code) | `railway.json` is deprecated |
@@ -586,7 +608,7 @@ n is at most 500, so even O(n) is microseconds per message.
 
 **Why not a ring buffer.** A ring buffer (a fixed array with a moving start index) makes eviction O(1) instead of O(n). But the buffer must also stay in ID order when history and live messages arrive out of order, and inserting into the middle of a ring buffer is still O(n). At 500 entries the saving is too small to matter, and the plain array is easier to read and test.
 
-**When to change it.** A capacity in the thousands, or hundreds of messages per second in one channel, would make the O(n) steps show up in profiles. Then use a ring buffer for live appends and treat an out-of-order message as the rare case, or a sorted structure such as a B-tree. Past that, the buffer belongs in a database ([Alternative B](#b-postgres-for-storage-redis-for-fan-out)).
+**When to change it.** A capacity in the thousands, or hundreds of messages per second in one channel, would make the O(n) steps show up in profiles. Then use a ring buffer for live appends and treat an out-of-order message as the rare case, or a sorted structure such as a B-tree. Past that, the buffer belongs in a database ([Alternative C](#c-postgres-for-storage-redis-for-fan-out)).
 
 ### H. Loading older messages (not built)
 
@@ -598,7 +620,7 @@ If it were built:
 - **Source**: the server asks Discord (`messages.fetch({ before })`). The browser never talks to Discord, so the token stays on the server.
 - **Rate limits**: every scroll would cost a Discord API call, and Discord rate-limits them. The server would need a small cache of recently fetched pages and a per-IP limit on `/history`.
 - **Browser cap**: the 500-message cap would have to drop messages from whichever end the reader is not looking at.
-- **At scale**: if many readers browse old messages, store messages in Postgres ([Alternative B](#b-postgres-for-storage-redis-for-fan-out)) and serve history from there instead of from Discord.
+- **At scale**: if many readers browse old messages, store messages in Postgres ([Alternative C](#c-postgres-for-storage-redis-for-fan-out)) and serve history from there instead of from Discord.
 
 ### I. From stream to browser: queues, sockets and buffers
 

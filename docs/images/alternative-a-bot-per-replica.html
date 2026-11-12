@@ -1,4 +1,4 @@
-<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Alternative A: Redis</title><style>
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Alternative A: Bot in every replica</title><style>
 :root{--bg:#fff;--fg:#1f2328;--muted:#5b636e;--line:#8a929c;--ext-bg:#f1ecff;--ext-bd:#7c5cd6;--our-bg:#e8f1ff;--our-bd:#2f6fdb;--inf-bg:#fff4e0;--inf-bd:#d48a12;--usr-bg:#e7f7ee;--usr-bd:#2e9a5b;--grp-bd:#9aa3ad;--warn:#c43d3d}
 @media (prefers-color-scheme:dark){:root{--bg:#191919;--fg:#e6e6e6;--muted:#a0a7b0;--line:#7d858f;--ext-bg:#2a2340;--ext-bd:#9b82ea;--our-bg:#1b2a42;--our-bd:#5b93ee;--inf-bg:#3a2c12;--inf-bd:#e0a33a;--usr-bg:#173324;--usr-bd:#4cc27f;--grp-bd:#5e666f;--warn:#ff7b7b}}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:13px/1.35 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,sans-serif}
@@ -17,19 +17,15 @@
 .legend{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;margin-top:16px;font-size:11px;color:var(--muted)}.legend i{display:inline-block;width:10px;height:10px;border-radius:3px;border:1.5px solid;margin-right:5px;vertical-align:-1px}
 </style></head><body><div class="wrap">
 <div class="n ext center"><b>Discord</b></div>
-<div class="v"><span class="ln"></span><span class="lbl">Gateway WebSocket</span></div>
-<div class="grp center" style="max-width:360px"><span class="gl">Ingestion service · 1 replica</span><div class="n our"><b>Discord bot</b><small>normalizes each message</small></div></div>
-<div class="v"><span class="ln"></span><span class="lbl">PUBLISH channel:&lt;id&gt;</span></div>
-<div class="n inf center"><b>Redis</b><small>Pub/Sub + capped recent-messages list (buffer)</small></div>
-<div class="v nohead"><span class="ln"></span><span class="lbl">SUBSCRIBE</span></div>
+<div class="v nohead"><span class="ln"></span><span class="lbl">Gateway WebSocket · one session per replica</span></div>
 <div class="grp" style="padding-top:0;border-top:0;border-radius:0 0 14px 14px"><div class="fan" style="--n:3">
-<div><div class="v"><span class="ln"></span></div><div class="n our"><b>Web replica 1</b><small>local buffer + SSE</small></div></div>
-<div><div class="v"><span class="ln"></span></div><div class="n our"><b>Web replica 2</b><small>local buffer + SSE</small></div></div>
-<div><div class="v"><span class="ln"></span></div><div class="n our"><b>Web replica N</b><small>local buffer + SSE</small></div></div>
+<div><div class="v"><span class="ln"></span></div><div class="n our"><b>Replica 1</b><small>bot + buffer + SSE</small></div></div>
+<div><div class="v"><span class="ln"></span></div><div class="n our"><b>Replica 2</b><small>bot + buffer + SSE</small></div></div>
+<div><div class="v"><span class="ln"></span></div><div class="n our"><b>Replica N</b><small>bot + buffer + SSE</small></div></div>
 </div><div class="merge" style="--n:3"><div><div class="v nohead"><span class="ln"></span></div></div><div><div class="v nohead"><span class="ln"></span></div></div><div><div class="v nohead"><span class="ln"></span></div></div></div>
-<div style="text-align:center;font-size:11.5px;font-weight:600;color:var(--muted);margin-top:6px">Web service · N replicas</div></div>
+<div style="text-align:center;font-size:11.5px;font-weight:600;color:var(--muted);margin-top:6px">One service · N replicas · each a full copy of today's server</div></div>
 <div class="v"><span class="ln"></span></div>
-<div class="n inf center"><b>Railway edge proxy</b></div>
+<div class="n inf center"><b>Railway edge proxy</b><small>spreads web pages across the replicas</small></div>
 <div class="v"><span class="ln"></span><span class="lbl">SSE</span></div>
 <div class="n usr center"><b>Browsers</b></div>
 </div></body></html>

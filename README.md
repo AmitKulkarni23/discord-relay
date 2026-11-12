@@ -4,17 +4,7 @@ A Discord bot that streams messages from one or more Discord channels into a web
 
 Link: [discord-relay-production-262e.up.railway.app](https://discord-relay-production-262e.up.railway.app)
 
-
-## Acronyms and Terminology
-
-| Term | Meaning |
-| --- | --- |
-| Bun | JavaScript runtime with a built-in HTTP server, bundler and test runner. Runs the server, bundles the React page and runs the tests. |
-| Gateway | Discord's real-time WebSocket API. The bot gets new and deleted messages through it. |
-| Snowflake | Discord's message ID: unique and time-ordered. Used for ordering and dedupe. |
-| SSE | Server-Sent Events: a one-way server-to-browser stream over plain HTTP, read with `EventSource`. Served on `GET /events`. |
-| Edge | Railway's public proxy. Cuts requests at 15 min and caps in-flight requests per domain. |
-| SIGTERM | The signal Railway sends to stop the process. The server closes open streams and the Discord client, then exits. |
+Terms such as Gateway, SSE and snowflake are defined in [Appendix J](#j-terminology).
 
 
 ## High Level Design
@@ -49,7 +39,7 @@ One Railway service, with one replica, runs three components in a single Bun pro
 1. **Discord to bot.** A user posts. Discord sends `messageCreate` over the Gateway WebSocket the bot holds open.
 2. **Normalize.** The bot converts the discord.js object to a plain object (`id`, `channelId`, `author`, `content`, `note`, `createdAt`, `editedAt`, `attachments`).
 3. **Hub.** The hub inserts the message into that channel's buffer, or drops it if the ID is already there. The buffer has a fixed size, configurable with `BUFFER_SIZE` (default 100, max 500); once it is full, the oldest message is dropped to make room. Then the hub calls every subscriber callback for that channel.
-4. **SSE write.** Each open `/events` stream is one subscriber. It writes `id: <snowflake>` and `data: <JSON>`. A stream more than 1 MiB behind is dropped, so one slow client cannot grow server memory.
+4. **SSE write.** Each open `/events` stream is one subscriber. It writes `id: <snowflake>` and `data: <JSON>`. A stream more than 1 MiB behind is dropped, so one slow client cannot grow server memory. What "behind" means is in [Appendix I](#i-from-stream-to-browser-queues-sockets-and-buffers).
 5. **Edge to browser.** The bytes go through Railway's proxy to the browser's `EventSource`.
 6. **Render.** The page drops duplicate IDs, keeps the newest 500 messages and renders them.
 
@@ -267,7 +257,7 @@ The bot and the hub run in the same server, so this hop is a function call, not 
 - **Failure**: A viewer on a slow connection reads more slowly than messages arrive, so unsent messages pile up in server memory.
 - **User Sees**: That page reconnects and catches up.
 - **Detection**: The server logs a warning for each dropped viewer, and Grafana's "Drop spike" alarm goes off if more than 1% are dropped in 5 minutes.
-- **Handling**: Once 1 MiB is waiting for one viewer, the server drops that stream, so one slow viewer cannot grow server memory.
+- **Handling**: Once 1 MiB is waiting for one viewer, the server drops that stream, so one slow viewer cannot grow server memory. [Appendix I](#i-from-stream-to-browser-queues-sockets-and-buffers) shows where those bytes wait.
 
 #### 12. One machine opens many streams
 
@@ -617,3 +607,47 @@ If it were built:
 - **Rate limits**: every scroll would cost a Discord API call, and Discord rate-limits them. The server would need a small cache of recently fetched pages and a per-IP limit on `/history`.
 - **Browser cap**: the 500-message cap would have to drop messages from whichever end the reader is not looking at.
 - **At scale**: if many readers browse old messages, store messages in Postgres ([Alternative B](#b-postgres-for-storage-redis-for-fan-out)) and serve history from there instead of from Discord.
+
+### I. From stream to browser: queues, sockets and buffers
+
+One browser tab on a channel opens one `EventSource`, which makes one `GET /events` request. On the server that request gets one `ReadableStream`, the `controller` that writes into it, and one hub subscription. The TCP connection is not one to one: the browser connects to Railway's edge, and the edge makes its own connection to the server.
+
+A message passes through five buffers on its way to the page:
+
+```txt
+hub → [1] queue → [2] Bun → [3] TCP send ══▶ [4] edge ══▶ [5] TCP recv → EventSource
+└─────────────── server ───────────────┘ └──── edge ────┘ └─────── browser ────────┘
+       ▲
+       └─ the 1 MiB check measures only this
+```
+
+1. The stream queue, in the server's JS heap. It holds bytes `enqueue()` accepted that Bun has not sent yet. This is the only layer the server measures, and once it holds more than 1 MiB the next live write drops the client.
+2. Bun's socket buffer, in native memory. It holds bytes Bun took from the stream that the kernel could not accept yet. Bun stops reading from the stream while the socket is full, so this should stay small; we have not checked Bun's source to confirm it.
+3. The TCP send buffer, in the server's kernel. It holds bytes sent but not yet acknowledged. The other end of this connection is Railway's edge, so the edge's acknowledgements empty it, not the browser's. The OS sizes it, usually somewhere from a few hundred KB to a few MB.
+4. Railway's edge, a proxy with buffers of its own. It keeps accepting bytes from the server until its buffers toward the browser fill. Railway does not document their size.
+5. The TCP receive buffer, on the viewer's machine. It holds bytes that arrived but the browser has not read yet. Over HTTP/2, one connection from the browser can carry the streams of several tabs.
+
+The stream reports how much room its queue has left as `desiredSize`, which is 1 MiB minus the bytes queued:
+
+| Queued | `desiredSize` | Meaning |
+| --- | --- | --- |
+| 0 | 1 MiB | The viewer is keeping up |
+| 600 KB | about 400 KB | Some backlog |
+| 1.2 MB | negative | Past the limit: the next live write drops the client |
+
+Bytes leave each buffer as fast as the next one takes them, which has three consequences:
+
+- The queue only grows once buffers 2 to 5 are full, so a viewer is dropped later than "1 MiB behind" suggests.
+- A stalled viewer has more than 1 MiB waiting in total, because the kernel and edge buffers hold bytes too. Only the queue and Bun's buffer are in the server process's memory, and every layer has a fixed size, so the total is still bounded.
+- It probably explains why dead connections linger ([Known Problem 5](#5-dead-connections-linger)). When a phone loses signal, the edge is still up and keeps accepting bytes, and the server notices nothing until the edge's buffers are full.
+
+### J. Terminology
+
+| Term | Meaning |
+| --- | --- |
+| Bun | JavaScript runtime with a built-in HTTP server, bundler and test runner. Runs the server, bundles the React page and runs the tests. |
+| Gateway | Discord's real-time WebSocket API. The bot gets new and deleted messages through it. |
+| Snowflake | Discord's message ID: unique and time-ordered. Used for ordering and dedupe. |
+| SSE | Server-Sent Events: a one-way server-to-browser stream over plain HTTP, read with `EventSource`. Served on `GET /events`. |
+| Edge | Railway's public proxy. Cuts requests at 15 min and caps in-flight requests per domain. |
+| SIGTERM | The signal Railway sends to stop the process. The server closes open streams and the Discord client, then exits. |

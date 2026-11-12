@@ -227,7 +227,7 @@ Failures of the server program itself (the running copy of the app, also called 
 - **Problem**: A viewer that disappears without closing the connection, such as a phone losing signal, still looks connected to the server.
 - **Impact**: Those connections stay subscribed for over 5 minutes, using memory and getting written to. One load test reached 75,896 subscribers, of which only about 50,000 were live.
 - **Behavior Today**: The connection is cleaned up when a write to it finally fails.
-- **Long Term Fix**: Drop a stream that has not accepted any data for N seconds, or use a shorter TCP (Transmission Control Protocol) keepalive.
+- **Long Term Fix**: Drop a stream that has not accepted any data for N seconds, or use a shorter TCP keepalive.
 
 #### 6. Bandwidth cost grows with message rate × viewers
 

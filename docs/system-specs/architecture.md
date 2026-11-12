@@ -8,7 +8,7 @@ DiscordRelay streams messages from one Discord channel to a web page in real tim
 flowchart LR
   D["Discord"] -- "Gateway WebSocket" --> B
   subgraph RW["Railway service (1 replica)"]
-    B["Discord bot<br/>receive + normalize"] -- "publish(msg)" --> H["Hub<br/>ring buffer (BUFFER_SIZE) + subscribers"]
+    B["Discord bot<br/>receive + normalize"] -- "publish(msg)" --> H["Hub<br/>sorted buffer (BUFFER_SIZE) + subscribers"]
     H -- "subscribe(channelId)" --> S["HTTP server<br/>Bun.serve"]
   end
   S -- "page (React + MUI) and SSE /events" --> P["Railway proxy"]
@@ -21,7 +21,7 @@ flowchart LR
 | Component | File | Responsibility |
 |---|---|---|
 | Discord bot | `backend/sources/discord.ts`, `discord-message.ts`, `watchdog.ts` | Connects to the Gateway, fetches history at startup, converts discord.js messages to `Msg`, and calls `publish`. It is the only file that imports discord.js. |
-| Hub | `backend/core/hub.ts` | Holds a ring buffer of `BUFFER_SIZE` messages per channel, dedupes by message ID, and handles publish/subscribe. Everything is keyed by `channelId`. Created with `createHub()`, so each test gets a fresh instance. |
+| Hub | `backend/core/hub.ts` | Holds a sorted array of up to `BUFFER_SIZE` messages per channel (why an array: README Appendix G), dedupes by message ID, and handles publish/subscribe. Everything is keyed by `channelId`. Created with `createHub()`, so each test gets a fresh instance. |
 | Config | `backend/platform/config.ts` | Reads and validates env vars once at startup (`loadConfig`); exits naming the variable when one is missing or invalid. |
 | Flags | `backend/platform/flags.ts` | Reads Railway Feature Flags through the `railway` SDK; every flag falls back to off. |
 | HTTP server | `backend/server.ts`, `backend/http/sse.ts` | The entry point. Runs `Bun.serve` for the page, `/events`, `/health` and `/config`, and handles SIGTERM. It is the only place dependencies are wired: it creates the hub and passes it, the config and the publish function to the bot and the routes. |

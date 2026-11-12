@@ -18,7 +18,7 @@ paths:
 ## Messages
 
 - Discord messages MUST be normalized to `Msg` in `discord-message.ts`. Raw discord.js objects MUST NOT leave that file.
-- The hub ring buffer MUST be fixed-size: `BUFFER_SIZE` (1 to 500, default 100). Unbounded arrays, maps or queues MUST NOT be added.
+- The hub buffer MUST be fixed-size: `BUFFER_SIZE` (1 to 500, default 100). Unbounded arrays, maps or queues MUST NOT be added.
 - On startup, and again whenever the Gateway starts a fresh session instead of resuming, the bot MUST fetch the latest `BUFFER_SIZE` messages, in pages of at most 100 (Discord's limit).
 - The hub MUST drop a message whose ID is already in the buffer (dedupe by Discord message ID).
 - The hub buffer MUST stay in ID order, and eviction MUST remove the oldest ID, whatever order messages arrive in.

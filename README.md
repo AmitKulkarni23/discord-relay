@@ -24,7 +24,7 @@ One Railway service, with one replica, runs three components in a single Bun pro
 
 - **Discord ingestion**: connects to Discord as a read-only bot, loads recent history over Discord's REST API at startup, and receives new messages live over the gateway (Discord's real-time WebSocket)
   - **Watchdog**: a timer that starts whenever the Gateway connection drops. If the connection is not back within 5 minutes, it replaces the stuck Discord client with a fresh one, and repeats every 5 minutes until one connects. Messages already on the page are kept. Railway only health-checks at deploy time, so without the watchdog a connection that stalls later would go unnoticed
-- **Hub**: keeps an in-memory buffer of recent messages per channel. Each open browser stream registers a callback; when a message arrives, the hub calls every callback for that channel
+- **Hub**: keeps an in-memory buffer of recent messages per channel. It is a `Map` keyed by `channelId`, and everything in it (buffer, subscribers, deleted IDs) lives under that key, so channels never mix. Each open browser stream registers a callback; when a message arrives, the hub calls every callback for that channel. How the buffer is laid out is in [Appendix G](#g-the-hubs-buffer)
 - **HTTP Server**: serves the web page, streams messages to browsers over SSE
 
 
@@ -120,30 +120,37 @@ The two that matter most: Railway's edge caps public viewers at about 10,000, an
 - **Behavior Today**: The page keeps at most 500 messages and removes the oldest.
 - **Long Term Fix**: None needed yet.
 
+#### 9. Every channel adds to one process
+
+- **Problem**: The hub keeps a buffer per channel, and one bot loads every channel's history, one channel after another.
+- **Impact**: Costs grow with the number of channels. Memory is channels × `BUFFER_SIZE` messages (100 channels × 500 is 50,000 messages, tens of MB). Startup, and every fresh Gateway session, reloads up to 5 history pages per channel, so many channels mean a slow reload and Discord's rate limits. The page shows one tab per channel, which stops working well past a handful.
+- **Behavior Today**: Channels are a fixed list in `CHANNEL_ID`, meant for a few.
+- **Long Term Fix**: Load history for several channels at once within Discord's rate limits, lower `BUFFER_SIZE` as channels grow, and replace the tabs with a channel picker. Past that, split channels across services.
+
 ### Correctness and data
 
-#### 9. Edits are not relayed
+#### 10. Edits are not relayed
 
 - **Problem**: When someone edits a message in Discord, the page is not updated.
 - **Impact**: An edited message keeps its old text on the page, because the hub ignores a message ID it already holds.
 - **Behavior Today**: Not built.
 - **Long Term Fix**: Let the hub replace a message it already holds, behind the `edits-deletes` flag.
 
-#### 10. Deletes only reach the page with the `edits-deletes` flag on
+#### 11. Deletes only reach the page with the `edits-deletes` flag on
 
 - **Problem**: Removing deleted messages from the page is behind a feature flag that is off by default.
 - **Impact**: With the flag off, a message deleted in Discord stays on the public page until it leaves the buffer or the server restarts.
 - **Behavior Today**: The flag exists and is off.
 - **Long Term Fix**: Turn the flag on once it has been verified in production.
 
-#### 11. A message deleted while the server restarts stays on pages that were already open
+#### 12. A message deleted while the server restarts stays on pages that were already open
 
 - **Problem**: The server remembers recent deletes only in memory, and tells reconnecting pages about them. If a message is deleted in Discord while the server is restarting, the new server never sees that delete, so it has nothing to tell the pages that were open before the restart.
 - **Impact**: Someone who kept the page open through the restart still sees the deleted message until they reload. Anyone who opens the page afterwards does not see it, because the new server loads fresh history from Discord.
 - **Behavior Today**: Not handled. A reload fixes it.
 - **Long Term Fix**: After reconnecting, have the page check which of its messages are still in the server's buffer, or keep recent deletes somewhere that survives a restart.
 
-#### 12. Messages older than the buffer are skipped on reconnect
+#### 13. Messages older than the buffer are skipped on reconnect
 
 - **Problem**: A reconnecting page only gets the messages the server still holds, which is at most `BUFFER_SIZE` per channel.
 - **Impact**: A page offline for longer than the buffer covers has a gap, and nothing on the page says so.
@@ -152,14 +159,14 @@ The two that matter most: Railway's edge caps public viewers at about 10,000, an
 
 ### Security and abuse
 
-#### 13. No content moderation
+#### 14. No content moderation
 
 - **Problem**: Everything posted in the channel is shown on a public page.
 - **Impact**: Offensive content is relayed live.
 - **Behavior Today**: Discord AutoMod can block it in Discord before the bot sees it.
 - **Long Term Fix**: A filter in front of the hub, with a word list or a moderation API.
 
-#### 14. The per-IP connection cap is blunt
+#### 15. The per-IP connection cap is blunt
 
 - **Problem**: Each IP address may open at most 20 streams.
 - **Impact**: A large office or a network where many people share one IP can be blocked, while an attacker with many IPs (a botnet, an IPv6 range) gets past it.
@@ -562,3 +569,51 @@ At 4,000 consumers the event loop stalled for up to 33.6 s, and the app dropped 
 - Memory is not the limit: about 60 KB per consumer, or 3.1 GB at 55,000.
 - The edge caps public reach at roughly 12,000 to 15,000 connections, well below what the server can hold, and adding replicas would not raise it.
 - The tests did not cover long holds (steps were 60 s), real browsers, larger messages or the bot handling real traffic.
+
+### G. The hub's buffer
+
+Each channel's buffer is a plain array of messages, sorted by ID (oldest first) and capped at `BUFFER_SIZE`. With a capacity of 5:
+
+```txt
+Live message 106 arrives: it is newer than everything, so it goes at the end.
+
+  index    0     1     2     3     4
+        ┌─────┬─────┬─────┬─────┬─────┐
+before  │ 101 │ 102 │ 103 │ 104 │ 105 │   full
+        └─────┴─────┴─────┴─────┴─────┘
+        ┌─────┬─────┬─────┬─────┬─────┬─────┐
+insert  │ 101 │ 102 │ 103 │ 104 │ 105 │ 106 │   6 > capacity
+        └─────┴─────┴─────┴─────┴─────┴─────┘
+        ┌─────┬─────┬─────┬─────┬─────┐
+evict   │ 102 │ 103 │ 104 │ 105 │ 106 │   oldest (index 0) dropped with shift()
+        └─────┴─────┴─────┴─────┴─────┘
+
+A history reload returns 104 again: found while walking back from the end, so it is dropped.
+History returns 100: older than everything in a full buffer, so it is dropped before it is stored.
+```
+
+| Operation | When | Cost |
+| --- | --- | --- |
+| Insert a live message | Almost every publish | O(1) to find the spot (the walk back stops at once), O(n) to evict with `shift()` once full |
+| Insert out of order | History overlapping live messages | O(n): walk back to the spot, then `splice` |
+| Duplicate check | Every publish | Part of the walk back, so free |
+| Remove a deleted message | A delete event | O(n): `findIndex`, then `splice` |
+| Replay to a new page | Every connect | O(n): copy the buffer |
+
+n is at most 500, so even O(n) is microseconds per message.
+
+**Why not a ring buffer.** A ring buffer (a fixed array with a moving start index) makes eviction O(1) instead of O(n). But the buffer must also stay in ID order when history and live messages arrive out of order, and inserting into the middle of a ring buffer is still O(n). At 500 entries the saving is too small to matter, and the plain array is easier to read and test.
+
+**When to change it.** A capacity in the thousands, or hundreds of messages per second in one channel, would make the O(n) steps show up in profiles. Then use a ring buffer for live appends and treat an out-of-order message as the rare case, or a sorted structure such as a B-tree. Past that, the buffer belongs in a database ([Alternative B](#b-postgres-for-storage-redis-for-fan-out)).
+
+### H. Loading older messages (not built)
+
+The page shows only what the server buffers plus what arrived while it was open. There is no "load earlier messages", on purpose: the app is a live relay, not an archive, and Discord stays the source of truth.
+
+If it were built:
+
+- **API**: `GET /history?channel=<id>&before=<id>` returns up to 50 messages older than `before`. The page calls it when the reader scrolls to the top and puts the result above the list.
+- **Source**: the server asks Discord (`messages.fetch({ before })`). The browser never talks to Discord, so the token stays on the server.
+- **Rate limits**: every scroll would cost a Discord API call, and Discord rate-limits them. The server would need a small cache of recently fetched pages and a per-IP limit on `/history`.
+- **Browser cap**: the 500-message cap would have to drop messages from whichever end the reader is not looking at.
+- **At scale**: if many readers browse old messages, store messages in Postgres ([Alternative B](#b-postgres-for-storage-redis-for-fan-out)) and serve history from there instead of from Discord.

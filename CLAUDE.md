@@ -10,7 +10,7 @@ A bot connects to the Discord Gateway and listens to one or more channels. Every
 
 - **Laziest correct solution**: one service, one replica, no database until a real need shows up.
 - **Push end to end**: Discord Gateway → server → SSE → browser. No polling.
-- **Bounded everything**: fixed-size ring buffer on the server, capped message list in the browser.
+- **Bounded everything**: fixed-size buffer on the server, capped message list in the browser.
 - **Fail loudly, recover on its own**: clear logs, `/health` tied to the Discord connection, browsers reconnect automatically.
 - **Honest README**: how it works, alternatives considered, known problems.
 
@@ -37,7 +37,7 @@ discord-relay/
 │   ├── http/
 │   │   └── sse.ts         # GET /events: SSE streams, limits and their timers
 │   ├── core/
-│   │   ├── hub.ts         # Observer: ring buffer + publish/subscribe, keyed by channelId
+│   │   ├── hub.ts         # Observer: bounded buffer + publish/subscribe, keyed by channelId
 │   │   └── types.ts       # Msg type shared with the frontend
 │   ├── platform/
 │   │   ├── config.ts      # env vars: read and validated once at startup

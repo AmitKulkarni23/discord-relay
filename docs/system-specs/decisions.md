@@ -32,7 +32,7 @@ Revisit if bundle size matters.
 
 ## D5. No database
 
-Each channel has an in-memory ring buffer of `BUFFER_SIZE` messages (default 100, at most 500), refilled from Discord at startup. Discord already stores every message, and a second copy would add a service and sync problems without helping users.
+Each channel has an in-memory buffer of up to `BUFFER_SIZE` messages (default 100, at most 500), refilled from Discord at startup. Discord already stores every message, and a second copy would add a service and sync problems without helping users.
 
 Postgres would give durable history and search. SQLite on a Railway volume was ruled out because volumes can't be used with replicas.
 

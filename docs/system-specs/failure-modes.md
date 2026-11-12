@@ -38,7 +38,7 @@ Each row lists what can break, what a user would report, how we notice, and what
 | 15 | A deploy or crash drops every client at the same moment | "Reconnecting…" for up to a second on a deploy, longer on a crash | `clients` on `/health` | SIGTERM handler, 30 s of overlap and draining, and a start command of `bun run` so reconnects land on a ready server after a deploy. Browsers reconnect with backoff and jitter and fetch only newer messages. No cap on total connections beyond Railway's 10,000. 10,000 clients connecting at once were load tested over the private network and recovered in about 7 s with a full replay; Railway's public edge was not tested | Reduced |
 | 16 | Two bots run during the deploy overlap | Nothing | None | Harmless because the bot only reads. It would post duplicate replies if it ever wrote | Accepted |
 | 17 | A restart empties the in-memory buffer | An empty page for a moment | None | Fetch the latest `BUFFER_SIZE` messages at startup | Mitigated |
-| 18 | The buffer grows without limit | A crash from running out of memory | None | Fixed-size ring buffer of `BUFFER_SIZE` messages, at most 500 | Mitigated |
+| 18 | The buffer grows without limit | A crash from running out of memory | None | Fixed-size buffer of `BUFFER_SIZE` messages, at most 500 | Mitigated |
 | 19 | App sleeping is turned on | An empty page after idle time | None | Sleeping is off | Mitigated in config |
 | 20 | Healthchecks only run at deploy time | A broken but running app keeps serving | None | The watchdog from row 8 | Mitigated |
 | 21 | More than one replica | Duplicate bots, each replica with its own buffer | None | Run 1 replica. Option A is a bot per replica; option B is a bot service with Redis and web replicas | Accepted |

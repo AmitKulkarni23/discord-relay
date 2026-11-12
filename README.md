@@ -229,7 +229,7 @@ Failures of the server program itself (the running copy of the app, also called 
 - **Behavior Today**: The connection is cleaned up when a write to it finally fails.
 - **Long Term Fix**: Drop a stream that has not accepted any data for N seconds, or use a shorter TCP keepalive.
 
-#### 6. Bandwidth cost grows with message rate × viewers
+#### 6. Outbound traffic grows with message rate × viewers
 
 - **Problem**: Every message is sent to every viewer, and Railway bills outbound traffic.
 - **Impact**: 10,000 viewers at 5 msg/s, with messages of about 470 bytes, is about 24 MB/s of billed traffic.
@@ -298,8 +298,6 @@ Failures of the server program itself (the running copy of the app, also called 
 
 
 ## Alternatives Considered
-
-Both alternatives solve the same problem: running more than one web replica. In the current design, every extra replica would start its own bot with its own buffer.
 
 ### A. Bot service, Redis Pub/Sub and web replicas
 

@@ -407,7 +407,7 @@ Each line carries a `deployment` tag, so the old and new process keep separate t
 
 ### Dashboard
 
-[One Grafana dashboard](https://earnestturkey2621.grafana.net/public-dashboards/43657ad697154903aa9ed639ef2eaaf1), public and read-only, with a panel per metric: Gateway status, viewers, messages per second, 500s, clients dropped, 429s and watchdog restarts.
+[One Grafana dashboard](https://earnestturkey2621.grafana.net/public-dashboards/43657ad697154903aa9ed639ef2eaaf1), public and read-only, with a panel per metric: Gateway status, viewers, messages per 5 minutes, 500s, clients dropped, 429s and watchdog restarts.
 
 ![Grafana dashboard](docs/images/grafana-dashboard.png)
 

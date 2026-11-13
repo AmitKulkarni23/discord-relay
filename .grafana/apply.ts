@@ -83,7 +83,7 @@ function dashboard(dataSource: string) {
       ),
       // ponytail: max, not sum, so the old and new process overlapping in a deploy are not counted twice. Use sum once there are replicas.
       panel(2, 'Viewers (open streams)', 'timeseries', 12, 0, dataSource, { viewers: 'max(last_over_time(relay_sse_clients[2m]))' }),
-      panel(3, 'Messages per second', 'timeseries', 0, 8, dataSource, { messages: 'sum(rate(relay_messages_total[5m]))' }),
+      panel(3, 'Messages (per 5 min)', 'timeseries', 0, 8, dataSource, { messages: 'round(sum(increase(relay_messages_total[5m])))' }),
       panel(4, 'HTTP 500 errors (per 5 min)', 'timeseries', 12, 8, dataSource, { '500s': 'sum(increase(relay_http_errors_total[5m]))' }),
       panel(
         5,

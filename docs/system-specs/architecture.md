@@ -1,6 +1,6 @@
 # Architecture
 
-DiscordRelay streams messages from one Discord channel to a web page in real time. A single Bun process on Railway holds a Discord Gateway connection, keeps the latest messages in memory, and pushes them to browsers over Server-Sent Events (SSE). Discord is the source of truth, and the app stores nothing permanently.
+DiscordRelay streams messages from one or more Discord channels to a web page in real time. A single Bun process on Railway holds a Discord Gateway connection, keeps the latest messages in memory, and pushes them to browsers over Server-Sent Events (SSE). Discord is the source of truth, and the app stores nothing permanently.
 
 ## Block diagram
 
@@ -25,8 +25,8 @@ flowchart LR
 | Config | `backend/platform/config.ts` | Reads and validates env vars once at startup (`loadConfig`); exits naming the variable when one is missing or invalid. |
 | Flags | `backend/platform/flags.ts` | Reads Railway Feature Flags through the `railway` SDK; every flag falls back to off. |
 | HTTP server | `backend/server.ts`, `backend/http/sse.ts` | The entry point. Runs `Bun.serve` for the page, `/events`, `/health` and `/config`, and handles SIGTERM. It is the only place dependencies are wired: it creates the hub and passes it, the config and the publish function to the bot and the routes. |
-| Types | `backend/core/types.ts` | `Msg` and `Attachment`, shared with the frontend. |
-| Frontend | `frontend/` | React + MUI page, wired in `app.tsx`. `hooks/use-event-stream.ts` opens one `EventSource`, keeps up to 500 messages keyed by ID, and shows connection status. |
+| Types | `backend/core/types.ts` | `Msg`, `Attachment` and `ChannelInfo`, shared with the frontend, and `compareIds`, which orders Discord IDs by time. |
+| Frontend | `frontend/` | React + MUI page, wired in `app.tsx`. `hooks/use-event-stream.ts` opens one `EventSource`, keeps up to 500 messages keyed by ID, and shows connection status. `hooks/use-page-config.ts` reads `/config` once, through `lib/config.ts`. |
 
 ## Patterns
 
@@ -132,7 +132,7 @@ sequenceDiagram
 | `GET /config` | `{ "attachments": bool, "editsDeletes": bool, "channels": [{ "id": string, "name": string \| null }] }`. A `name` is null until the bot has loaded that channel at startup. |
 | `GET /health` | `200` when the Gateway is connected, `503` otherwise. Body: `{ "discord": "connected" \| "disconnected", "clients": n, "buffered": n, "lastEventAt": iso \| null, "unavailableChannels": [id], "uptimeSec": n }` |
 
-The stream opens with a `: connected` comment so headers reach the browser even when the buffer is empty. A named `discord` event (`data: connected`, `disconnected`, or `unavailable` when the bot cannot read this channel) follows it, and repeats within about a second whenever the Gateway state changes, so the page's chip reflects the bot and not only the browser's stream.
+The stream opens with a `: connected` comment so headers reach the browser even when the buffer is empty. A named `discord` event (`data: connected`, `disconnected`, `unavailable` when the bot cannot read this channel, or `failed` when its login was refused) follows it, and repeats within about a second whenever the Gateway state changes, so the page's chip reflects the bot and not only the browser's stream.
 
 SSE events:
 
@@ -160,6 +160,9 @@ type Attachment = {
   url: string            // Discord CDN URL, signed, expires after ~24 h
   name: string
   contentType: string | null
+  size: number           // bytes
+  width: number | null   // images and videos only
+  height: number | null
 }
 
 type Msg = {
@@ -239,6 +242,6 @@ Not built, and described in the README instead:
 
 Adding a channel is a config change: append its ID to `CHANNEL_ID` in Railway. The bot needs View Channel and Read Message History on it.
 
-Relaying another source, such as a Slack channel, means adding `backend/sources/slack.ts`, which calls `publish`. Forwarding messages to Slack instead is one more subscriber: `hub.subscribe(msg => postToSlack(msg))`. Neither change touches the hub or the HTTP server.
+Relaying another source, such as a Slack channel, means adding `backend/sources/slack.ts`, which calls `publish`. Forwarding messages to Slack instead is one more subscriber: `hub.subscribe(channelId, msg => postToSlack(msg))`. Neither change touches the hub or the HTTP server.
 
 Running more replicas means replacing the in-memory hub with a Redis-backed one that keeps the same `publish`/`subscribe` functions, and moving the bot into its own one-replica service (see D6 in `decisions.md`).

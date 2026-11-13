@@ -56,9 +56,9 @@ discord-relay/
 │   ├── theme.ts           # MUI theme and shared tokens: all colours, bar height, media queries
 │   ├── components/        # top-bar, feed, feed-states, message-row, message-text, attachments
 │   ├── hooks/             # use-event-stream, use-page-config, use-stick-to-bottom
-│   ├── lib/               # pure, tested logic: messages, markup, stream, media
+│   ├── lib/               # pure, tested logic: messages, markup, stream, config, media
 │   └── tests/             # mirrors frontend/: tests/lib/markup.test.ts
-├── load-tests/            # load test: fake producer + raw-socket clients (not deployed, results in docs/load_test_results.md)
+├── load-tests/            # load test: fake producer + raw-socket clients (not deployed)
 │   ├── run.ts             # ramps client counts, stops at the first failing level
 │   ├── server.ts          # real hub and server, fake producer, control port
 │   ├── producer.ts        # fake messages and resource stats
@@ -69,7 +69,7 @@ discord-relay/
 │   ├── metrics-summary.ts # reduces Railway's samples to a step's figures
 │   ├── consumer-process.ts # a running copy of consumer.ts
 │   ├── consumer.ts        # one consumer process: many raw /events connections
-│   └── tests/             # the pure logic: verdicts, search and metrics
+│   └── tests/             # the pure logic: verdicts
 ├── scripts/
 │   └── demo.sh            # posts sample messages through channel webhooks, for demos (URLs from env, never committed)
 ├── docs/

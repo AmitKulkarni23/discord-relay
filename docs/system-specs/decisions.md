@@ -56,7 +56,7 @@ We use a query parameter instead of the `Last-Event-ID` header because the brows
 
 `EventSource` retries a dropped stream after a fixed delay of about 3 seconds and stops for good on an HTTP error. So every error closes it and the page reconnects after a random delay, up to 1 s and doubling per attempt to 30 s. Backoff starts over only after a stream has stayed open 30 s, so a server that accepts connections and then dies keeps pushing browsers further apart.
 
-The load test (`docs/load_test_results.md`) connected 10,000 clients at once without failures, with no spread at all, over the private network. Revisit if that does not hold through Railway's public edge, which the test bypasses. The next step is having the server close streams at random times across the 30 s draining window. Streams dropped together also reach the 15-minute cut together, which `?since=` makes cheap but does not spread.
+The load test connected 10,000 clients at once without failures, with no spread at all, over the private network. Revisit if that does not hold through Railway's public edge, which the test bypasses. The next step is having the server close streams at random times across the 30 s draining window. Streams dropped together also reach the 15-minute cut together, which `?since=` makes cheap but does not spread.
 
 ## D8. Feature flags in Railway Feature Flags
 
@@ -72,7 +72,7 @@ Service config lives in `.railway/railway.ts`, applied with `railway config plan
 
 ## D10. No staging environment
 
-There is only production, which autodeploys `main` once "Wait for CI" sees typecheck and `bun test` pass. Unit and integration tests cover the logic without Discord, and a staging bot, token and channel would add setup for little gain at this size.
+There is only production, which autodeploys `main` once "Wait for CI" sees the format check, lint, typecheck and `bun test` pass. Unit and integration tests cover the logic without Discord, and a staging bot, token and channel would add setup for little gain at this size.
 
 The alternative was a staging environment autodeploying `main`, end-to-end tests that post through a Discord webhook, and promotion by fast-forwarding a `production` branch.
 

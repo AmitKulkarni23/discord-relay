@@ -8,17 +8,32 @@ import { compareIds, type Msg } from '../../backend/core/types.ts'
 import { addMsg, parseDeletedId, parseMsg, removeMsg, sortMsgs } from '../lib/messages.ts'
 import { eventsUrl, limitWaitMs, retryDelay, type Status } from '../lib/stream.ts'
 
-/** How long a stream must stay open before reconnect backoff starts over. */
-const STABLE_MS = 30_000
-/** After a reconnect, messages this soon after the stream opens count as caught up. */
-const CATCH_UP_MS = 1_000
-/** How long the chip says what a reconnect recovered before returning to Live. */
-const RECOVERED_MS = 5_000
+// Timings for the reconnect loop. Example: the reader's Wi-Fi drops for 10 s.
+//   1. The stream errors; the chip says Reconnecting and the page retries after retryDelay (random, window doubling to 30 s).
+//   2. The stream reopens with ?since=, so the server sends only the messages missed while it was down.
+//   3. Messages arriving within CATCH_UP_WINDOW_MS of reopening are counted: the chip says "Back · 3 caught up".
+//   4. RECOVERED_CHIP_MS later the chip returns to Live.
 
-/** A stream silent this long is dead even if the browser has not noticed. The server pings every 25 s, so this allows for one lost. */
-const SILENCE_MS = 60_000
-/** Failed attempts in a row before spending a request on asking the server why. */
-const PROBE_AFTER = 3
+/**
+ * A stream that stayed open this long counts as healthy, so its next drop retries fast again (backoff starts over).
+ * Shorter-lived streams keep the backoff growing: a server that accepts connections and then dies at once must
+ * not be hammered every second by every open page.
+ */
+const BACKOFF_RESET_AFTER_MS = 30_000
+/** After a reconnect, messages arriving this soon after the stream reopens are the replay of what was missed, and are counted. */
+const CATCH_UP_WINDOW_MS = 1_000
+/** How long the chip says "Back · N caught up" before returning to Live. */
+const RECOVERED_CHIP_MS = 5_000
+/**
+ * A stream silent this long is dead even without an error event, which laptop sleep or a network change can swallow.
+ * The server pings every 25 s, so 60 s means at least two pings went missing.
+ */
+const DEAD_STREAM_AFTER_MS = 60_000
+/**
+ * EventSource hides HTTP status codes, so the page cannot tell a 429 (too many streams from this IP) from a 502.
+ * After this many failures in a row it spends one fetch on /events to find out, and waits as told if it was a 429.
+ */
+const PROBE_AFTER_FAILURES = 3
 
 type Connection = 'connecting' | 'live' | 'reconnecting' | 'full'
 
@@ -55,21 +70,24 @@ export function useEventStream(channel: string | null): EventStream {
     const controller = new AbortController()
     let source: EventSource | undefined
     let retry: ReturnType<typeof setTimeout> | undefined
-    let stable: ReturnType<typeof setTimeout> | undefined
     let recoveredNote: ReturnType<typeof setTimeout> | undefined
     let silence: ReturnType<typeof setTimeout> | undefined
     let attempt = 0
     let since: string | null = null
-    let dropped = false
+    /** When the current stream opened; null while it is down. */
+    let openedAt: number | null = null
+    /** False until the first open, so the first load's history is not reported as "caught up". */
     let everOpen = false
+    /** Messages with a new ID before this time count towards "caught up". 0 outside a reconnect. */
     let catchUpUntil = 0
 
     const onDropped = (): void => {
       source?.close()
-      clearTimeout(stable)
       clearTimeout(recoveredNote)
       clearTimeout(silence)
-      dropped = true
+      // Checked on the drop, not on open: a server that accepts and then dies must keep backing off.
+      if (openedAt !== null && Date.now() - openedAt >= BACKOFF_RESET_AFTER_MS) attempt = 0
+      openedAt = null
       catchUpUntil = 0
       setRecovered(null)
       setConnection('reconnecting')
@@ -79,7 +97,7 @@ export function useEventStream(channel: string | null): EventStream {
     /** Laptop sleep or a network change can kill a stream without an error event, leaving the page claiming to be live. */
     const heardFromServer = (): void => {
       clearTimeout(silence)
-      silence = setTimeout(onDropped, SILENCE_MS)
+      silence = setTimeout(onDropped, DEAD_STREAM_AFTER_MS)
     }
 
     // EventSource's own retry has a fixed delay and stops for good on an HTTP error (e.g. a 502
@@ -89,18 +107,15 @@ export function useEventStream(channel: string | null): EventStream {
       source.onopen = () => {
         heardFromServer()
         setConnection('live')
-        if (everOpen && dropped) {
+        openedAt = Date.now()
+        // Every open after the first follows a drop, so this is a reconnect: show "Back live", then count the replay.
+        if (everOpen) {
           // ponytail: a time window, so a slow replay undercounts. A server end-of-replay event would make it exact.
-          catchUpUntil = Date.now() + CATCH_UP_MS
+          catchUpUntil = openedAt + CATCH_UP_WINDOW_MS
           setRecovered(0)
-          recoveredNote = setTimeout(() => setRecovered(null), RECOVERED_MS)
+          recoveredNote = setTimeout(() => setRecovered(null), RECOVERED_CHIP_MS)
         }
         everOpen = true
-        dropped = false
-        // Not on open alone: a server that accepts and then dies must keep backing off.
-        stable = setTimeout(() => {
-          attempt = 0
-        }, STABLE_MS)
       }
       source.addEventListener('ping', heardFromServer)
       source.addEventListener('discord', (event: MessageEvent<unknown>) => {
@@ -133,7 +148,7 @@ export function useEventStream(channel: string | null): EventStream {
 
     // A refused client keeps its reason and waits as told, instead of reconnecting forever with no explanation.
     const reconnect = async (): Promise<void> => {
-      if (attempt >= PROBE_AFTER) {
+      if (attempt >= PROBE_AFTER_FAILURES) {
         const wait = await limitWaitMs(eventsUrl(channel, since), controller.signal)
         if (controller.signal.aborted) return
         if (wait !== null) {
@@ -150,7 +165,6 @@ export function useEventStream(channel: string | null): EventStream {
       controller.abort()
       clearTimeout(silence)
       clearTimeout(retry)
-      clearTimeout(stable)
       clearTimeout(recoveredNote)
       source?.close()
     }

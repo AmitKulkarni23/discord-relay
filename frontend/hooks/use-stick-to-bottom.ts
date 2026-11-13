@@ -1,3 +1,7 @@
+/**
+ * Chat-style scrolling: a reader at the bottom follows new messages; a reader who scrolled
+ * up stays put and the feed counts what they have not seen yet, for the "N new messages" pill.
+ */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 /** How close to the bottom (px) still counts as reading the newest message. */

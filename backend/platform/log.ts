@@ -1,3 +1,7 @@
+/**
+ * Structured logging: every line is one JSON object (`{"level":"info","event":"client_connected",…}`),
+ * which Railway's log explorer can filter. Also counts each event, for the metrics push.
+ */
 /** Returns an error's message, or the value as a string. */
 export function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err)

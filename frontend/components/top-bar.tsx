@@ -1,3 +1,7 @@
+/**
+ * The sticky bar at the top: product name, channel tabs, the status chip (Live, Reconnecting, …)
+ * and the light/dark toggle.
+ */
 import { useEffect, type ReactElement, type ReactNode } from 'react'
 import AppBar from '@mui/material/AppBar'
 import Box from '@mui/material/Box'

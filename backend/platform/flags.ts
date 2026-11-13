@@ -1,3 +1,7 @@
+/**
+ * Railway Feature Flags (`attachments`, `edits-deletes`), read at runtime with the railway SDK.
+ * Flipping one in Railway applies within seconds with no redeploy. GET /config passes them to the page.
+ */
 import { flags } from 'railway'
 import { errorMessage, log } from './log.ts'
 

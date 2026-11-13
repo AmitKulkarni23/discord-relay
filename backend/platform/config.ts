@@ -1,3 +1,8 @@
+/**
+ * Reads and validates every environment variable once at startup (DISCORD_TOKEN, CHANNEL_ID,
+ * BUFFER_SIZE, PORT, the Grafana trio). A bad value stops the process with a message naming the variable,
+ * instead of failing later.
+ */
 /** Everything the process needs from its environment. */
 export type Config = { token: string; channelIds: string[]; port: number; bufferSize: number; metrics: MetricsPush | null }
 

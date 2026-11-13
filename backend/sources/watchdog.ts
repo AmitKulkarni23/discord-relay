@@ -1,3 +1,7 @@
+/**
+ * A timer that notices a Gateway connection that stays down. discord.js normally reconnects by itself;
+ * if it has not after 5 minutes, the watchdog fires and discord.ts replaces the client with a fresh one.
+ */
 /** Counts down while the Gateway is disconnected. */
 export type Watchdog = {
   /** Starts the countdown, unless one is already running. */

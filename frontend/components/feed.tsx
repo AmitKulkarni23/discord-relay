@@ -1,3 +1,8 @@
+/**
+ * The scrolling list of messages: day dividers, author groups, the empty state and the
+ * "N new messages" pill. Keeps a reader at the bottom pinned to new messages, and leaves a reader
+ * scrolled up where they are.
+ */
 import { useMemo, type ReactElement } from 'react'
 import Box from '@mui/material/Box'
 import { compareIds, type Msg } from '../../backend/core/types.ts'

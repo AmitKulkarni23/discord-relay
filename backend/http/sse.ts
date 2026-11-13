@@ -1,3 +1,9 @@
+/**
+ * GET /events: one long-lived Server-Sent Events stream per open browser tab. On connect it sends the
+ * buffered history (or only what is newer than ?since= on a reconnect), then every new message and delete
+ * live, plus a ping every 25 s and the Discord status. Also enforces the limits: 20 streams per IP and a
+ * 1 MiB queue per client, past which a stalled client is dropped.
+ */
 import type { Hub } from '../core/hub.ts'
 import { log } from '../platform/log.ts'
 import type { Msg } from '../core/types.ts'

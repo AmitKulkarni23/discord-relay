@@ -1,3 +1,8 @@
+/**
+ * The browser side of /events. Opens an EventSource for the selected channel, holds the
+ * messages, and reconnects on its own with backoff and ?since= so nothing is missed. Produces the Status
+ * the chip shows.
+ */
 import { useEffect, useMemo, useState } from 'react'
 import { compareIds, type Msg } from '../../backend/core/types.ts'
 import { addMsg, parseDeletedId, parseMsg, removeMsg, sortMsgs } from '../lib/messages.ts'
@@ -47,7 +52,7 @@ export function useEventStream(channel: string | null): EventStream {
   }
 
   useEffect(() => {
-    const abort = new AbortController()
+    const controller = new AbortController()
     let source: EventSource | undefined
     let retry: ReturnType<typeof setTimeout> | undefined
     let stable: ReturnType<typeof setTimeout> | undefined
@@ -114,6 +119,9 @@ export function useEventStream(channel: string | null): EventStream {
           console.warn('message_dropped', event.data)
           return
         }
+        // Track the newest ID seen, sent as ?since= on the next reconnect so the server replays only what was missed.
+        // compareIds orders Discord IDs by time; a plain `>` on the strings gets 18- vs 19-digit IDs wrong (see types.ts).
+        // Only a newer ID moves it: an older one (an edit to an old message) must not move `since` backwards.
         if (since === null || compareIds(msg.id, since) > 0) {
           since = msg.id
           if (Date.now() < catchUpUntil) setRecovered(count => (count ?? 0) + 1)
@@ -126,8 +134,8 @@ export function useEventStream(channel: string | null): EventStream {
     // A refused client keeps its reason and waits as told, instead of reconnecting forever with no explanation.
     const reconnect = async (): Promise<void> => {
       if (attempt >= PROBE_AFTER) {
-        const wait = await limitWaitMs(eventsUrl(channel, since), abort.signal)
-        if (abort.signal.aborted) return
+        const wait = await limitWaitMs(eventsUrl(channel, since), controller.signal)
+        if (controller.signal.aborted) return
         if (wait !== null) {
           setConnection('full')
           retry = setTimeout(() => void reconnect(), wait)
@@ -139,7 +147,7 @@ export function useEventStream(channel: string | null): EventStream {
 
     connect()
     return () => {
-      abort.abort()
+      controller.abort()
       clearTimeout(silence)
       clearTimeout(retry)
       clearTimeout(stable)

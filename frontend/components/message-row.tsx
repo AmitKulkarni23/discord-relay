@@ -1,3 +1,7 @@
+/**
+ * One message in the feed: avatar, name and time for the first in a group, the text with
+ * Show more for long messages, "(edited)", and attachments when the flag is on.
+ */
 import { memo, useLayoutEffect, useRef, useState, type ReactElement } from 'react'
 import { flushSync } from 'react-dom'
 import Avatar from '@mui/material/Avatar'
@@ -85,7 +89,11 @@ function MessageBody({ msg, attachmentsOn, scroll }: MessageBodyProps): ReactEle
   const [clipped, setClipped] = useState(false)
   const text = useRef<HTMLDivElement>(null)
 
-  // A resize can clip a message that fitted, so keep measuring while it is collapsed.
+  // Decides whether to show "Show more". While collapsed, the text box is capped at COLLAPSE_LINES; if the
+  // content is taller than the box (scrollHeight > clientHeight), it is clipped. The 1 px allows for rounding.
+  // e.g. a 40-line log paste on a phone: scrollHeight 900 px, clientHeight 330 px → clipped, button shown.
+  // Measured again on every resize (rotating a phone, widening the window), because wrapping changes the height.
+  // useLayoutEffect, not useEffect: it runs before paint, so the button never flickers in after the text.
   useLayoutEffect(() => {
     const el = text.current
     if (!el || expanded) return
@@ -94,11 +102,16 @@ function MessageBody({ msg, attachmentsOn, scroll }: MessageBodyProps): ReactEle
     return watchSize(el, measure)
   }, [expanded, msg.content])
 
+  // Show more / Show less. flushSync makes React apply the new height now, so the lines below measure the
+  // page after the change, not before it. e.g. a reader collapses a 40-line message from its bottom: the text
+  // shrinks to 15 lines, they would be left looking at later messages, so the row scrolls back into view.
   const toggle = (): void => {
     flushSync(() => setExpanded(wasExpanded => !wasExpanded))
     // Collapsing can leave the reader far below the message, so bring it back into view.
     if (expanded) text.current?.closest('article')?.scrollIntoView({ block: 'nearest' })
-    // The page changed height without a scroll event, and a reader mid-message must not be pinned by the next one.
+    // The feed auto-scrolls to new messages only for a reader at the bottom, and learns that from scroll events.
+    // Expanding changes the page height without one: a reader who was at the bottom and expands a long message is
+    // now mid-message, and without this recheck the next message would yank them down to the bottom.
     scroll.recheck()
   }
 

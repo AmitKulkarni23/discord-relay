@@ -1,3 +1,7 @@
+/**
+ * The page's top-level component. Reads /config for the channel list and flags, picks the channel
+ * (from the URL or the tabs), opens its stream, and hands messages and status to the top bar and the feed.
+ */
 import { useEffect, useState, type ReactElement } from 'react'
 import { Feed } from './components/feed.tsx'
 import { StatusChip, TopBar } from './components/top-bar.tsx'

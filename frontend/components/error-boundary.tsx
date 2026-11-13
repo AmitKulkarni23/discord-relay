@@ -1,3 +1,6 @@
+/**
+ * Catches a render error so one broken message shows a fallback instead of a blank page.
+ */
 import { Component, type ReactElement, type ReactNode } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'

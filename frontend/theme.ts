@@ -1,3 +1,6 @@
+/**
+ * The MUI theme and shared tokens: every colour, the bar height and the media queries.
+ */
 import { createTheme } from '@mui/material/styles'
 
 /**

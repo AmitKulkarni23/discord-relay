@@ -1,4 +1,13 @@
-/** One piece of a message's text. Only http and https ever become links. */
+/**
+ * Turns a Discord message's raw text (`**bold**`, `` `code` ``, links, `<t:…>` timestamps) into a tree of
+ * parts that message-text.tsx renders as React elements. Never builds HTML, so message text cannot inject markup.
+ */
+
+/**
+ * One piece of a message's text. Only http and https ever become links.
+ * e.g. `{ kind: 'text', text: 'hi ' }`, `{ kind: 'link', href: 'https://railway.com' }`,
+ * `{ kind: 'bold', parts: [{ kind: 'text', text: 'done' }] }`.
+ */
 export type Part =
   | { kind: 'text' | 'code' | 'block'; text: string }
   | { kind: 'link'; href: string }
@@ -6,7 +15,9 @@ export type Part =
   | { kind: 'bold' | 'italic' | 'underline' | 'strike' | 'spoiler'; parts: Part[] }
 
 /**
- * Discord's inline syntax, leftmost match first. Headings, quotes, lists and masked links stay as typed.
+ * One regex for all of Discord's inline syntax, one named group per kind; the earliest match in the text wins.
+ * e.g. in "see `x` and **y**" it finds `x` (group `code`) first, then **y** (group `bold`).
+ * Headings, quotes, lists and masked links stay as typed.
  * Timestamps stop at 11 digits, because anything longer can be out of range for a Date.
  */
 const TOKEN = new RegExp(
@@ -27,7 +38,11 @@ const TOKEN = new RegExp(
   'gi',
 )
 
-/** Length of `url` without trailing punctuation, keeping a closing bracket opened inside the URL. */
+/**
+ * Length of `url` without trailing punctuation, keeping a closing bracket opened inside the URL.
+ * e.g. "https://railway.com." → length of "https://railway.com" (the sentence's full stop is not part of it),
+ * "https://en.wikipedia.org/wiki/Bun_(software)" → kept whole, because its ")" closes a "(" in the URL.
+ */
 function linkLength(url: string): number {
   let end = url.length
   while (end > 0) {
@@ -39,10 +54,17 @@ function linkLength(url: string): number {
   return end
 }
 
-/** Splits a message's text into parts for React to render; nothing here ever becomes HTML. */
+/**
+ * Splits a message's text into parts for React to render; nothing here ever becomes HTML. Bold, italic,
+ * underline, strike and spoiler parse their inside again, so formatting can nest.
+ * e.g. parseMarkup('deploy **done** see https://railway.com') →
+ *   [{ kind: 'text', text: 'deploy ' }, { kind: 'bold', parts: [{ kind: 'text', text: 'done' }] },
+ *    { kind: 'text', text: ' see ' }, { kind: 'link', href: 'https://railway.com' }]
+ */
 export function parseMarkup(text: string): Part[] {
   const parts: Part[] = []
   let at = 0
+  // Appends plain text, merging it into the previous part when that is text too.
   const addText = (chunk: string): void => {
     const last = parts.at(-1)
     if (last?.kind === 'text') last.text += chunk

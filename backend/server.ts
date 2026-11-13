@@ -1,3 +1,8 @@
+/**
+ * Entry point. Wires the pieces together (config → hub → Discord source → HTTP server) and serves
+ * the four routes: / (the React page), /events (SSE, in http/sse.ts), /health (Railway's deploy check) and
+ * /config (channels and feature flags for the page). Shuts down cleanly on SIGTERM during a deploy.
+ */
 import index from '../frontend/index.html'
 import { loadConfig, type Config } from './platform/config.ts'
 import { createEventStreams, type EventStreamDeps } from './http/sse.ts'

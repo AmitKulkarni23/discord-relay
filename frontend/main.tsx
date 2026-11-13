@@ -1,3 +1,6 @@
+/**
+ * Browser entry point: mounts <App /> inside the MUI theme and an error boundary.
+ */
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import CssBaseline from '@mui/material/CssBaseline'

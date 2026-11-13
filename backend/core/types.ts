@@ -1,3 +1,7 @@
+/**
+ * The Msg shape sent to the browser, shared by backend and frontend so both sides agree on it,
+ * and compareIds, which orders Discord IDs by time.
+ */
 /** A file attached to a Discord message. */
 export type Attachment = {
   /** Discord CDN URL. Signed, expires after about 24 hours. */

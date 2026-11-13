@@ -1,3 +1,7 @@
+/**
+ * Renders the parts from lib/markup.ts as React elements: bold, code, links, timestamps,
+ * click-to-reveal spoilers. Never uses innerHTML, so message text cannot inject markup.
+ */
 import { useState, type ReactElement } from 'react'
 import Box from '@mui/material/Box'
 import ButtonBase from '@mui/material/ButtonBase'

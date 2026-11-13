@@ -1,3 +1,7 @@
+/**
+ * Pure logic for the held messages: add, remove and sort them, group them into feed rows,
+ * and check that what arrives over SSE really is a Msg.
+ */
 import { compareIds, type Attachment, type Msg } from '../../backend/core/types.ts'
 
 /** The most messages the browser holds; the oldest are dropped past this. */
@@ -7,28 +11,36 @@ export const MAX_MSGS = 500
 const GROUP_GAP_MS = 5 * 60_000
 
 /**
- * Stores `m` keyed by ID. A resend with the same edit time returns `prev`
- * unchanged, so a reconnect replay causes no re-render. Drops the oldest
- * message once more than MAX_MSGS are held.
+ * Stores `m` keyed by ID and returns a new Map, because React only re-renders when state is a new object.
+ * A resend with the same edit time returns `prev` unchanged, so a reconnect replay causes no re-render.
+ * Drops the oldest message once more than MAX_MSGS are held.
+ *
+ * Example, with MAX_MSGS = 3 for brevity:
+ *   prev = { 101 → "hi", 102 → "yo", 103 → "ok" }
+ *   addMsg(prev, 104 → "new")          → { 102, 103, 104 }   (101, the oldest, dropped)
+ *   addMsg(prev, 102 → "yo", same edit) → prev itself         (replay: nothing changes)
+ *   addMsg(prev, 102 → "yo!", edited)   → { 101, 102 → "yo!", 103 }
  */
 export function addMsg(prev: Map<string, Msg>, m: Msg): Map<string, Msg> {
   const held = prev.get(m.id)
   if (held && held.editedAt === m.editedAt) return prev
-  const next = new Map(prev).set(m.id, m)
-  if (next.size > MAX_MSGS) {
+  // new Map(prev) is a shallow copy: it copies up to 500 references to the existing Msg objects. Message text,
+  // authors and attachments stay where they are and are shared by the old and new maps.
+  const updated = new Map(prev).set(m.id, m)
+  if (updated.size > MAX_MSGS) {
     let oldest = m.id
-    for (const id of next.keys()) if (compareIds(id, oldest) < 0) oldest = id
-    next.delete(oldest)
+    for (const id of updated.keys()) if (compareIds(id, oldest) < 0) oldest = id
+    updated.delete(oldest)
   }
-  return next
+  return updated
 }
 
 /** Removes a deleted message. Returns `prev` unchanged when it is not held, so nothing re-renders. */
 export function removeMsg(prev: Map<string, Msg>, id: string): Map<string, Msg> {
   if (!prev.has(id)) return prev
-  const next = new Map(prev)
-  next.delete(id)
-  return next
+  const updated = new Map(prev)
+  updated.delete(id)
+  return updated
 }
 
 /** The held messages, oldest first. */

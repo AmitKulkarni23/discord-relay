@@ -1,3 +1,7 @@
+/**
+ * The pieces of the feed that are not messages: the date divider between days, the empty
+ * state (which says why there are no messages yet, based on Status) and the "N new messages" pill.
+ */
 import { useEffect, useState, type ReactElement } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'

@@ -27,8 +27,9 @@ export default defineRailway(() => {
       restartPolicyMaxRetries: 10,
       // The bot must stay connected to Discord, so the service never sleeps.
       sleepApplication: false,
-      // Keep the old deployment up while the new one starts, and give it time to close streams.
+      // After a new deploy passes its healthcheck, the old one keeps running 30 s more, so both are up together.
       overlapSeconds: 30,
+      // Then Railway sends the old one SIGTERM and gives it 30 s to close its streams before killing it.
       drainingSeconds: 30,
     },
     env: {

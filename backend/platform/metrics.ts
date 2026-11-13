@@ -1,3 +1,8 @@
+/**
+ * Every 60 s, pushes developer metrics (Gateway up, open streams, messages, drops, 429s) to Grafana Cloud,
+ * where the dashboard and the alerts live. Nothing is served or shown on the page. Off unless the
+ * three GRAFANA_METRICS_* variables are set.
+ */
 import type { MetricsPush } from './config.ts'
 import type { Hub } from '../core/hub.ts'
 import { errorMessage, log } from './log.ts'

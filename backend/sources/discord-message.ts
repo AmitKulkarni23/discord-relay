@@ -1,3 +1,7 @@
+/**
+ * Converts a discord.js Message into the small Msg the browser gets: author, text, attachments,
+ * timestamps, and a note for what is not typed text (forwards, stickers, polls, embeds).
+ */
 import type { Msg } from '../core/types.ts'
 
 type AttachmentsLike = {

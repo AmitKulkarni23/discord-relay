@@ -1,3 +1,7 @@
+/**
+ * Images, video, audio and file links under a message, shown only when the `attachments` flag
+ * is on. Only Discord CDN URLs are ever loaded or linked.
+ */
 import { useState, type ReactElement, type ReactNode } from 'react'
 import Box from '@mui/material/Box'
 import ButtonBase from '@mui/material/ButtonBase'

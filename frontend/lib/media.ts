@@ -1,3 +1,7 @@
+/**
+ * Pure helpers for attachments: is this URL on Discord's CDN, how to show this file type,
+ * human-readable sizes, and fitting media into a box.
+ */
 /** True when `url` is an https URL on a Discord CDN host, the only images the page loads. */
 export function isDiscordCdn(url: string | null): url is string {
   if (!url) return false

@@ -1,3 +1,8 @@
+/**
+ * The only code that talks to Discord. Logs the bot in to the Gateway, loads each channel's recent
+ * history into the hub on startup and after every reconnect, then publishes each new message and
+ * delete as it happens. Tracks the connection and channel state that /health and the page show.
+ */
 import { Client, Events, GatewayIntentBits, Partials } from 'discord.js'
 import { errorMessage, log } from '../platform/log.ts'
 import { compareIds, type ChannelInfo, type Msg } from '../core/types.ts'

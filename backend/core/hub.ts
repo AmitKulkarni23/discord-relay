@@ -1,3 +1,8 @@
+/**
+ * The middle of the system (Observer pattern). The Discord source publishes messages in; each open
+ * browser stream subscribes and gets them pushed out. Per channel it keeps the newest BUFFER_SIZE messages
+ * in ID order, so a new page load gets recent history at once, and drops duplicates and deleted messages.
+ */
 import { compareIds, type Msg } from './types.ts'
 import { errorMessage, log } from '../platform/log.ts'
 
@@ -115,10 +120,14 @@ export function createHub(capacity = 100): Hub {
       notify(channel, channelId, subscriber => subscriber.onRemove(id))
     },
 
+    // Used by sse.ts when a browser reconnects with ?since=: it replays these as `delete` events, so a message
+    // deleted while the tab was offline disappears from the page instead of staying until reload.
     removed(channelId) {
       return [...(channels.get(channelId)?.removed ?? [])]
     },
 
+    // Used by sse.ts, once per open browser tab: each new message becomes an SSE event that appears at the
+    // bottom of the feed live, and each delete removes that message's row.
     subscribe(channelId, fn, onRemove = () => {}) {
       // A new object each time, so the same function can subscribe twice and still be removed one at a time.
       const entry = { onMessage: fn, onRemove }
@@ -129,16 +138,21 @@ export function createHub(capacity = 100): Hub {
       }
     },
 
+    // Used by sse.ts to send the buffer when a tab opens, which is the history shown immediately on page load.
+    // Also by server.ts: the buffered count in /health, and the IDs the Discord source compares against fetched
+    // history to spot messages deleted while the bot was disconnected.
     recent(channelId) {
       return [...(channels.get(channelId)?.buffer ?? [])]
     },
 
+    // Open browser streams. Logged on connect/disconnect, reported by /health and pushed to Grafana; not shown on the page.
     subscriberCount() {
       let total = 0
       for (const channel of channels.values()) total += channel.subscribers.size
       return total
     },
 
+    // Pushed to Grafana as messages_total; not shown on the page.
     publishedTotal() {
       return published
     },
